@@ -1671,7 +1671,7 @@ export default function App() {
                 <header className="relative z-10 w-full max-w-xl mx-auto px-3 sm:px-4 pt-3 pb-1 flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2 shrink-0">
                     <img
-                      src="/./logo.png"
+                      src="/../logo.png"
                       alt="3-2-1 Football Logo"
                       className="w-8 h-8 rounded-xl object-cover border border-amber-400/40 shadow-md shrink-0"
                     />

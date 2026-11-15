@@ -1,0 +1,15 @@
+{
+  "name": "3-2-1 Football Challenge",
+  "short_name": "3-2-1 Futbol",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#050a14",
+  "theme_color": "#050a14",
+  "icons": [
+    {
+      "src": "./logo.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

@@ -81,7 +81,7 @@ export const AnimatedIntro: React.FC<AnimatedIntroProps> = ({
             }`}
           >
             <img
-              src="/./logo.png"
+              src="/../logo.png"
               alt="3-2-1 Football Challenge Logosu"
               className="w-full h-full object-cover select-none drop-shadow-2xl"
             />
