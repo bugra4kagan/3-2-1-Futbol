@@ -169,7 +169,7 @@ export const CAREER_EXTRA_CLUB_LOGOS: Record<string, string> = {
   'Estudiantes LP': 'https://a.espncdn.com/i/teamlogos/soccer/500/8.png',
   'Rosario Central': 'https://a.espncdn.com/i/teamlogos/soccer/500/17.png',
   'NEC Nijmegen': 'https://a.espncdn.com/i/teamlogos/soccer/500/147.png',
-  'El Mokawloon': 'https://upload.wikimedia.org/wikipedia/en/2/27/Al_Mokawloon_Al_Arab_SC_logo.png?utm_source=en.wikipedia.org&utm_campaign=api&utm_content=thumbnail_unscaled',
+  'El Mokawloon': 'https://upload.wikimedia.org/wikipedia/en/2/27/Al_Mokawloon_Al_Arab_SC_./logo.png?utm_source=en.wikipedia.org&utm_campaign=api&utm_content=thumbnail_unscaled',
   'Deportivo La Coruña': 'https://thumb.wikimedia.org/wikipedia/en/thumb/5/56/RC_Deportivo_A_Coru%C3%B1a_logo_2026.svg/330px-RC_Deportivo_A_Coru%C3%B1a_logo_2026.svg.png?utm_source=en.wikipedia.org&utm_campaign=api&utm_content=thumbnail',
   'FK Željezničar': 'https://thumb.wikimedia.org/wikipedia/en/thumb/9/9e/Zeljeznicar_logo.svg/330px-Zeljeznicar_logo.svg.png?utm_source=en.wikipedia.org&utm_campaign=api&utm_content=thumbnail',
   'Fatih Karagümrük': 'https://a.espncdn.com/i/teamlogos/soccer/500/20728.png',

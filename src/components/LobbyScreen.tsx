@@ -109,7 +109,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
       <header className="relative z-10 w-full max-w-2xl flex items-center justify-between gap-3 pt-2 pb-4">
         <div className="flex items-center gap-2 shrink-0">
           <img
-            src="/logo.png"
+            src="/./logo.png"
             alt="3-2-1 Challenge Logo"
             className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl object-cover border border-amber-400/40 shadow-md shrink-0"
           />
@@ -191,7 +191,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
           <div className="absolute -inset-2 bg-gradient-to-r from-amber-500/30 to-emerald-500/30 rounded-3xl blur-xl opacity-75 group-hover:opacity-100 transition duration-700 pointer-events-none" />
           <div className="relative w-28 h-28 sm:w-36 sm:h-36 rounded-3xl overflow-hidden shadow-2xl border-2 border-amber-400/50 bg-slate-900/90 mx-auto transition-transform duration-300 hover:scale-105">
             <img
-              src="/logo.png"
+              src="/./logo.png"
               alt="3-2-1 Football Logo"
               className="w-full h-full object-cover select-none"
             />
