@@ -4171,7 +4171,7 @@ export default function App() {
                     <div className="flex items-center gap-2 min-w-0">
                       {!headerLogoError ? (
                         <img
-                          src="/logo.png"
+                          src={`${import.meta.env.BASE_URL}logo.png`}
                           alt="3-2-1 Futbol Logosu"
                           onError={() => setHeaderLogoError(true)}
                           className="w-8 h-8 rounded-xl object-cover border border-amber-400/40 shadow-md shrink-0"

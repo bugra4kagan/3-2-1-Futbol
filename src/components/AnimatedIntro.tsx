@@ -81,7 +81,7 @@ export const AnimatedIntro: React.FC<AnimatedIntroProps> = ({
           >
             {!logoError ? (
               <img
-                src="/logo.png"
+                src={`${import.meta.env.BASE_URL}logo.png`}
                 alt="3-2-1 Futbol Logosu"
                 onError={() => setLogoError(true)}
                 className="w-full h-full object-cover select-none"

@@ -205,7 +205,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
           <div className="flex items-center gap-2 min-w-0 shrink-0">
             {!logoError ? (
               <img
-                src="/logo.png"
+                src={`${import.meta.env.BASE_URL}logo.png`}
                 alt="3-2-1 Futbol Logosu"
                 onError={() => setLogoError(true)}
                 className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl object-cover border border-amber-400/40 shadow-md shrink-0"
@@ -283,7 +283,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
           <div className="relative w-28 h-28 sm:w-36 sm:h-36 rounded-3xl overflow-hidden shadow-[0_0_28px_rgba(245,158,11,0.2)] border-2 border-amber-400/50 bg-slate-900 mx-auto transition-transform duration-200 hover:scale-[1.03] flex items-center justify-center">
             {!logoError ? (
               <img
-                src="/logo.png"
+                src={`${import.meta.env.BASE_URL}logo.png`}
                 alt="3-2-1 Futbol Logosu"
                 onError={() => setLogoError(true)}
                 className="w-full h-full object-cover select-none"
