@@ -28,10 +28,21 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install Android SDK API 36
+      - name: Install Android SDK API 36 & Accept Licenses
         run: |
-          yes | sdkmanager --licenses > /dev/null || true
-          sdkmanager "platforms;android-36" "build-tools;36.0.0"
+          SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          SDKMANAGER="$(command -v sdkmanager || true)"
+          if [ -z "$SDKMANAGER" ] && [ -x "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" ]; then
+            SDKMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          fi
+          if [ -z "$SDKMANAGER" ]; then
+            echo "sdkmanager not found under $SDK_ROOT"
+            exit 1
+          fi
+          set +o pipefail
+          yes | "$SDKMANAGER" --sdk_root="$SDK_ROOT" --licenses > /dev/null || true
+          set -o pipefail
+          "$SDKMANAGER" --sdk_root="$SDK_ROOT" "platform-tools" "platforms;android-36" "build-tools;36.0.0"
 
       - name: Setup Gradle cache
         uses: gradle/actions/setup-gradle@v4
@@ -45,14 +56,16 @@ jobs:
       - name: Sync Capacitor Android
         run: npx cap sync android
 
-      - name: Grant execute permission for Gradle wrapper
-        run: chmod +x android/gradlew
+      - name: Prepare Gradle wrapper
+        run: |
+          sed -i 's/\r$//' android/gradlew
+          chmod +x android/gradlew
 
       - name: Build Debug APK and Release AAB
         working-directory: android
         run: |
-          ./gradlew assembleDebug
-          ./gradlew bundleRelease
+          ./gradlew assembleDebug --no-daemon --stacktrace
+          ./gradlew bundleRelease --no-daemon --stacktrace
 
       - name: Upload Debug APK artifact
         uses: actions/upload-artifact@v4

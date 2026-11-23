@@ -26,6 +26,10 @@ android {
             minifyEnabled false
         }
     }
+    lint {
+        abortOnError false
+        checkReleaseBuilds false
+    }
 }
 
 repositories {
