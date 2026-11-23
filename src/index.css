@@ -1,0 +1,523 @@
+@import "tailwindcss";
+
+@layer base {
+  html {
+    overscroll-behavior: none;
+    overscroll-behavior-y: none;
+    touch-action: manipulation;
+    -webkit-text-size-adjust: 100%;
+    padding-left: env(safe-area-inset-left, 0px);
+    padding-right: env(safe-area-inset-right, 0px);
+  }
+
+  body {
+    background-color: #020617;
+    color: #f8fafc;
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    overscroll-behavior: none;
+    overflow-x: hidden;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+
+  button,
+  a,
+  [role="button"],
+  input,
+  select,
+  textarea {
+    touch-action: manipulation;
+  }
+}
+
+/* Custom Scrollbars */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 5px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, 0.6);
+  border-radius: 9999px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(16, 185, 129, 0.4);
+  border-radius: 9999px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(16, 185, 129, 0.7);
+}
+
+/* Snappy GPU-Friendly Screen and View Transitions */
+@keyframes screenSlideInRight {
+  0% {
+    opacity: 0;
+    transform: translate3d(16px, 0, 0);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes screenSlideInLeft {
+  0% {
+    opacity: 0;
+    transform: translate3d(-16px, 0, 0);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes screenSlideUp {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 14px, 0);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes screenFadeIn {
+  0% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+@keyframes cardPop {
+  0% {
+    opacity: 0;
+    transform: scale(0.95) translate3d(0, 6px, 0);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translate3d(0, 0, 0);
+  }
+}
+
+.animate-screen-slide {
+  animation: screenSlideInRight 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-screen-back {
+  animation: screenSlideInLeft 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-screen-slide-up {
+  animation: screenSlideUp 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-screen-fade {
+  animation: screenFadeIn 0.16s ease-out forwards;
+}
+
+.animate-card-pop {
+  animation: cardPop 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Animated Neon Gradient & Spinning/Bouncing Footballs for "3-2-1 FOOTBALL" Brand Title */
+@keyframes brandGradientShift {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+@keyframes brandBallBounceSpin {
+  0%, 100% {
+    transform: translateY(0px) rotate(0deg) scale(1);
+  }
+  35% {
+    transform: translateY(-4px) rotate(135deg) scale(1.06);
+  }
+  70% {
+    transform: translateY(1px) rotate(260deg) scale(0.98);
+  }
+}
+
+.brand-gradient-text {
+  background-image: linear-gradient(
+    90deg,
+    #a855f7 0%,
+    #ec4899 24%,
+    #22d3ee 50%,
+    #facc15 76%,
+    #a855f7 100%
+  );
+  background-size: 300% 300%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: brandGradientShift 4.2s ease-in-out infinite;
+}
+
+.brand-ball-bounce-a {
+  animation: brandBallBounceSpin 2.6s ease-in-out infinite;
+}
+
+.brand-ball-bounce-b {
+  animation: brandBallBounceSpin 2.6s ease-in-out infinite;
+  animation-delay: -1.3s;
+}
+
+/* Victory Modal Trophy & Confetti Animations */
+@keyframes trophyCelebrate {
+  0% {
+    opacity: 0;
+    transform: scale(0.35) rotate(-18deg) translate3d(0, 18px, 0);
+  }
+  48% {
+    opacity: 1;
+    transform: scale(1.16) rotate(8deg) translate3d(0, -6px, 0);
+  }
+  68% {
+    transform: scale(0.94) rotate(-5deg) translate3d(0, 2px, 0);
+  }
+  84% {
+    transform: scale(1.06) rotate(3deg) translate3d(0, -2px, 0);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) rotate(0deg) translate3d(0, 0, 0);
+  }
+}
+
+@keyframes trophyFloatGlow {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+    filter: drop-shadow(0 0 8px rgba(251, 191, 36, 0.35));
+  }
+  50% {
+    transform: translate3d(0, -4px, 0) scale(1.04);
+    filter: drop-shadow(0 0 18px rgba(251, 191, 36, 0.7));
+  }
+}
+
+@keyframes trophyIconWiggle {
+  0% {
+    transform: scale(0.6) rotate(-14deg);
+  }
+  55% {
+    transform: scale(1.18) rotate(10deg);
+  }
+  75% {
+    transform: scale(0.95) rotate(-6deg);
+  }
+  100% {
+    transform: scale(1) rotate(0deg);
+  }
+}
+
+@keyframes trophyIconShine {
+  0%,
+  100% {
+    transform: rotate(0deg) scale(1);
+  }
+  50% {
+    transform: rotate(-4deg) scale(1.07);
+  }
+}
+
+@keyframes confettiBurstLeft {
+  0% {
+    opacity: 0;
+    transform: translate3d(14px, 12px, 0) scale(0.2) rotate(25deg);
+  }
+  45% {
+    opacity: 1;
+    transform: translate3d(-8px, -8px, 0) scale(1.22) rotate(-14deg);
+  }
+  100% {
+    opacity: 0.92;
+    transform: translate3d(0, 0, 0) scale(1) rotate(-6deg);
+  }
+}
+
+@keyframes confettiBurstRight {
+  0% {
+    opacity: 0;
+    transform: translate3d(-14px, 12px, 0) scale(0.2) rotate(-25deg);
+  }
+  45% {
+    opacity: 1;
+    transform: translate3d(8px, -8px, 0) scale(1.22) rotate(14deg);
+  }
+  100% {
+    opacity: 0.92;
+    transform: translate3d(0, 0, 0) scale(1) rotate(6deg);
+  }
+}
+
+@keyframes confettiTwinkle {
+  0%,
+  100% {
+    opacity: 0.75;
+    transform: translate3d(0, 0, 0) scale(0.95);
+  }
+  50% {
+    opacity: 1;
+    transform: translate3d(0, -3px, 0) scale(1.15);
+  }
+}
+
+.animate-trophy-celebrate {
+  animation:
+    trophyCelebrate 0.85s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards,
+    trophyFloatGlow 2.6s ease-in-out 0.85s infinite;
+  will-change: transform, filter, opacity;
+}
+
+.animate-trophy-icon-pop {
+  animation:
+    trophyIconWiggle 0.9s cubic-bezier(0.175, 0.885, 0.32, 1.275) 0.1s both,
+    trophyIconShine 2.6s ease-in-out 1s infinite;
+  will-change: transform;
+}
+
+.animate-confetti-left {
+  animation:
+    confettiBurstLeft 0.95s cubic-bezier(0.16, 1, 0.3, 1) 0.1s both,
+    confettiTwinkle 2.2s ease-in-out 1.05s infinite;
+  will-change: transform, opacity;
+}
+
+.animate-confetti-right {
+  animation:
+    confettiBurstRight 0.95s cubic-bezier(0.16, 1, 0.3, 1) 0.18s both,
+    confettiTwinkle 2.2s ease-in-out 1.15s infinite;
+  will-change: transform, opacity;
+}
+
+@keyframes wrongNeonShake {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+  18% {
+    transform: translate3d(-7px, 0, 0);
+  }
+  36% {
+    transform: translate3d(7px, 0, 0);
+  }
+  54% {
+    transform: translate3d(-5px, 0, 0);
+  }
+  72% {
+    transform: translate3d(5px, 0, 0);
+  }
+  88% {
+    transform: translate3d(-2px, 0, 0);
+  }
+}
+
+.animate-wrong-shake {
+  animation: wrongNeonShake 0.42s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+}
+
+/* ============================================================================
+   KLASİK (RETRO PITCH) CSS-ONLY THEME OVERRIDES
+   - Sıfır yerleşim/düzen değişikliği, yalnızca renk & yüzey değişkenleri
+   - Eski cihazlarda sabit 60 FPS için ağır blur ve neon parıltılar kapatılır
+   ============================================================================ */
+:root {
+  --theme-bg: #020617;
+  --theme-surface: #0f172a;
+  --theme-surface-alt: #020617;
+  --theme-border: rgba(51, 65, 85, 0.85);
+  --theme-text-primary: #f8fafc;
+  --theme-text-secondary: #cbd5e1;
+  --theme-accent: #10b981;
+}
+
+html[data-theme="klasik"] {
+  --theme-bg: #157a3c;
+  --theme-surface: #ffffff;
+  --theme-surface-alt: #eef8f1;
+  --theme-border: #166534;
+  --theme-text-primary: #0f172a;
+  --theme-text-secondary: #1e3a2f;
+  --theme-accent: #15803d;
+  color-scheme: light;
+}
+
+html[data-theme="klasik"] *,
+html[data-theme="klasik"] *::before,
+html[data-theme="klasik"] *::after {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+html[data-theme="klasik"] body,
+html[data-theme="klasik"] main,
+html[data-theme="klasik"] [data-testid="lobby-screen"],
+html[data-theme="klasik"] [data-testid="lobby-screen"] > .bg-slate-950 {
+  background-color: #157a3c !important;
+  background-image: repeating-linear-gradient(
+    0deg,
+    rgba(255, 255, 255, 0.035) 0px,
+    rgba(255, 255, 255, 0.035) 36px,
+    rgba(0, 0, 0, 0.045) 36px,
+    rgba(0, 0, 0, 0.045) 72px
+  ) !important;
+  color: #0f172a;
+}
+
+/* Sticky Top Headers & Bottom Navigation Bar -> Crisp Classic Chalk White */
+html[data-theme="klasik"] header,
+html[data-theme="klasik"] [data-testid="lobby-top-header"],
+html[data-theme="klasik"] [data-testid="bottom-nav"] {
+  background-color: #f4fbf6 !important;
+  background-image: none !important;
+  border-color: #166534 !important;
+  color: #0f172a !important;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2) !important;
+}
+
+/* Dark Slate Cards, Containers & Modals -> Crisp Retro Card Surfaces */
+html[data-theme="klasik"] .bg-slate-950,
+html[data-theme="klasik"] .bg-slate-950\/95,
+html[data-theme="klasik"] .bg-slate-950\/90,
+html[data-theme="klasik"] .bg-slate-950\/85,
+html[data-theme="klasik"] .bg-slate-950\/80,
+html[data-theme="klasik"] .bg-slate-950\/75,
+html[data-theme="klasik"] .bg-slate-950\/70,
+html[data-theme="klasik"] .bg-slate-900,
+html[data-theme="klasik"] .bg-slate-900\/95,
+html[data-theme="klasik"] .bg-slate-900\/92,
+html[data-theme="klasik"] .bg-slate-900\/90,
+html[data-theme="klasik"] .bg-slate-900\/85,
+html[data-theme="klasik"] .bg-slate-900\/80,
+html[data-theme="klasik"] .bg-slate-900\/70,
+html[data-theme="klasik"] .bg-slate-800,
+html[data-theme="klasik"] .bg-slate-800\/90,
+html[data-theme="klasik"] .bg-slate-800\/80,
+html[data-theme="klasik"] .from-slate-900,
+html[data-theme="klasik"] .from-slate-950 {
+  background-color: #f8fcf9 !important;
+  background-image: none !important;
+  border-color: #2e7d47 !important;
+  box-shadow: 0 3px 8px rgba(5, 46, 22, 0.18) !important;
+}
+
+/* Remove Root Screen Outer Background Override Inside Nested Wrappers */
+html[data-theme="klasik"] [data-testid="lobby-screen"] {
+  background-color: #157a3c !important;
+}
+
+html[data-theme="klasik"] [data-testid="lobby-screen"] > header {
+  background-color: #f4fbf6 !important;
+}
+
+/* Gradient Banners (Online Card, Bot Card, Scoreboard) -> Classic Mint/White Cards */
+html[data-theme="klasik"] .bg-gradient-to-r.from-cyan-500\/20,
+html[data-theme="klasik"] .bg-gradient-to-r.from-emerald-500\/20,
+html[data-theme="klasik"] .bg-gradient-to-r.from-amber-500\/15,
+html[data-theme="klasik"] .bg-gradient-to-r.from-slate-900,
+html[data-theme="klasik"] .bg-gradient-to-b.from-slate-900 {
+  background-color: #ffffff !important;
+  background-image: none !important;
+  border-color: #166534 !important;
+}
+
+/* High-Contrast Dark Text Inside Classic Light Cards */
+html[data-theme="klasik"] .text-white,
+html[data-theme="klasik"] .text-slate-100,
+html[data-theme="klasik"] .text-slate-200 {
+  color: #0f172a !important;
+}
+
+html[data-theme="klasik"] .text-slate-300,
+html[data-theme="klasik"] .text-slate-400,
+html[data-theme="klasik"] .text-slate-500 {
+  color: #1e3a2f !important;
+}
+
+html[data-theme="klasik"] [data-testid="lobby-screen"] > div p.text-slate-400 {
+  color: #ecfdf5 !important;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+
+html[data-theme="klasik"] .text-emerald-300,
+html[data-theme="klasik"] .text-emerald-400 {
+  color: #15803d !important;
+}
+
+html[data-theme="klasik"] .text-cyan-300,
+html[data-theme="klasik"] .text-sky-300,
+html[data-theme="klasik"] .text-sky-400 {
+  color: #0369a1 !important;
+}
+
+html[data-theme="klasik"] .text-amber-200,
+html[data-theme="klasik"] .text-amber-300,
+html[data-theme="klasik"] .text-amber-400 {
+  color: #b45309 !important;
+}
+
+html[data-theme="klasik"] .text-rose-200,
+html[data-theme="klasik"] .text-rose-300,
+html[data-theme="klasik"] .text-rose-400 {
+  color: #be123c !important;
+}
+
+/* Preserve High-Contrast White Text on Solid Colored Badges & Action Buttons */
+html[data-theme="klasik"] .bg-rose-500,
+html[data-theme="klasik"] .bg-emerald-600,
+html[data-theme="klasik"] .bg-green-600,
+html[data-theme="klasik"] .bg-cyan-600,
+html[data-theme="klasik"] .bg-sky-600 {
+  color: #ffffff !important;
+}
+
+html[data-theme="klasik"] .bg-emerald-500,
+html[data-theme="klasik"] .bg-gradient-to-r.from-emerald-500,
+html[data-theme="klasik"] .bg-gradient-to-br.from-emerald-500 {
+  background-color: #16a34a !important;
+  background-image: none !important;
+  border-color: #14532d !important;
+  color: #ffffff !important;
+}
+
+html[data-theme="klasik"] .bg-emerald-500 *,
+html[data-theme="klasik"] .bg-rose-500 *,
+html[data-theme="klasik"] .bg-gradient-to-r.from-emerald-500 * {
+  color: #ffffff !important;
+}
+
+html[data-theme="klasik"] .bg-amber-400,
+html[data-theme="klasik"] .bg-cyan-400,
+html[data-theme="klasik"] .bg-emerald-400 {
+  color: #0f172a !important;
+}
+
+html[data-theme="klasik"] .animate-ping {
+  animation: none !important;
+  opacity: 0.45;
+}
+
+html[data-theme="klasik"] input,
+html[data-theme="klasik"] select,
+html[data-theme="klasik"] textarea {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+  border-color: #15803d !important;
+}
+
+html[data-theme="klasik"] input::placeholder {
+  color: #475569 !important;
+}
+
+

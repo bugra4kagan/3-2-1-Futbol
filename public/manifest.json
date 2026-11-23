@@ -1,0 +1,27 @@
+{
+  "name": "3-2-1 Futbol: Bilgi Yarışması",
+  "short_name": "3-2-1 Futbol: Bilgi Yarışması",
+  "description": "Mobil ve rekabetçi futbol bilgi yarışması. Ortak futbolcuyu geri sayımdan sonra ilk bulan kazanır!",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#020617",
+  "theme_color": "#020617",
+  "lang": "tr",
+  "categories": ["games", "sports", "trivia"],
+  "icons": [
+    {
+      "src": "./logo.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "./logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

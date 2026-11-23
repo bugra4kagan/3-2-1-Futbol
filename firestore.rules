@@ -1,0 +1,353 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Varsayılan küresel reddetme kuralı
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isEmailVerifiedIfPresent() {
+      return !('email_verified' in request.auth.token)
+        || request.auth.token.email == null
+        || request.auth.token.email_verified == true;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_-]{1,128}$');
+    }
+
+    function isValidUsernameKey(key) {
+      return key is string && key.size() >= 3 && key.size() <= 32 && key.matches('^[a-z0-9_]{3,32}$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isNonNegativeInt(val) {
+      return val is int && val >= 0;
+    }
+
+    function isValidUserBackup(data, userId) {
+      return data.keys().hasAll([
+          'userId',
+          'displayName',
+          'avatar',
+          'coins',
+          'weeklyPoints',
+          'totalPoints',
+          'unlockedGiftIds',
+          'progressionJson',
+          'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'userId',
+          'displayName',
+          'usernameKey',
+          'email',
+          'avatar',
+          'favoriteClubId',
+          'coins',
+          'weeklyPoints',
+          'totalPoints',
+          'unlockedGiftIds',
+          'adFree',
+          'permanentMultiplier2x',
+          'wheelLastSpinServerAt',
+          'dailyChallengeLastServerAt',
+          'serverClockPingAt',
+          'progressionJson',
+          'updatedAt'
+        ])
+        && data.userId is string
+        && data.userId == userId
+        && data.userId == request.auth.uid
+        && data.displayName is string
+        && data.displayName.size() >= 1
+        && data.displayName.size() <= 64
+        && (!('usernameKey' in data) || isValidUsernameKey(data.usernameKey))
+        && (!('email' in data) || (
+          data.email is string
+          && data.email.size() <= 254
+          && (data.email == '' || (request.auth.token.email != null && data.email == request.auth.token.email))
+        ))
+        && data.avatar is string
+        && data.avatar.size() >= 1
+        && data.avatar.size() <= 64
+        && (!('favoriteClubId' in data) || (data.favoriteClubId is string && data.favoriteClubId.size() <= 64))
+        // Negatif bakiye veya puan kesinlikle yasaktır
+        && isNonNegativeInt(data.coins)
+        && isNonNegativeInt(data.weeklyPoints)
+        && isNonNegativeInt(data.totalPoints)
+        && data.coins <= 20000000
+        && data.weeklyPoints <= 5000000
+        && data.totalPoints <= 50000000
+        && data.unlockedGiftIds is list
+        && data.unlockedGiftIds.size() <= 500
+        && (!('adFree' in data) || data.adFree is bool)
+        && (!('permanentMultiplier2x' in data) || data.permanentMultiplier2x is bool)
+        // Sunucu zaman damgaları yalnızca Firebase request.time ile yazılabilir
+        && (!('wheelLastSpinServerAt' in data) || (data.wheelLastSpinServerAt is timestamp && data.wheelLastSpinServerAt <= request.time))
+        && (!('dailyChallengeLastServerAt' in data) || (data.dailyChallengeLastServerAt is timestamp && data.dailyChallengeLastServerAt <= request.time))
+        && (!('serverClockPingAt' in data) || (data.serverClockPingAt is timestamp && data.serverClockPingAt == request.time))
+        && data.progressionJson is string
+        && data.progressionJson.size() >= 2
+        && data.progressionJson.size() <= 100000
+        && data.updatedAt is timestamp
+        && data.updatedAt == request.time;
+    }
+
+    function isValidUserCreateBounds(data) {
+      return data.coins <= 50000
+        && data.weeklyPoints <= 25000
+        && data.totalPoints <= 250000
+        && (!('wheelLastSpinServerAt' in data) || data.wheelLastSpinServerAt == request.time)
+        && (!('dailyChallengeLastServerAt' in data) || data.dailyChallengeLastServerAt == request.time);
+    }
+
+    function isValidUserUpdateBounds() {
+      return (!('coins' in existing()) || incoming().coins - existing().coins <= 25000)
+        && (!('weeklyPoints' in existing()) || incoming().weeklyPoints - existing().weeklyPoints <= 10000)
+        && (!('totalPoints' in existing()) || (
+          incoming().totalPoints >= existing().totalPoints
+          && incoming().totalPoints - existing().totalPoints <= 10000
+        ))
+        // 24 saatlik Şans Çarkı sunucu zaman damgası koruması (cihaz saati değiştirilse bile aşılamaz)
+        && (
+          !('wheelLastSpinServerAt' in incoming())
+          || ('wheelLastSpinServerAt' in existing() && incoming().wheelLastSpinServerAt == existing().wheelLastSpinServerAt)
+          || (
+            incoming().wheelLastSpinServerAt == request.time
+            && (!('wheelLastSpinServerAt' in existing()) || request.time >= existing().wheelLastSpinServerAt + duration.value(24, 'h'))
+          )
+        )
+        // 24 saatlik Günlük Meydan Okuma sunucu zaman damgası koruması
+        && (
+          !('dailyChallengeLastServerAt' in incoming())
+          || ('dailyChallengeLastServerAt' in existing() && incoming().dailyChallengeLastServerAt == existing().dailyChallengeLastServerAt)
+          || (
+            incoming().dailyChallengeLastServerAt == request.time
+            && (!('dailyChallengeLastServerAt' in existing()) || request.time >= existing().dailyChallengeLastServerAt + duration.value(24, 'h'))
+          )
+        );
+    }
+
+    function isValidUsernameReservation(data, usernameKey) {
+      return data.keys().hasAll([
+          'usernameKey',
+          'displayName',
+          'ownerUid',
+          'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'usernameKey',
+          'displayName',
+          'ownerUid',
+          'updatedAt'
+        ])
+        && isValidUsernameKey(data.usernameKey)
+        && data.usernameKey == usernameKey
+        && data.displayName is string
+        && data.displayName.size() >= 3
+        && data.displayName.size() <= 18
+        && isValidId(data.ownerUid)
+        && data.ownerUid == request.auth.uid
+        && data.updatedAt is timestamp
+        && data.updatedAt == request.time;
+    }
+
+    function isValidPublicProfile(data, usernameKey) {
+      return data.keys().hasAll([
+          'usernameKey',
+          'ownerUid',
+          'displayName',
+          'avatar',
+          'hasCrown',
+          'weeklyPoints',
+          'totalPoints',
+          'statsJson',
+          'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'usernameKey',
+          'ownerUid',
+          'displayName',
+          'friendCode',
+          'avatar',
+          'favoriteClubId',
+          'equippedTitle',
+          'equippedCrest',
+          'equippedFrame',
+          'equippedBadge',
+          'hasCrown',
+          'weeklyPoints',
+          'totalPoints',
+          'statsJson',
+          'lastActivityId',
+          'lastActivityType',
+          'lastActivityTitle',
+          'lastActivityCode',
+          'lastActivityScore',
+          'updatedAt'
+        ])
+        && isValidUsernameKey(data.usernameKey)
+        && data.usernameKey == usernameKey
+        && isValidId(data.ownerUid)
+        && data.ownerUid == request.auth.uid
+        && data.displayName is string
+        && data.displayName.size() >= 3
+        && data.displayName.size() <= 32
+        && (!('friendCode' in data) || (data.friendCode is string && data.friendCode.size() <= 12))
+        && data.avatar is string
+        && data.avatar.size() >= 1
+        && data.avatar.size() <= 64
+        && (!('favoriteClubId' in data) || (data.favoriteClubId is string && data.favoriteClubId.size() <= 64))
+        && (!('equippedTitle' in data) || (data.equippedTitle is string && data.equippedTitle.size() <= 48))
+        && (!('equippedCrest' in data) || (data.equippedCrest is string && data.equippedCrest.size() <= 64))
+        && (!('equippedFrame' in data) || (data.equippedFrame is string && data.equippedFrame.size() <= 64))
+        && (!('equippedBadge' in data) || (data.equippedBadge is string && data.equippedBadge.size() <= 16))
+        && data.hasCrown is bool
+        && isNonNegativeInt(data.weeklyPoints)
+        && isNonNegativeInt(data.totalPoints)
+        && data.weeklyPoints <= 5000000
+        && data.totalPoints <= 50000000
+        && data.statsJson is string
+        && data.statsJson.size() >= 2
+        && data.statsJson.size() <= 16384
+        && (!('lastActivityId' in data) || (data.lastActivityId is string && data.lastActivityId.size() >= 1 && data.lastActivityId.size() <= 64))
+        && (!('lastActivityType' in data) || (data.lastActivityType in ['tournament_started', 'high_score']))
+        && (!('lastActivityTitle' in data) || (data.lastActivityTitle is string && data.lastActivityTitle.size() <= 120))
+        && (!('lastActivityCode' in data) || (data.lastActivityCode is string && data.lastActivityCode.size() <= 16))
+        && (!('lastActivityScore' in data) || (data.lastActivityScore is int && data.lastActivityScore >= 0))
+        && data.updatedAt is timestamp
+        && data.updatedAt == request.time;
+    }
+
+    match /users/{userId} {
+      // Kullanıcı yalnızca kendi UID'sine ait dokümanı okuyup yazabilir
+      allow get: if isValidId(userId) && isOwner(userId);
+      allow list: if false;
+
+      allow create: if isValidId(userId)
+        && isOwner(userId)
+        && isEmailVerifiedIfPresent()
+        && isValidUserBackup(incoming(), userId)
+        && isValidUserCreateBounds(incoming());
+
+      allow update: if isValidId(userId)
+        && isOwner(userId)
+        && isEmailVerifiedIfPresent()
+        && isValidUserBackup(incoming(), userId)
+        && isValidUserUpdateBounds()
+        && incoming().userId == existing().userId
+        && (!('email' in existing()) || !('email' in incoming()) || incoming().email == existing().email || existing().email == '')
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'displayName',
+          'usernameKey',
+          'email',
+          'avatar',
+          'favoriteClubId',
+          'coins',
+          'weeklyPoints',
+          'totalPoints',
+          'unlockedGiftIds',
+          'adFree',
+          'permanentMultiplier2x',
+          'wheelLastSpinServerAt',
+          'dailyChallengeLastServerAt',
+          'serverClockPingAt',
+          'progressionJson',
+          'updatedAt'
+        ]);
+
+      allow delete: if isValidId(userId) && isOwner(userId);
+    }
+
+    match /usernames/{usernameKey} {
+      allow get: if isValidUsernameKey(usernameKey);
+      allow list: if false;
+
+      allow create: if isValidUsernameKey(usernameKey)
+        && isSignedIn()
+        && isEmailVerifiedIfPresent()
+        && isValidUsernameReservation(incoming(), usernameKey);
+
+      allow update: if isValidUsernameKey(usernameKey)
+        && isSignedIn()
+        && isEmailVerifiedIfPresent()
+        && isValidUsernameReservation(incoming(), usernameKey)
+        && existing().ownerUid == request.auth.uid
+        && incoming().ownerUid == existing().ownerUid
+        && incoming().usernameKey == existing().usernameKey
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'displayName',
+          'updatedAt'
+        ]);
+
+      allow delete: if isValidUsernameKey(usernameKey)
+        && isSignedIn()
+        && existing().ownerUid == request.auth.uid;
+    }
+
+    match /publicProfiles/{usernameKey} {
+      allow get: if isValidUsernameKey(usernameKey);
+      allow list: if false;
+
+      allow create: if isValidUsernameKey(usernameKey)
+        && isSignedIn()
+        && isEmailVerifiedIfPresent()
+        && isValidPublicProfile(incoming(), usernameKey)
+        && incoming().weeklyPoints <= 25000
+        && incoming().totalPoints <= 250000;
+
+      allow update: if isValidUsernameKey(usernameKey)
+        && isSignedIn()
+        && isEmailVerifiedIfPresent()
+        && isValidPublicProfile(incoming(), usernameKey)
+        && existing().ownerUid == request.auth.uid
+        && incoming().ownerUid == existing().ownerUid
+        && incoming().usernameKey == existing().usernameKey
+        && incoming().weeklyPoints - existing().weeklyPoints <= 10000
+        && incoming().totalPoints >= existing().totalPoints
+        && incoming().totalPoints - existing().totalPoints <= 10000
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'displayName',
+          'friendCode',
+          'avatar',
+          'favoriteClubId',
+          'equippedTitle',
+          'equippedCrest',
+          'equippedFrame',
+          'equippedBadge',
+          'hasCrown',
+          'weeklyPoints',
+          'totalPoints',
+          'statsJson',
+          'lastActivityId',
+          'lastActivityType',
+          'lastActivityTitle',
+          'lastActivityCode',
+          'lastActivityScore',
+          'updatedAt'
+        ]);
+
+      allow delete: if isValidUsernameKey(usernameKey)
+        && isSignedIn()
+        && existing().ownerUid == request.auth.uid;
+    }
+  }
+}

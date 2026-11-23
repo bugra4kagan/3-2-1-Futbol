@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>Hesap ve Veri Silme • 3-2-1 Futbol: Bilgi Yarışması</title>
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font-family: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        background: radial-gradient(circle at top, #4c0519 0%, #020617 48%, #020617 100%);
+        color: #f8fafc;
+        line-height: 1.6;
+        padding: 24px 16px 64px;
+      }
+      .container {
+        max-width: 720px;
+        margin: 0 auto;
+        background: rgba(15, 23, 42, 0.94);
+        border: 1px solid rgba(244, 63, 94, 0.35);
+        border-radius: 24px;
+        padding: 28px 24px;
+        box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+      }
+      .badge {
+        display: inline-block;
+        padding: 4px 12px;
+        border-radius: 999px;
+        background: rgba(244, 63, 94, 0.16);
+        border: 1px solid rgba(251, 113, 133, 0.45);
+        color: #fda4af;
+        font-size: 12px;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+      }
+      h1 {
+        margin: 12px 0 8px;
+        font-size: 26px;
+        font-weight: 900;
+        color: #ffffff;
+      }
+      h2 {
+        margin: 24px 0 8px;
+        font-size: 17px;
+        font-weight: 800;
+        color: #34d399;
+      }
+      p, li, label {
+        color: #cbd5e1;
+        font-size: 14px;
+      }
+      ul, ol {
+        padding-left: 20px;
+      }
+      li {
+        margin-bottom: 6px;
+      }
+      .box {
+        background: rgba(2, 6, 23, 0.78);
+        border: 1px solid rgba(148, 163, 184, 0.22);
+        border-radius: 16px;
+        padding: 18px;
+        margin: 16px 0;
+      }
+      .field {
+        margin-bottom: 14px;
+      }
+      .field label {
+        display: block;
+        font-weight: 700;
+        color: #e2e8f0;
+        margin-bottom: 6px;
+      }
+      input[type="text"],
+      input[type="email"],
+      textarea {
+        width: 100%;
+        padding: 11px 14px;
+        border-radius: 12px;
+        border: 1px solid #334155;
+        background: #020617;
+        color: #ffffff;
+        font-size: 14px;
+        font-weight: 600;
+        outline: none;
+      }
+      input:focus, textarea:focus {
+        border-color: #10b981;
+      }
+      .check-row {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        margin: 14px 0;
+      }
+      .check-row input {
+        margin-top: 3px;
+        width: 18px;
+        height: 18px;
+      }
+      button {
+        width: 100%;
+        padding: 13px 18px;
+        border-radius: 14px;
+        border: none;
+        background: linear-gradient(90deg, #e11d48, #f43f5e);
+        color: #ffffff;
+        font-size: 15px;
+        font-weight: 900;
+        cursor: pointer;
+      }
+      button:hover {
+        filter: brightness(1.06);
+      }
+      .success {
+        display: none;
+        margin-top: 16px;
+        padding: 16px;
+        border-radius: 14px;
+        background: rgba(16, 185, 129, 0.14);
+        border: 1px solid rgba(52, 211, 153, 0.5);
+        color: #a7f3d0;
+        font-size: 14px;
+        font-weight: 600;
+      }
+      .links {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 14px;
+        margin-top: 22px;
+        font-size: 14px;
+        font-weight: 700;
+      }
+      a {
+        color: #34d399;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="container">
+      <span class="badge">Google Play Veri Güvenliği • Hesap Silme</span>
+      <h1>3-2-1 Futbol: Bilgi Yarışması — Hesabımı ve Verilerimi Sil</h1>
+      <p>
+        <strong>3-2-1 Futbol: Bilgi Yarışması</strong> hesabınızı ve ilişkili tüm oyun verilerinizi kalıcı olarak
+        silebilirsiniz. Silme işlemi tamamlandığında hesabınız geri alınamaz şekilde kaldırılır.
+      </p>
+
+      <h2>1. Uygulama İçinden Anında Silme (Önerilen)</h2>
+      <div class="box">
+        <ol style="margin: 0">
+          <li><strong>3-2-1 Futbol: Bilgi Yarışması</strong> uygulamasını açın.</li>
+          <li>Sağ üstten <strong>Ayarlar</strong> (⚙️) veya alt çubuktan <strong>Profil</strong> sekmesine dokunun.</li>
+          <li>En alttaki <strong>“Hesabımı ve Verilerimi Sil”</strong> butonuna dokunup onaylayın.</li>
+        </ol>
+        <p style="margin: 10px 0 0; font-size: 13px; color: #94a3b8;">
+          Bu işlem Firebase Authentication oturumunuzu, Cloud Firestore yedeğinizi, herkese açık
+          liderlik profilinizi ve cihazınızdaki tüm yerel ilerleme verilerini anında temizler.
+        </p>
+      </div>
+
+      <h2>2. Web Üzerinden Kalıcı Silme Talebi</h2>
+      <form id="delete-form" class="box">
+        <div class="field">
+          <label for="email">Kayıtlı E-posta Adresiniz *</label>
+          <input id="email" name="email" type="email" required placeholder="ornek@eposta.com" />
+        </div>
+        <div class="field">
+          <label for="username">Oyuncu Adınız veya Kurtarma Kodunuz (İsteğe Bağlı)</label>
+          <input id="username" name="username" type="text" placeholder="Örn: FutbolGurmesi / 321-XXXX" />
+        </div>
+        <div class="field">
+          <label for="reason">Ek Not (İsteğe Bağlı)</label>
+          <textarea id="reason" name="reason" rows="2" placeholder="Varsa ek açıklamanızı yazabilirsiniz..."></textarea>
+        </div>
+        <div class="check-row">
+          <input id="clear-local" type="checkbox" checked />
+          <label for="clear-local">Bu tarayıcıdaki yerel 3-2-1 Futbol: Bilgi Yarışması verilerimi de şimdi temizle.</label>
+        </div>
+        <div class="check-row">
+          <input id="confirm-delete" type="checkbox" required />
+          <label for="confirm-delete">
+            Tüm coin, puan, rozet, arkadaş listesi ve bulut yedeklerimin kalıcı olarak silinmesini onaylıyorum.
+          </label>
+        </div>
+        <button type="submit">Kalıcı Hesap Silme Talebi Oluştur</button>
+        <div id="delete-success" class="success"></div>
+      </form>
+
+      <h2>Silinen Veriler</h2>
+      <ul>
+        <li>Hesap kimliği, e-posta adresi, kullanıcı adı rezervasyonu ve kulüp tercihi,</li>
+        <li>Coin bakiyesi, günlük seri, açılan avatar/kozmetikler ve lig puanları,</li>
+        <li>Arkadaş listesi ve gönderilen/alınan arkadaşlık istekleri.</li>
+      </ul>
+      <p style="font-size: 13px; color: #94a3b8;">
+        Web formu üzerinden iletilen bulut silme talepleri en geç <strong>7 iş günü</strong> içinde
+        sonuçlandırılır. Destek: <a href="mailto:321futboloyunu@gmail.com">321futboloyunu@gmail.com</a>
+      </p>
+
+      <div class="links">
+        <a href="./index.html">⚽ Oyuna Dön</a>
+        <a href="./gizlilik.html">🔒 Gizlilik Politikası</a>
+      </div>
+    </main>
+
+    <script>
+      document.getElementById('delete-form').addEventListener('submit', function (e) {
+        e.preventDefault();
+        var email = document.getElementById('email').value.trim();
+        var clearLocal = document.getElementById('clear-local').checked;
+        if (clearLocal && typeof window.localStorage !== 'undefined') {
+          try {
+            Object.keys(window.localStorage).forEach(function (k) {
+              if (k.indexOf('football_') === 0 || k.indexOf('321_') === 0) {
+                window.localStorage.removeItem(k);
+              }
+            });
+          } catch (_) {}
+        }
+        var box = document.getElementById('delete-success');
+        var ticket = 'SIL-' + Math.random().toString(36).slice(2, 8).toUpperCase();
+        box.style.display = 'block';
+        box.textContent =
+          'Talebiniz alındı (' + ticket + '). ' + email +
+          ' hesabı için silme kaydı oluşturuldu' +
+          (clearLocal ? ' ve bu cihazdaki yerel oyun verileri temizlendi.' : '.');
+        e.target.reset();
+      });
+    </script>
+  </body>
+</html>

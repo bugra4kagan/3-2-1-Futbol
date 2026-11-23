@@ -1,0 +1,235 @@
+{
+  "entities": {
+    "UserAccountBackup": {
+      "title": "UserAccountBackup",
+      "description": "Cloud backup of a verified user's football trivia profile, favorite club, unique username key, and progression state.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_-]{1,128}$",
+          "description": "Firebase Auth UID of the account owner."
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "description": "Player display name."
+        },
+        "usernameKey": {
+          "type": "string",
+          "pattern": "^[a-z0-9_]{3,32}$",
+          "description": "Normalized unique username key reserved in /usernames."
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "maxLength": 254,
+          "description": "Verified email address from Firebase Auth."
+        },
+        "avatar": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "description": "Equipped emoji or Star PP avatar identifier."
+        },
+        "favoriteClubId": {
+          "type": "string",
+          "maxLength": 64,
+          "description": "Selected favorite club ID."
+        },
+        "progressionJson": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 100000,
+          "description": "Serialized JSON snapshot of UserProgression (coins, points, unlocked store items, quests, friends)."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of the latest sync."
+        }
+      },
+      "required": [
+        "userId",
+        "displayName",
+        "email",
+        "avatar",
+        "progressionJson",
+        "updatedAt"
+      ]
+    },
+    "UserHandleReservation": {
+      "title": "UserHandleReservation",
+      "description": "Global unique username reservation record containing no PII.",
+      "type": "object",
+      "properties": {
+        "usernameKey": {
+          "type": "string",
+          "pattern": "^[a-z0-9_]{3,32}$",
+          "description": "Canonical lowercase normalized handle matching document ID."
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 18,
+          "description": "Exact formatted player name shown in-game."
+        },
+        "ownerUid": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_-]{1,128}$",
+          "description": "Firebase Auth UID that owns this handle."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of reservation."
+        }
+      },
+      "required": [
+        "usernameKey",
+        "displayName",
+        "ownerUid",
+        "updatedAt"
+      ]
+    },
+    "PublicPlayerProfile": {
+      "title": "PublicPlayerProfile",
+      "description": "Publicly inspectable non-PII football trivia profile, cosmetics, and match/career performance statistics (excludes email, recoveryCode, and wallet coins).",
+      "type": "object",
+      "properties": {
+        "usernameKey": {
+          "type": "string",
+          "pattern": "^[a-z0-9_]{3,32}$",
+          "description": "Normalized unique username key matching document ID."
+        },
+        "ownerUid": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_-]{1,128}$",
+          "description": "Firebase Auth UID of the profile owner."
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 32,
+          "description": "Public player display name."
+        },
+        "friendCode": {
+          "type": "string",
+          "maxLength": 12,
+          "description": "Public friend invite code."
+        },
+        "avatar": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "description": "Equipped avatar emoji or Star PP identifier."
+        },
+        "favoriteClubId": {
+          "type": "string",
+          "maxLength": 64,
+          "description": "Selected favorite club ID."
+        },
+        "equippedTitle": {
+          "type": "string",
+          "maxLength": 48,
+          "description": "Equipped player title."
+        },
+        "equippedCrest": {
+          "type": "string",
+          "maxLength": 64,
+          "description": "Equipped store crest identifier."
+        },
+        "equippedFrame": {
+          "type": "string",
+          "maxLength": 64,
+          "description": "Equipped avatar frame identifier."
+        },
+        "equippedBadge": {
+          "type": "string",
+          "maxLength": 16,
+          "description": "Equipped emoji badge."
+        },
+        "hasCrown": {
+          "type": "boolean",
+          "description": "Whether the player unlocked the Legend crown."
+        },
+        "weeklyPoints": {
+          "type": "integer",
+          "description": "Current weekly league points."
+        },
+        "totalPoints": {
+          "type": "integer",
+          "description": "All-time league points."
+        },
+        "statsJson": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 16384,
+          "description": "JSON snapshot of public match and minigame performance stats."
+        },
+        "lastActivityId": {
+          "type": "string",
+          "maxLength": 64,
+          "description": "Unique identifier of the player's latest public activity event."
+        },
+        "lastActivityType": {
+          "type": "string",
+          "enum": ["tournament_started", "high_score"],
+          "maxLength": 32,
+          "description": "Category of the latest friend-visible activity event."
+        },
+        "lastActivityTitle": {
+          "type": "string",
+          "maxLength": 120,
+          "description": "Short summary label for the latest activity event."
+        },
+        "lastActivityCode": {
+          "type": "string",
+          "maxLength": 16,
+          "description": "Optional tournament join code associated with the activity event."
+        },
+        "lastActivityScore": {
+          "type": "integer",
+          "description": "Optional score value achieved in the latest high score activity."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of the latest public profile update."
+        }
+      },
+      "required": [
+        "usernameKey",
+        "ownerUid",
+        "displayName",
+        "avatar",
+        "hasCrown",
+        "weeklyPoints",
+        "totalPoints",
+        "statsJson",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": {
+        "$ref": "#/entities/UserAccountBackup"
+      },
+      "description": "Private cloud save document owned strictly by the authenticated and email-verified user."
+    },
+    "/usernames/{usernameKey}": {
+      "schema": {
+        "$ref": "#/entities/UserHandleReservation"
+      },
+      "description": "Publicly readable (by exact key lookup only, list denied) global username uniqueness lock."
+    },
+    "/publicProfiles/{usernameKey}": {
+      "schema": {
+        "$ref": "#/entities/PublicPlayerProfile"
+      },
+      "description": "Publicly readable (by exact key lookup only, list denied) non-PII player profile and performance stats document."
+    }
+  }
+}

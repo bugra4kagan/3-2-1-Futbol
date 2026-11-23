@@ -1,0 +1,6 @@
+{
+  "name": "3-2-1 Football Challenge",
+  "description": "Mobil odaklı, eğlenceli ve rekabetçi futbol bilgi yarışması. İki takımın ortak futbolcusunu 3-2-1 geri sayımından sonra ilk bulan kazanır!",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
