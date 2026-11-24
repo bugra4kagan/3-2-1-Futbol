@@ -8,7 +8,7 @@
         android:allowBackup="false"
         android:hardwareAccelerated="true"
         android:icon="@mipmap/ic_launcher"
-        android:label="3-2-1 Futbol: Bilgi Yarışması"
+        android:label="3-2-1 Futbol: Online Düello"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/AppTheme"
@@ -22,7 +22,7 @@
         <activity
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode|navigation|density"
             android:name=".MainActivity"
-            android:label="3-2-1 Futbol: Bilgi Yarışması"
+            android:label="3-2-1 Futbol: Online Düello"
             android:screenOrientation="portrait"
             android:theme="@style/AppTheme.NoActionBarLaunch"
             android:windowSoftInputMode="adjustResize"

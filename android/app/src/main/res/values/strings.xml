@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">3-2-1 Futbol: Bilgi Yarışması</string>
-    <string name="title_activity_main">3-2-1 Futbol: Bilgi Yarışması</string>
+    <string name="app_name">3-2-1 Futbol: Online Düello</string>
+    <string name="title_activity_main">3-2-1 Futbol: Online Düello</string>
     <string name="package_name">com.futbol321.challenge</string>
     <string name="custom_url_scheme">com.futbol321.challenge</string>
 </resources>

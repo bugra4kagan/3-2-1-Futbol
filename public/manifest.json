@@ -1,6 +1,6 @@
 {
-  "name": "3-2-1 Futbol: Bilgi Yarışması",
-  "short_name": "3-2-1 Futbol: Bilgi Yarışması",
+  "name": "3-2-1 Futbol: Online Düello",
+  "short_name": "3-2-1 Futbol: Online Düello",
   "description": "Mobil ve rekabetçi futbol bilgi yarışması. Ortak futbolcuyu geri sayımdan sonra ilk bulan kazanır!",
   "start_url": "./",
   "scope": "./",

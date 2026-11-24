@@ -1,6 +1,6 @@
 {
 	"appId": "com.futbol321.challenge",
-	"appName": "3-2-1 Futbol: Bilgi Yarışması",
+	"appName": "3-2-1 Futbol: Online Düello",
 	"webDir": "dist",
 	"bundledWebRuntime": false,
 	"plugins": {
