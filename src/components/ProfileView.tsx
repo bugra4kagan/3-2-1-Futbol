@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import confetti from 'canvas-confetti';
 import {
-  Coins,
   Flame,
   Gift,
   CheckCircle2,
@@ -47,6 +46,10 @@ import {
   STAR_PP_AVATARS,
   isPhotoAvatar,
 } from '../game/avatarCatalog';
+import { isAnimeAvatar } from '../game/animeAvatarCatalog';
+import { useLanguage } from '../game/LanguageContext';
+import { AnimeAvatarBuilder } from './AnimeAvatarBuilder';
+import { CoinIcon } from './CoinIcon';
 import {
   CAREER_RANK_TIERS,
   CareerStatsData,
@@ -121,6 +124,10 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   onSelectDefaultPitchTheme,
   onDeleteAccount,
 }) => {
+  const { t } = useLanguage();
+  const [avatarStudioTab, setAvatarStudioTab] = useState<'anime' | 'stars'>(
+    isAnimeAvatar(playerProfile.avatar) ? 'anime' : 'stars'
+  );
   const [shopFeedback, setShopFeedback] = useState<string | null>(null);
   const [confirmDeleteAccount, setConfirmDeleteAccount] = useState(false);
   const [isDeletingAccount, setIsDeletingAccount] = useState(false);
@@ -158,8 +165,10 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     sounds.playVictory();
     try {
       confetti({
-        particleCount: 55,
-        spread: 60,
+        particleCount: 28,
+        spread: 58,
+        ticks: 110,
+        disableForReducedMotion: true,
         origin: { y: 0.7 },
         colors: ['#10b981', '#fbbf24'],
       });
@@ -393,7 +402,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               data-testid="profile-coins"
               className="mt-0.5 font-mono font-black text-base text-amber-400 flex items-center justify-center gap-1"
             >
-              <Coins className="w-4 h-4" />
+              <CoinIcon size="sm" />
               {formatPoints(progression.coins)}
             </span>
           </div>
@@ -421,42 +430,147 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           </div>
         </div>
 
-        {/* Quick Unlocked Avatar / PP Switcher */}
+        {/* Dual Profile Picture Studio: Anime Character Builder vs Ready-Made Star PPs */}
         {onSelectAvatar && (
-          <div className="mt-3 pt-3 border-t border-slate-800/80">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
-                Sahip Olduğun Avatar &amp; PP&apos;ler
-              </span>
-              <span className="text-[10px] text-emerald-400 font-bold">
-                {STAR_PP_AVATARS.filter((p) =>
-                  progression.unlockedGiftIds.includes(p.giftId)
-                ).length}
-                /{STAR_PP_AVATARS.length} Yıldız PP Açık
-              </span>
+          <div data-testid="profile-avatar-studio" className="mt-3 pt-3 border-t border-slate-800/80 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="grid grid-cols-2 gap-1.5 w-full p-1 rounded-xl bg-slate-950 border border-slate-800">
+                <button
+                  type="button"
+                  data-testid="profile-avatar-tab-anime"
+                  onClick={() => setAvatarStudioTab('anime')}
+                  className={`py-2 px-2 rounded-lg text-[11px] font-black transition cursor-pointer ${
+                    avatarStudioTab === 'anime'
+                      ? 'bg-emerald-500 text-slate-950'
+                      : 'text-slate-300 hover:text-white'
+                  }`}
+                >
+                  {t('animeTabBuild')}
+                </button>
+                <button
+                  type="button"
+                  data-testid="profile-avatar-tab-stars"
+                  onClick={() => setAvatarStudioTab('stars')}
+                  className={`py-2 px-2 rounded-lg text-[11px] font-black transition cursor-pointer ${
+                    avatarStudioTab === 'stars'
+                      ? 'bg-amber-400 text-slate-950'
+                      : 'text-slate-300 hover:text-white'
+                  }`}
+                >
+                  {t('animeTabStars')} ({STAR_PP_AVATARS.filter((p) => progression.unlockedGiftIds.includes(p.giftId)).length}/{STAR_PP_AVATARS.length})
+                </button>
+              </div>
             </div>
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
-              {unlockedAvatarValues.map((av) => {
-                const isSelected = playerProfile.avatar === av;
-                return (
-                  <button
-                    key={av}
-                    type="button"
-                    data-testid={`profile-quick-avatar-${av}`}
-                    onClick={() => {
-                      onSelectAvatar(av);
-                    }}
-                    className={`p-1 rounded-xl border transition shrink-0 cursor-pointer ${
-                      isSelected
-                        ? 'bg-emerald-500/20 border-emerald-400 ring-1 ring-emerald-400/50'
-                        : 'bg-slate-950/80 border-slate-800 hover:border-slate-600'
-                    }`}
-                  >
-                    <PlayerAvatar avatar={av} name={playerProfile.name} size="sm" />
-                  </button>
-                );
-              })}
-            </div>
+
+            {avatarStudioTab === 'anime' ? (
+              <AnimeAvatarBuilder
+                currentAvatar={playerProfile.avatar}
+                userCoins={progression.coins}
+                unlockedGiftIds={progression.unlockedGiftIds}
+                onEquipAvatar={(av) => onSelectAvatar(av)}
+                onPurchaseGear={(giftId) => onPurchaseGift(giftId)}
+              />
+            ) : (
+              <div className="space-y-3">
+                {/* Unlocked Starter & Owned Star PPs */}
+                <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
+                  {unlockedAvatarValues.map((av) => {
+                    const isSelected = playerProfile.avatar === av;
+                    return (
+                      <button
+                        key={av}
+                        type="button"
+                        data-testid={`profile-quick-avatar-${av}`}
+                        onClick={() => {
+                          onSelectAvatar(av);
+                        }}
+                        className={`p-1 rounded-xl border transition shrink-0 cursor-pointer ${
+                          isSelected
+                            ? 'bg-emerald-500/20 border-emerald-400 ring-1 ring-emerald-400/50'
+                            : 'bg-slate-950 border-slate-800 hover:border-slate-600'
+                        }`}
+                      >
+                        <PlayerAvatar avatar={av} name={playerProfile.name} size="sm" />
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Rebalanced Star Player PPs (7,500 - 10,000 Coins) */}
+                <div className="grid grid-cols-4 gap-1.5">
+                  {STAR_PP_AVATARS.map((pp) => {
+                    const owned = progression.unlockedGiftIds.includes(pp.giftId);
+                    const equipped = playerProfile.avatar === pp.avatarValue;
+                    const giftDef = STORE_ITEMS.find((i) => i.id === pp.giftId);
+                    return (
+                      <button
+                        key={pp.giftId}
+                        type="button"
+                        data-testid={`profile-star-pp-${pp.playerId}`}
+                        onClick={() => {
+                          if (owned) {
+                            sounds.playCorrect();
+                            onSelectAvatar(pp.avatarValue);
+                          } else if (giftDef) {
+                            if (progression.coins >= giftDef.costCoins) {
+                              setPendingPurchaseGift(giftDef);
+                            } else {
+                              sounds.playWrong();
+                              setInsufficientFundsGift(giftDef);
+                            }
+                          }
+                        }}
+                        className={`flex flex-col items-center p-1.5 rounded-xl border transition cursor-pointer ${
+                          equipped
+                            ? 'bg-emerald-500/20 border-emerald-400 ring-1 ring-emerald-400/50'
+                            : owned
+                            ? 'bg-slate-950 border-emerald-500/40 hover:border-emerald-400'
+                            : 'bg-slate-950 border-slate-800 hover:border-amber-400/60'
+                        }`}
+                      >
+                        <div className="relative">
+                          <PlayerAvatar
+                            avatar={pp.avatarValue}
+                            name={pp.name}
+                            size="sm"
+                            variant="circle"
+                            className={!owned ? 'brightness-75' : ''}
+                          />
+                          {!owned && (
+                            <span className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-slate-950 border border-amber-400 flex items-center justify-center">
+                              <Lock className="w-2.5 h-2.5 text-amber-400" />
+                            </span>
+                          )}
+                        </div>
+                        <span className="mt-1 text-[9px] font-black text-white truncate w-full text-center">
+                          {pp.name.replace(' PP', '').split(' ').slice(-1)[0]}
+                        </span>
+                        <span
+                          className={`mt-0.5 text-[9px] font-black px-1 py-0.5 rounded-md inline-flex items-center gap-0.5 ${
+                            equipped
+                              ? 'bg-emerald-400 text-slate-950'
+                              : owned
+                              ? 'bg-emerald-950 text-emerald-300'
+                              : 'bg-amber-400 text-slate-950'
+                          }`}
+                        >
+                          {equipped ? (
+                            'Seçili'
+                          ) : owned ? (
+                            'Seç'
+                          ) : (
+                            <>
+                              <CoinIcon size="xs" />
+                              <span>{formatPoints(pp.costCoins)}</span>
+                            </>
+                          )}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -684,8 +798,10 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                                 sounds.playVictory();
                                 try {
                                   confetti({
-                                    particleCount: 55,
-                                    spread: 60,
+                                    particleCount: 28,
+                                    spread: 58,
+                                    ticks: 110,
+                                    disableForReducedMotion: true,
                                     origin: { y: 0.7 },
                                     colors: ['#10b981', '#fbbf24'],
                                   });
@@ -696,12 +812,12 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                               }}
                               className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-gradient-to-r from-amber-400 to-yellow-400 hover:from-amber-300 hover:to-yellow-300 text-slate-950 text-[11px] font-black shadow-md cursor-pointer transition active:scale-95"
                             >
-                              <Coins className="w-3 h-3" />
+                              <CoinIcon size="xs" />
                               <span>+{ach.rewardCoins}</span>
                             </button>
                           ) : (
                             <span className="inline-flex items-center gap-1 px-2 py-1 rounded-xl bg-slate-900 border border-slate-700 text-amber-300/80 text-[10px] font-black font-mono">
-                              <Coins className="w-3 h-3" />
+                              <CoinIcon size="xs" />
                               +{ach.rewardCoins}
                             </span>
                           )}
@@ -1116,8 +1232,9 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               <span>Tüm Mağaza</span>
             </button>
           ) : (
-            <span className="text-xs font-black text-amber-400 font-mono">
-              🪙 {formatPoints(progression.coins)}
+            <span className="text-xs font-black text-amber-400 font-mono inline-flex items-center gap-1">
+              <CoinIcon size="xs" />
+              <span>{formatPoints(progression.coins)}</span>
             </span>
           )}
         </div>

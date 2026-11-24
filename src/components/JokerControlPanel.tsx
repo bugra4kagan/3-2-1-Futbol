@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { AlertCircle, Coins, Compass, Sparkles, Type, X } from 'lucide-react';
+import { AlertCircle, Compass, Sparkles, Type, X } from 'lucide-react';
+import { CoinIcon } from './CoinIcon';
 import {
   InitialsHint,
   JOKER_COSTS,
@@ -209,7 +210,7 @@ export const JokerControlPanel: React.FC<JokerControlPanelProps> = ({
         createPortal(
           <div
             data-testid="joker-neon-card"
-            className="fixed inset-0 z-[85] flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-in fade-in duration-150"
+            className="fixed inset-0 z-[85] flex items-center justify-center p-4 bg-slate-950/92 animate-in fade-in duration-150"
             onClick={() => setModalOpen(false)}
           >
             <div
@@ -266,7 +267,7 @@ export const JokerControlPanel: React.FC<JokerControlPanelProps> = ({
               </div>
 
               <div className="mt-4 flex items-center justify-center gap-1.5 text-[11px] font-bold text-amber-300">
-                <Coins className="w-3.5 h-3.5 text-amber-400" />
+                <CoinIcon size="xs" />
                 <span>Kalan Bakiye: {userCoins.toLocaleString('tr-TR')} Coin</span>
               </div>
 

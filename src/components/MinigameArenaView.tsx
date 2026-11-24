@@ -367,7 +367,7 @@ export const MinigameArenaView: React.FC<MinigameArenaViewProps> = ({
   const autocompletePlayers = useMemo(() => {
     if (disabled) return [];
     const exclude = isSilhouette ? guessedPlayerIds : [];
-    return searchPlayersForAutocomplete(answerInput, exclude, 8);
+    return searchPlayersForAutocomplete(answerInput, exclude, 6);
   }, [isSilhouette, disabled, answerInput, guessedPlayerIds]);
 
   const submitSilhouettePlayer = (picked: Player | null, fallbackText: string) => {
@@ -621,8 +621,8 @@ export const MinigameArenaView: React.FC<MinigameArenaViewProps> = ({
   return (
     <div
       data-testid={`minigame-arena-${round.minigameType}`}
-      className={`w-full flex flex-col items-center flex-1 py-2 sm:py-3 px-2.5 sm:px-4 ${
-        isSilhouette ? 'justify-start gap-1 pb-8' : 'justify-between'
+      className={`w-full flex flex-col items-center flex-1 min-h-0 overflow-y-auto overscroll-contain py-1.5 sm:py-3 px-2.5 sm:px-4 ${
+        isSilhouette ? 'justify-start gap-1 pb-6' : 'justify-between'
       }`}
     >
       {/* 1. FUTBOLCUYU TAHMİN ET (8-ATTEMPT BLURRED PORTRAIT & CLUES) */}
@@ -830,7 +830,7 @@ export const MinigameArenaView: React.FC<MinigameArenaViewProps> = ({
 
           <div
             data-testid="career-vertical-timeline"
-            className="w-full p-3 sm:p-4 rounded-3xl bg-slate-900/92 backdrop-blur-md border border-slate-700/80 shadow-2xl max-h-[48dvh] sm:max-h-[54dvh] overflow-y-auto"
+            className="w-full p-3 sm:p-4 rounded-3xl bg-slate-900/96 border border-slate-700/80 shadow-2xl max-h-[42dvh] sm:max-h-[52dvh] overflow-y-auto"
           >
             <div className="flex flex-col items-stretch gap-1.5">
               {round.career.steps.map((step, idx) => {
@@ -892,7 +892,7 @@ export const MinigameArenaView: React.FC<MinigameArenaViewProps> = ({
 
           <div className="w-full flex items-stretch justify-center gap-2 sm:gap-6">
             {/* Country Card */}
-            <div className="flex-1 min-w-0 flex flex-col items-center justify-center text-center p-3 sm:p-5 rounded-2xl bg-slate-900/92 backdrop-blur-md border border-slate-700/80 shadow-xl">
+            <div className="flex-1 min-w-0 flex flex-col items-center justify-center text-center p-3 sm:p-5 rounded-2xl bg-slate-900/96 border border-slate-700/80 shadow-xl">
               <div className="w-20 h-20 sm:w-28 sm:h-28 rounded-2xl bg-slate-950 border border-slate-700/80 flex items-center justify-center shadow-inner p-2">
                 <CountryFlag
                   country={round.countryClub.country}
@@ -920,7 +920,7 @@ export const MinigameArenaView: React.FC<MinigameArenaViewProps> = ({
 
             {/* Club Card */}
             {CLUBS[round.countryClub.clubId] && (
-              <div className="flex-1 min-w-0 flex flex-col items-center justify-center text-center p-3 sm:p-5 rounded-2xl bg-slate-900/92 backdrop-blur-md border border-slate-700/80 shadow-xl">
+              <div className="flex-1 min-w-0 flex flex-col items-center justify-center text-center p-3 sm:p-5 rounded-2xl bg-slate-900/96 border border-slate-700/80 shadow-xl">
                 <ClubBadge club={CLUBS[round.countryClub.clubId]} size="lg" />
                 <h3 className="mt-2.5 w-full text-center font-black text-xs sm:text-base text-white line-clamp-2 leading-tight break-words">
                   {CLUBS[round.countryClub.clubId].name}

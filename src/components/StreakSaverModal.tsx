@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Coins, Film, Flame, ShieldAlert, X } from 'lucide-react';
+import { Film, Flame, ShieldAlert, X } from 'lucide-react';
+import { CoinIcon } from './CoinIcon';
 import { STREAK_SAVER_COIN_COST } from '../game/v3DailyQuestsEngine';
 import { showRewardedAd } from '../services/adService';
 
@@ -93,7 +94,7 @@ export const StreakSaverModal: React.FC<StreakSaverModalProps> = ({
             onClick={onSaveWithCoins}
             className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-amber-400 to-yellow-400 hover:from-amber-300 hover:to-yellow-300 disabled:opacity-45 disabled:cursor-not-allowed text-slate-950 font-black text-xs sm:text-sm flex items-center justify-center gap-2 shadow-md cursor-pointer transition active:scale-95"
           >
-            <Coins className="w-4 h-4 shrink-0" />
+            <CoinIcon size="sm" />
             <span>{STREAK_SAVER_COIN_COST} Coin ile Serini Koru</span>
           </button>
 

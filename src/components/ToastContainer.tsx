@@ -38,7 +38,7 @@ const ToastCard: React.FC<ToastCardProps> = ({ toast, onDismiss, onAction }) => 
       data-toast-id={toast.id}
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
-      className={`pointer-events-auto relative overflow-hidden rounded-2xl border bg-slate-900/95 backdrop-blur-md p-3.5 shadow-2xl transition-all animate-screen-slide ${accentBorder}`}
+      className={`pointer-events-auto relative overflow-hidden rounded-2xl border bg-slate-900/96 p-3.5 shadow-2xl transition-all animate-screen-slide ${accentBorder}`}
     >
       <div className="flex items-start gap-3">
         <div className="relative shrink-0 pt-0.5">

@@ -9,7 +9,7 @@ const MiniFootballSvg: React.FC<{ className?: string }> = ({ className = '' }) =
   <svg
     viewBox="0 0 64 64"
     aria-hidden="true"
-    className={`inline-block shrink-0 drop-shadow-[0_0_10px_rgba(34,211,238,0.65)] ${className}`}
+    className={`inline-block shrink-0 ${className}`}
   >
     <defs>
       <radialGradient id="brandBallBase" cx="35%" cy="30%" r="70%">
@@ -72,11 +72,11 @@ export const BrandTitle: React.FC<BrandTitleProps> = ({
       aria-label="3-2-1 FUTBOL"
       className={`inline-flex items-center justify-center font-black uppercase select-none leading-none whitespace-nowrap ${textSizeClass} ${gapClass} ${className}`}
     >
-      <span className="brand-gradient-text drop-shadow-[0_0_16px_rgba(168,85,247,0.45)]">
+      <span className="brand-gradient-text">
         3-2-1
       </span>
       <span className="inline-flex items-center">
-        <span className="brand-gradient-text drop-shadow-[0_0_16px_rgba(236,72,153,0.45)]">
+        <span className="brand-gradient-text">
           FUTB
         </span>
         <span className="inline-flex items-center mx-[1px]">
@@ -84,7 +84,7 @@ export const BrandTitle: React.FC<BrandTitleProps> = ({
             <MiniFootballSvg className={ballSizeClass} />
           </span>
         </span>
-        <span className="brand-gradient-text drop-shadow-[0_0_16px_rgba(34,211,238,0.45)]">
+        <span className="brand-gradient-text">
           L
         </span>
       </span>

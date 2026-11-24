@@ -4,6 +4,8 @@ import { PLAYERS } from '../game/database';
 import { getFrameClasses } from '../game/storeCatalog';
 import { Player, PlayerAppearance } from '../game/types';
 import { DEFAULT_STARTER_AVATAR } from '../game/avatarCatalog';
+import { parseAnimeAvatar } from '../game/animeAvatarCatalog';
+import { AnimeFootballerSvg } from './AnimeFootballerSvg';
 import { CountryFlag } from './CountryFlag';
 
 export interface PlayerAvatarProps {
@@ -80,7 +82,10 @@ export const PlayerAvatar: React.FC<PlayerAvatarProps> = ({
 
   const isCardMode = size === 'card' || variant === 'card';
   const shouldShowHud = showHud ?? isCardMode;
-  const isCustomEmojiAvatar = Boolean(!resolvedPlayer && !appearance && avatar && !avatar.startsWith('pp:'));
+  const animeAvatarConfig = !resolvedPlayer && !appearance ? parseAnimeAvatar(avatar) : null;
+  const isCustomEmojiAvatar = Boolean(
+    !resolvedPlayer && !appearance && !animeAvatarConfig && avatar && !avatar.startsWith('pp:')
+  );
 
   const boxSizeMap = {
     xs: 'w-6 h-6',
@@ -112,6 +117,20 @@ export const PlayerAvatar: React.FC<PlayerAvatarProps> = ({
       : 'rounded-2xl';
 
   const frameClasses = getFrameClasses(frame);
+
+  // Özel Anime Futbolcu Avatarı ("Karakter Oluştur & Giydir" sistemi)
+  if (animeAvatarConfig) {
+    return (
+      <div
+        data-testid={isCardMode ? 'player-avatar-card' : 'player-avatar'}
+        role="img"
+        aria-label={`${displayName} Anime Futbolcu Avatarı`}
+        className={`relative overflow-hidden shrink-0 select-none bg-slate-950 border border-cyan-400/45 shadow-lg ${boxSizeMap[size]} ${radiusClass} ${frameClasses} ${className}`}
+      >
+        <AnimeFootballerSvg config={animeAvatarConfig} className="w-full h-full block" />
+      </div>
+    );
+  }
 
   // Gerçek futbolcu olmayan ikon/emoji avatarlarında jenerik insan yüzü çizilmez;
   // doğrudan şık neon futbol rozeti içinde futbol ikonu (⚽, 🏆, 👟, 👕 vb.) gösterilir.
@@ -873,7 +892,7 @@ export const PlayerAvatar: React.FC<PlayerAvatarProps> = ({
               </div>
             ) : (
               (resolvedNationality || resolvedFlag) && (
-                <div className="p-1 rounded-xl bg-slate-950/80 backdrop-blur-md border border-white/20 shadow-lg">
+                <div className="p-1 rounded-xl bg-slate-950/92 border border-white/20 shadow-lg">
                   <CountryFlag
                     country={resolvedNationality}
                     flag={resolvedFlag}
@@ -893,7 +912,7 @@ export const PlayerAvatar: React.FC<PlayerAvatarProps> = ({
               </div>
             ) : (
               (resolvedPosition || resolvedNumber) && (
-                <div className="px-2 py-1 rounded-xl bg-slate-950/80 backdrop-blur-md border border-cyan-400/45 flex items-center gap-1 shadow-lg">
+                <div className="px-2 py-1 rounded-xl bg-slate-950/92 border border-cyan-400/45 flex items-center gap-1 shadow-lg">
                   {resolvedPosition && (
                     <span className="text-[10px] font-black text-cyan-300 leading-none">
                       {resolvedPosition}
@@ -909,8 +928,8 @@ export const PlayerAvatar: React.FC<PlayerAvatarProps> = ({
             )}
           </div>
 
-          {/* Bottom Glassmorphism Name & Number Bar */}
-          <div className="absolute bottom-0 inset-x-0 z-20 px-2.5 py-2 bg-slate-950/75 backdrop-blur-md border-t border-cyan-400/35 flex items-center justify-between gap-1.5">
+          {/* Bottom Dark Glass-Style Name & Number Bar (Zero blur for 60 FPS) */}
+          <div className="absolute bottom-0 inset-x-0 z-20 px-2.5 py-2 bg-slate-950/92 border-t border-cyan-400/35 flex items-center justify-between gap-1.5">
             <span className="text-[11px] sm:text-xs font-black uppercase tracking-wide text-white truncate">
               {isHiddenName ? '???' : displayName}
             </span>

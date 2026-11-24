@@ -135,7 +135,7 @@ export const DailyChallengeModal: React.FC<DailyChallengeModalProps> = ({
 
   const suggestions = useMemo(() => {
     if (!isPlayingActive || inputVal.trim().length < 2) return [];
-    return searchPlayersForAutocomplete(inputVal, [], 7);
+    return searchPlayersForAutocomplete(inputVal, [], 6);
   }, [isPlayingActive, inputVal]);
 
   if (!isOpen || typeof document === 'undefined') return null;
@@ -366,7 +366,7 @@ export const DailyChallengeModal: React.FC<DailyChallengeModalProps> = ({
   return createPortal(
     <div
       data-testid="daily-challenge-modal"
-      className="fixed inset-0 z-[80] flex items-center justify-center p-3 sm:p-4 bg-black/85 backdrop-blur-sm animate-in fade-in duration-150"
+      className="fixed inset-0 z-[80] flex items-center justify-center p-3 sm:p-4 bg-slate-950/94 animate-in fade-in duration-150"
     >
       <div className="relative w-full max-w-md rounded-3xl bg-gradient-to-b from-slate-900 to-slate-950 border border-amber-400/45 p-4 sm:p-5 shadow-2xl max-h-[92dvh] overflow-y-auto">
         <button

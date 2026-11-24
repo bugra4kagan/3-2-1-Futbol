@@ -169,6 +169,7 @@ import { StreakSaverModal } from './components/StreakSaverModal';
 import { LastChanceModal } from './components/LastChanceModal';
 import { SpecialEventModal } from './components/SpecialEventModal';
 import { OnboardingModal, ONBOARDING_STORAGE_KEY } from './components/OnboardingModal';
+import { CoinIcon } from './components/CoinIcon';
 import { initializeAdMob } from './services/admobService';
 import { logTelemetryEvent } from './services/telemetryService';
 import {
@@ -481,6 +482,38 @@ export default function App() {
     roundStartedAtRef.current = now;
   }, []);
   const [lastMatchEnergyDeltaLabel, setLastMatchEnergyDeltaLabel] = useState<string | null>(null);
+  const [matchViewportHeight, setMatchViewportHeight] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (screen !== 'playing' || typeof window === 'undefined') {
+      setMatchViewportHeight(null);
+      return;
+    }
+
+    const vv = window.visualViewport;
+    const syncViewport = () => {
+      const nextHeight = vv ? Math.round(vv.height) : window.innerHeight;
+      setMatchViewportHeight(nextHeight > 0 ? nextHeight : null);
+      if (window.scrollY !== 0 || document.documentElement.scrollTop !== 0) {
+        window.scrollTo(0, 0);
+        document.documentElement.scrollTop = 0;
+      }
+      if (vv && vv.offsetTop !== 0) {
+        window.scrollTo(0, 0);
+      }
+    };
+
+    syncViewport();
+    vv?.addEventListener('resize', syncViewport);
+    vv?.addEventListener('scroll', syncViewport);
+    window.addEventListener('resize', syncViewport);
+
+    return () => {
+      vv?.removeEventListener('resize', syncViewport);
+      vv?.removeEventListener('scroll', syncViewport);
+      window.removeEventListener('resize', syncViewport);
+    };
+  }, [screen]);
   const [matchDoubleAdLoading, setMatchDoubleAdLoading] = useState<boolean>(false);
   const matchDoubleAdInFlightRef = useRef<boolean>(false);
   const [interstitialAdState, setInterstitialAdState] = useState<{
@@ -4137,6 +4170,7 @@ export default function App() {
                 onOpenDailyRewards={() => setShowDailyModal(true)}
                 onOpenQuests={() => handleSelectBottomTab('profile')}
                 onOpenStore={handleOpenStore}
+                onOpenEnergy={() => setShowEnergyModal(true)}
                 onOpenTournament={() => setShowTournamentModal(true)}
                 onOpenDailyChallenge={() => {
                   if (!canPlayDailyChallengeNow(progressionRef.current)) return;
@@ -4165,8 +4199,8 @@ export default function App() {
               <div className="relative min-h-[100dvh] w-full flex flex-col bg-slate-950 text-white overflow-x-clip">
                 <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-emerald-900/20 via-slate-950 to-slate-950 pointer-events-none" />
 
-                {/* Shared Hub Top Header for Secondary Tabs (Mobile Safe-Area & 44px Hit Targets) */}
-                <header className="sticky top-0 z-40 w-full bg-slate-950/95 border-b border-slate-800/70 pt-[max(0.75rem,calc(env(safe-area-inset-top)+0.45rem))] pb-2">
+                {/* Shared Hub Top Header for Secondary Tabs (Mobile Safe-Area, Crisp High-Contrast, Zero Blur) */}
+                <header className="sticky top-0 z-40 isolate w-full bg-slate-950 border-b border-slate-800 pt-[max(0.75rem,calc(env(safe-area-inset-top)+0.45rem))] pb-2">
                   <div className="w-full max-w-xl mx-auto px-3 sm:px-4 flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2 min-w-0">
                       {!headerLogoError ? (
@@ -4174,10 +4208,10 @@ export default function App() {
                           src={`${import.meta.env.BASE_URL}logo.png`}
                           alt="3-2-1 Futbol Logosu"
                           onError={() => setHeaderLogoError(true)}
-                          className="w-8 h-8 rounded-xl object-cover border border-amber-400/40 shadow-md shrink-0"
+                          className="w-8 h-8 rounded-xl object-cover border border-amber-400/60 shrink-0"
                         />
                       ) : (
-                        <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-emerald-500 to-amber-400 text-slate-950 font-black text-[11px] flex items-center justify-center border border-amber-300/60 shadow-md shrink-0">
+                        <div className="w-8 h-8 rounded-xl bg-emerald-600 text-white font-black text-[11px] flex items-center justify-center border border-amber-300/60 shrink-0">
                           321
                         </div>
                       )}
@@ -4194,7 +4228,7 @@ export default function App() {
                         type="button"
                         data-testid="header-store-btn"
                         onClick={() => handleOpenStore('featured')}
-                        className="min-w-[38px] min-h-[38px] sm:min-w-[42px] sm:min-h-[42px] px-2 sm:px-2.5 py-1.5 rounded-xl bg-amber-400/20 hover:bg-amber-400/30 border border-amber-400/50 text-amber-300 text-xs font-black flex items-center justify-center gap-1 cursor-pointer touch-manipulation"
+                        className="min-w-[36px] min-h-[38px] sm:min-w-[42px] sm:min-h-[42px] px-2 sm:px-2.5 py-1.5 rounded-xl bg-amber-400/25 hover:bg-amber-400/35 border border-amber-400/60 text-amber-300 text-xs font-black flex items-center justify-center gap-1 cursor-pointer touch-manipulation shrink-0"
                         aria-label={t('store')}
                         title={t('store')}
                       >
@@ -4205,10 +4239,10 @@ export default function App() {
                       <button
                         type="button"
                         onClick={() => setShowDailyModal(true)}
-                        className="flex items-center gap-1 min-h-[38px] sm:min-h-[42px] px-2 sm:px-2.5 py-1.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-amber-500/35 text-[11px] sm:text-xs font-black text-amber-400 font-mono cursor-pointer touch-manipulation"
+                        className="flex items-center gap-1 min-h-[38px] sm:min-h-[42px] px-2 sm:px-2.5 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-amber-500/45 text-[11px] sm:text-xs font-black text-amber-400 font-mono cursor-pointer touch-manipulation whitespace-nowrap shrink-0"
                         title="Coin Bakiyesi & Günlük Seri"
                       >
-                        <Coins className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                        <CoinIcon size="xs" />
                         <span>{formatPoints(progression.coins)}</span>
                         <span className="text-slate-600 hidden sm:inline">•</span>
                         <Flame className="w-3.5 h-3.5 text-orange-400 shrink-0 hidden sm:inline" />
@@ -4219,18 +4253,18 @@ export default function App() {
                         type="button"
                         data-testid="tab-header-energy-indicator"
                         onClick={() => setShowEnergyModal(true)}
-                        title="Günlük Enerji"
-                        aria-label="Günlük Enerji"
-                        className={`flex items-center gap-1 min-h-[38px] sm:min-h-[42px] px-2 py-1.5 rounded-xl border text-[11px] sm:text-xs font-black font-mono cursor-pointer touch-manipulation ${
+                        title={t('energyLabel')}
+                        aria-label={t('energyLabel')}
+                        className={`flex items-center gap-1 min-h-[38px] sm:min-h-[42px] px-2 py-1.5 rounded-xl border text-[11px] sm:text-xs font-black font-mono whitespace-nowrap shrink-0 cursor-pointer touch-manipulation ${
                           hasUnlimitedEnergy(progression)
-                            ? 'bg-amber-500/15 border-amber-400/50 text-amber-200'
+                            ? 'bg-amber-500/20 border-amber-400/60 text-amber-300'
                             : getEffectiveDailyEnergy(progression) <= 0
-                            ? 'bg-rose-950/90 border-rose-400/70 text-rose-200 animate-pulse'
-                            : 'bg-cyan-950/80 hover:bg-cyan-900/80 border-cyan-400/50 text-cyan-200'
+                            ? 'bg-rose-950 border-rose-400 text-rose-200 animate-pulse'
+                            : 'bg-slate-900 hover:bg-slate-800 border-cyan-400/60 text-cyan-300'
                         }`}
                       >
                         <Zap className="w-3.5 h-3.5 shrink-0" />
-                        <span>
+                        <span className="whitespace-nowrap">
                           {hasUnlimitedEnergy(progression)
                             ? '∞'
                             : `${getEffectiveDailyEnergy(progression)}/${MAX_DAILY_ENERGY}`}
@@ -4372,11 +4406,17 @@ export default function App() {
       {screen === 'playing' && currentRound && (
         <div
           key={`screen-playing-${mode}-${currentRound.minigameType}`}
-          className="relative min-h-[100dvh] w-full flex flex-col justify-between overflow-x-hidden animate-screen-slide"
+          data-testid="match-viewport-container"
+          style={
+            matchViewportHeight
+              ? { height: `${matchViewportHeight}px`, maxHeight: `${matchViewportHeight}px` }
+              : undefined
+          }
+          className="relative h-[100dvh] max-h-[100dvh] w-full flex flex-col justify-between overflow-hidden animate-screen-slide"
         >
           <NightMatchPitchBackground theme={progression.equippedPitchTheme} />
 
-          <div className="relative z-10 flex flex-col flex-1 justify-between">
+          <div className="relative z-10 flex flex-col flex-1 min-h-0 justify-between overflow-hidden">
             <ScoreBoard
               player1={player1}
               player2={player2}
@@ -4753,6 +4793,10 @@ export default function App() {
         onRestorePurchases={handleRestorePurchases}
         onDeleteAccount={handleDeleteAccount}
         onUnlinkSocial={handleUnlinkSocialAction}
+        onOpenTutorial={() => {
+          setShowSettingsModal(false);
+          setShowOnboardingModal(true);
+        }}
         onExitApp={screen === 'lobby' ? handlePromptExitApp : undefined}
         onClose={() => setShowSettingsModal(false)}
       />

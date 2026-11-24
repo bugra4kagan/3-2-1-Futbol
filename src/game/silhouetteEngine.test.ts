@@ -501,6 +501,7 @@ test('searchSilhouettePlayers handles Turkish diacritics, aliases, exclusions, a
 
   // Smart autocomplete requires >= 2 chars and handles Turkish/English chars seamlessly
   assert.equal(searchPlayersForAutocomplete('a').length, 0);
+  assert.ok(searchPlayersForAutocomplete('sa').length <= 6);
   assert.ok(searchPlayersForAutocomplete('sa').some((p) => p.id === 'sabri_sarioglu' || p.id === 'mohamed_salah'));
   assert.ok(searchPlayersForAutocomplete('şentürk').some((p) => p.id === 'semih_senturk'));
   assert.ok(searchPlayersForAutocomplete('senturk').some((p) => p.id === 'semih_senturk'));

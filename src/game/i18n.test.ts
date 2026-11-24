@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   LANGUAGE_OPTIONS,
   TRANSLATIONS,
+  isRtlLanguage,
   isSupportedLanguage,
   t,
 } from './i18n';
@@ -28,5 +29,8 @@ test('all supported languages define every translation key without empty values'
   assert.equal(t('en', 'settings'), 'Settings');
   assert.equal(t('de', 'settings'), 'Einstellungen');
   assert.equal(t('es', 'settings'), 'Ajustes');
+  assert.equal(t('ar', 'settings'), 'الإعدادات');
+  assert.equal(isRtlLanguage('ar'), true);
+  assert.equal(isRtlLanguage('tr'), false);
   assert.equal(isSupportedLanguage('fr'), false);
 });

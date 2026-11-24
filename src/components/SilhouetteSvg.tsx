@@ -60,7 +60,7 @@ export const SilhouetteSvg: React.FC<SilhouetteSvgProps> = ({
         />
 
         {(club || asset?.clubName) && (
-          <div className="absolute top-12 left-2.5 z-30 p-1 rounded-xl bg-slate-950/85 backdrop-blur-md border border-emerald-400/45 shadow-lg">
+          <div className="absolute top-12 left-2.5 z-30 p-1 rounded-xl bg-slate-950/92 border border-emerald-400/45 shadow-lg">
             <ClubBadge
               club={club}
               clubId={asset?.clubId}

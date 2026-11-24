@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
   Check,
-  Coins,
   Copy,
   Crown,
   Play,
@@ -11,6 +10,7 @@ import {
   Users,
   X,
 } from 'lucide-react';
+import { CoinIcon } from './CoinIcon';
 import {
   MinigameType,
   PlayerProfile,
@@ -389,7 +389,7 @@ export const TournamentModal: React.FC<TournamentModalProps> = ({
         {/* Balance Strip */}
         <div className="flex items-center justify-between gap-2 py-2.5 px-3 mt-3 rounded-2xl bg-slate-950/90 border border-slate-800 shrink-0">
           <div className="flex items-center gap-1.5 text-xs font-black text-amber-400 font-mono">
-            <Coins className="w-4 h-4 shrink-0" />
+            <CoinIcon size="sm" />
             <span data-testid="tournament-coins-balance">
               {formatPoints(progression.coins)} Coin
             </span>
@@ -417,8 +417,9 @@ export const TournamentModal: React.FC<TournamentModalProps> = ({
                 <span className="text-[10px] font-black uppercase tracking-wider text-amber-300 block">
                   Turnuva Büyük Ödülü
                 </span>
-                <span className="text-base sm:text-lg font-black text-white font-mono">
-                  🪙 {formatPoints(activeBracket.prizeCoins)} Coin
+                <span className="text-base sm:text-lg font-black text-white font-mono inline-flex items-center gap-1.5">
+                  <CoinIcon size="sm" />
+                  <span>{formatPoints(activeBracket.prizeCoins)} Coin</span>
                   {activeBracket.mode === 'open_cup' && (
                     <span className="text-xs text-emerald-300 font-sans ml-1.5">
                       (+{TOURNAMENT_OPEN_PRIZE_POINTS} Lig Puanı)
@@ -811,8 +812,9 @@ export const TournamentModal: React.FC<TournamentModalProps> = ({
                                 : 'bg-slate-950 border-slate-800 text-slate-300'
                             }`}
                           >
-                            <span className="block text-[11px] font-black text-amber-300">
-                              🪙 {formatPoints(s.entryCoins)}
+                            <span className="inline-flex items-center justify-center gap-1 text-[11px] font-black text-amber-300">
+                              <CoinIcon size="xs" />
+                              <span>{formatPoints(s.entryCoins)}</span>
                             </span>
                             <span className="block text-[10px] text-emerald-300 font-bold mt-0.5">
                               Ödül: {formatPoints(s.prizeCoins)}

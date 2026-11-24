@@ -2,6 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useState } fr
 import {
   AppLanguage,
   TranslationKey,
+  isRtlLanguage,
   loadSavedLanguage,
   saveLanguage,
   t as translateKey,
@@ -9,31 +10,35 @@ import {
 
 interface LanguageContextValue {
   language: AppLanguage;
+  isRtl: boolean;
   setLanguage: (lang: AppLanguage) => void;
   t: (key: TranslationKey) => string;
 }
 
 const LanguageContext = createContext<LanguageContextValue>({
   language: 'tr',
+  isRtl: false,
   setLanguage: () => {},
   t: (key) => translateKey('tr', key),
 });
+
+function applyDocumentDirection(lang: AppLanguage): void {
+  if (typeof document === 'undefined') return;
+  document.documentElement.lang = lang;
+  document.documentElement.dir = isRtlLanguage(lang) ? 'rtl' : 'ltr';
+}
 
 export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [language, setLanguageState] = useState<AppLanguage>(() => loadSavedLanguage());
 
   useEffect(() => {
-    if (typeof document !== 'undefined') {
-      document.documentElement.lang = language;
-    }
+    applyDocumentDirection(language);
   }, [language]);
 
   const setLanguage = useCallback((nextLang: AppLanguage) => {
     setLanguageState(nextLang);
     saveLanguage(nextLang);
-    if (typeof document !== 'undefined') {
-      document.documentElement.lang = nextLang;
-    }
+    applyDocumentDirection(nextLang);
   }, []);
 
   const t = useCallback(
@@ -42,7 +47,9 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   );
 
   return (
-    <LanguageContext.Provider value={{ language, setLanguage, t }}>
+    <LanguageContext.Provider
+      value={{ language, isRtl: isRtlLanguage(language), setLanguage, t }}
+    >
       {children}
     </LanguageContext.Provider>
   );

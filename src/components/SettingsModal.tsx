@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import {
   Bell,
+  BookOpen,
   CloudCheck,
   ExternalLink,
   Globe,
@@ -55,6 +56,7 @@ interface SettingsModalProps {
   onRestorePurchases?: () => Promise<{ ok: boolean; message: string }>;
   onDeleteAccount?: () => Promise<{ ok: boolean; warning?: string }>;
   onUnlinkSocial: (provider: SocialProvider) => void;
+  onOpenTutorial?: () => void;
   onExitApp?: () => void;
   onClose: () => void;
 }
@@ -75,6 +77,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onRestorePurchases,
   onDeleteAccount,
   onUnlinkSocial,
+  onOpenTutorial,
   onExitApp,
   onClose,
 }) => {
@@ -246,12 +249,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </div>
                 <div className="min-w-0">
                   <span className="block text-sm font-black text-white">
-                    Görünüm Teması
+                    {t('themeSectionTitle')}
                   </span>
                   <span className="block text-[11px] text-slate-400 leading-snug">
                     {uiTheme === 'klasik'
-                      ? 'Klasik (Çim Saha • Yüksek FPS)'
-                      : 'Modern (Gece Stadyumu • Neon)'}
+                      ? t('themeClassicDesc')
+                      : t('themeModernDesc')}
                   </span>
                 </div>
               </div>
@@ -270,7 +273,38 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     : 'bg-slate-800 hover:bg-slate-700 border-cyan-400/50 text-cyan-200'
                 }`}
               >
-                {uiTheme === 'klasik' ? 'Tema: Klasik' : 'Tema: Modern'}
+                {uiTheme === 'klasik' ? t('themeClassicLabel') : t('themeModernLabel')}
+              </button>
+            </section>
+          )}
+
+          {/* 1.75 Interactive Onboarding Tutorial Re-open Button */}
+          {onOpenTutorial && (
+            <section className="p-3.5 rounded-2xl bg-slate-950/85 border border-slate-800 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-10 h-10 rounded-xl bg-amber-500/15 border border-amber-400/40 text-amber-400 flex items-center justify-center shrink-0">
+                  <BookOpen className="w-5 h-5" />
+                </div>
+                <div className="min-w-0">
+                  <span className="block text-sm font-black text-white">
+                    {t('tutorialHowToPlayBtn')}
+                  </span>
+                  <span className="block text-[11px] text-slate-400 leading-snug">
+                    {t('tutorialStep1Title')} · {t('tutorialStep2Title')}
+                  </span>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                data-testid="settings-open-tutorial-btn"
+                onClick={() => {
+                  sounds.playCorrect();
+                  onOpenTutorial();
+                }}
+                className="px-3.5 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 border border-amber-300 text-xs font-black transition cursor-pointer shrink-0 active:scale-95"
+              >
+                {t('tutorialStart')}
               </button>
             </section>
           )}
@@ -289,7 +323,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </div>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
               {LANGUAGE_OPTIONS.map((opt) => {
                 const active = language === opt.id;
                 return (

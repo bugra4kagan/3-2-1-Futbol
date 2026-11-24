@@ -1,5 +1,6 @@
 import { ShopGiftItem } from './types';
 import { STAR_PP_AVATARS } from './avatarCatalog';
+import { ANIME_UNLOCKABLE_GIFTS } from './animeAvatarCatalog';
 
 export const STORE_ITEMS: ShopGiftItem[] = [
   // ── 1. Reklam Engelleme & Güçlendiriciler (Enerji İçeceği + 2x Katlayıcı) ──
@@ -458,7 +459,7 @@ export const STORE_ITEMS: ShopGiftItem[] = [
   },
 
   // ── 8. Yıldız PP Avatarları (uzun vadeli hedefler) ──
-  //   Efsanevi: 4.500 - 5.000 Coin • Nadir: 3.500 - 4.000 Coin • Yıldız: 1.500 - 2.500 Coin
+  //   Efsanevi: 10.000 Coin • Nadir: 8.500 - 9.000 Coin • Yıldız: 7.500 Coin
   ...[...STAR_PP_AVATARS]
     .sort((a, b) => a.costCoins - b.costCoins)
     .map((pp): ShopGiftItem => ({
@@ -472,11 +473,14 @@ export const STORE_ITEMS: ShopGiftItem[] = [
       type: 'avatar',
       value: pp.avatarValue,
     })),
+
+  // ── 9. Anime Futbolcu Avatar Ekipmanları (1.500 - 6.000 Coin) ──
+  ...ANIME_UNLOCKABLE_GIFTS,
 ];
 
 export function getStarPpTierLabel(costCoins: number): string {
-  if (costCoins >= 4500) return '🌟 Efsanevi Yıldız';
-  if (costCoins >= 3500) return '💜 Nadir Yıldız';
+  if (costCoins >= 9500) return '🌟 Efsanevi Yıldız';
+  if (costCoins >= 8500) return '💜 Nadir Yıldız';
   return '⭐ Yıldız';
 }
 

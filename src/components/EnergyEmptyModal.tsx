@@ -145,7 +145,7 @@ export const EnergyEmptyModal: React.FC<EnergyEmptyModalProps> = ({
     <div
       data-testid="energy-empty-modal"
       data-ad-unit-id={adUnitId}
-      className="fixed inset-0 z-[90] flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm animate-in fade-in duration-150"
+      className="fixed inset-0 z-[90] flex items-center justify-center p-4 bg-slate-950/94 animate-in fade-in duration-150"
       onClick={() => {
         if (!adPlaying) onClose();
       }}

@@ -153,7 +153,7 @@ export const SinglePlayerView: React.FC<SinglePlayerViewProps> = ({
 
   const autocompletePlayers = useMemo(() => {
     if (disabled) return [];
-    return searchPlayersForAutocomplete(answerInput, [], 8);
+    return searchPlayersForAutocomplete(answerInput, [], 6);
   }, [disabled, answerInput]);
 
   const submitAnswerValue = (rawVal: string) => {
@@ -194,16 +194,16 @@ export const SinglePlayerView: React.FC<SinglePlayerViewProps> = ({
   };
 
   return (
-    <div className="w-full flex flex-col items-center justify-between flex-1 py-2 sm:py-4 px-2.5 sm:px-4">
+    <div className="w-full flex flex-col items-center justify-between flex-1 min-h-0 overflow-hidden py-1.5 sm:py-3 px-2.5 sm:px-4">
       {/* Club Match Display */}
       <div
         key={pairing.id}
-        className="w-full max-w-xl flex items-stretch justify-center gap-2 sm:gap-6 my-auto animate-card-pop"
+        className="w-full max-w-xl flex items-stretch justify-center gap-2 sm:gap-6 my-auto shrink min-h-0 animate-card-pop"
       >
         {/* Club 1 */}
-        <div className="flex-1 min-w-0 flex flex-col items-center justify-center text-center p-2.5 sm:p-4 rounded-2xl bg-slate-900/90 backdrop-blur-md border border-slate-700/80 shadow-xl">
+        <div className="flex-1 min-w-0 flex flex-col items-center justify-center text-center p-2 sm:p-4 rounded-2xl bg-slate-900/95 border border-slate-700/80 shadow-xl">
           <ClubBadge club={club1} size="lg" />
-          <h3 className="mt-2 sm:mt-2.5 font-black text-xs sm:text-base text-white text-center line-clamp-2 leading-tight w-full break-words">
+          <h3 className="mt-1.5 sm:mt-2.5 font-black text-xs sm:text-base text-white text-center line-clamp-2 leading-tight w-full break-words">
             {club1.name}
           </h3>
           <span className="text-[10px] sm:text-[11px] text-slate-400 font-medium truncate max-w-full mt-0.5">
@@ -220,9 +220,9 @@ export const SinglePlayerView: React.FC<SinglePlayerViewProps> = ({
         </div>
 
         {/* Club 2 */}
-        <div className="flex-1 min-w-0 flex flex-col items-center justify-center text-center p-2.5 sm:p-4 rounded-2xl bg-slate-900/90 backdrop-blur-md border border-slate-700/80 shadow-xl">
+        <div className="flex-1 min-w-0 flex flex-col items-center justify-center text-center p-2 sm:p-4 rounded-2xl bg-slate-900/95 border border-slate-700/80 shadow-xl">
           <ClubBadge club={club2} size="lg" />
-          <h3 className="mt-2 sm:mt-2.5 font-black text-xs sm:text-base text-white text-center line-clamp-2 leading-tight w-full break-words">
+          <h3 className="mt-1.5 sm:mt-2.5 font-black text-xs sm:text-base text-white text-center line-clamp-2 leading-tight w-full break-words">
             {club2.name}
           </h3>
           <span className="text-[10px] sm:text-[11px] text-slate-400 font-medium truncate max-w-full mt-0.5">
@@ -232,7 +232,7 @@ export const SinglePlayerView: React.FC<SinglePlayerViewProps> = ({
       </div>
 
       {/* Answer Input Section */}
-      <div className="w-full max-w-md mt-auto mb-2">
+      <div className="w-full max-w-md mt-auto mb-1 shrink-0">
         {showOpponentMissed && (
           <div className="mb-2 px-3 py-1.5 rounded-xl bg-amber-950/80 border border-amber-500/40 text-amber-300 text-xs font-bold flex items-center justify-center gap-1.5 animate-in fade-in">
             <span>⚡ {player2.name} yanlış tahmin yaptı! Sıra sende!</span>

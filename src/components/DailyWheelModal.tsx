@@ -3,12 +3,12 @@ import { createPortal } from 'react-dom';
 import confetti from 'canvas-confetti';
 import {
   CheckCircle2,
-  Coins,
   Sparkles,
   Trophy,
   X,
   Zap,
 } from 'lucide-react';
+import { CoinIcon } from './CoinIcon';
 import { UserProgression, WheelSliceDefinition } from '../game/types';
 import {
   DAILY_WHEEL_SLICES,
@@ -165,8 +165,10 @@ export const DailyWheelModal: React.FC<DailyWheelModalProps> = ({
 
       try {
         confetti({
-          particleCount: selectedSlice.tier === 'jackpot' ? 120 : selectedSlice.tier === 'rare' ? 85 : 60,
-          spread: 72,
+          particleCount: selectedSlice.tier === 'jackpot' ? 35 : selectedSlice.tier === 'rare' ? 28 : 22,
+          spread: 68,
+          ticks: 120,
+          disableForReducedMotion: true,
           origin: { y: 0.58 },
           colors: [selectedSlice.accentColor, '#fbbf24', '#22d3ee', '#ffffff'],
         });
@@ -250,7 +252,7 @@ export const DailyWheelModal: React.FC<DailyWheelModalProps> = ({
         {/* Clean Unboxed Resource Summary */}
         <div className="mt-2.5 flex items-center justify-center gap-3 text-xs font-black font-mono tabular-nums text-slate-200">
           <span className="inline-flex items-center gap-1 text-amber-300">
-            <Coins className="w-3.5 h-3.5 text-amber-400" />
+            <CoinIcon size="xs" />
             <span data-testid="wheel-balance-coins">{formatPoints(progression.coins)}</span>
           </span>
           <span className="text-slate-600">·</span>

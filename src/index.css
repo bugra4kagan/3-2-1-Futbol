@@ -328,9 +328,9 @@
 }
 
 /* ============================================================================
-   KLASİK (RETRO PITCH) CSS-ONLY THEME OVERRIDES
-   - Sıfır yerleşim/düzen değişikliği, yalnızca renk & yüzey değişkenleri
-   - Eski cihazlarda sabit 60 FPS için ağır blur ve neon parıltılar kapatılır
+   KLASİK (ORANGE, WHITE & GREEN • FLAT MINIMALIST) THEME OVERRIDES
+   - Temiz beyaz/krem kartlar, canlı çim yeşili ana aksiyonlar, enerjik turuncu vurgular
+   - Parlama/gölge/bulanıklık yok — net düz vektör görünümü ve sabit 60 FPS
    ============================================================================ */
 :root {
   --theme-bg: #020617;
@@ -343,13 +343,14 @@
 }
 
 html[data-theme="klasik"] {
-  --theme-bg: #157a3c;
+  --theme-bg: #f8fafc;
   --theme-surface: #ffffff;
-  --theme-surface-alt: #eef8f1;
-  --theme-border: #166534;
+  --theme-surface-alt: #f1f5f9;
+  --theme-border: #e2e8f0;
   --theme-text-primary: #0f172a;
-  --theme-text-secondary: #1e3a2f;
-  --theme-accent: #15803d;
+  --theme-text-secondary: #475569;
+  --theme-accent: #16a34a;
+  --theme-orange: #f97316;
   color-scheme: light;
 }
 
@@ -360,41 +361,59 @@ html[data-theme="klasik"] *::after {
   -webkit-backdrop-filter: none !important;
 }
 
+/* Strip neon glows and heavy shadows for crisp flat vector look */
+html[data-theme="klasik"] [class*="shadow-["],
+html[data-theme="klasik"] [class*="drop-shadow-"] {
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08) !important;
+  filter: none !important;
+}
+
+html[data-theme="klasik"] .brand-gradient-text {
+  background: none !important;
+  -webkit-background-clip: initial !important;
+  background-clip: initial !important;
+  -webkit-text-fill-color: #16a34a !important;
+  color: #16a34a !important;
+}
+
 html[data-theme="klasik"] body,
 html[data-theme="klasik"] main,
 html[data-theme="klasik"] [data-testid="lobby-screen"],
 html[data-theme="klasik"] [data-testid="lobby-screen"] > .bg-slate-950 {
-  background-color: #157a3c !important;
-  background-image: repeating-linear-gradient(
-    0deg,
-    rgba(255, 255, 255, 0.035) 0px,
-    rgba(255, 255, 255, 0.035) 36px,
-    rgba(0, 0, 0, 0.045) 36px,
-    rgba(0, 0, 0, 0.045) 72px
-  ) !important;
-  color: #0f172a;
+  background-color: #f8fafc !important;
+  background-image: linear-gradient(180deg, #ffffff 0%, #f1f5f9 100%) !important;
+  color: #0f172a !important;
 }
 
-/* Sticky Top Headers & Bottom Navigation Bar -> Crisp Classic Chalk White */
+/* Remove dark atmospheric background masks in Classic theme */
+html[data-theme="klasik"] [data-testid="lobby-screen"] > .pointer-events-none,
+html[data-theme="klasik"] main > div > .pointer-events-none {
+  opacity: 0 !important;
+}
+
+/* Sticky Top Headers & Bottom Navigation Bar -> Crisp Pure White with Subtle Green/Slate Divider */
 html[data-theme="klasik"] header,
 html[data-theme="klasik"] [data-testid="lobby-top-header"],
 html[data-theme="klasik"] [data-testid="bottom-nav"] {
-  background-color: #f4fbf6 !important;
+  background-color: #ffffff !important;
   background-image: none !important;
-  border-color: #166534 !important;
+  border-color: #cbd5e1 !important;
   color: #0f172a !important;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2) !important;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.07) !important;
 }
 
-/* Dark Slate Cards, Containers & Modals -> Crisp Retro Card Surfaces */
+/* Dark Slate Cards, Containers & Modals -> Crisp Pure White / Soft Off-White Cards */
 html[data-theme="klasik"] .bg-slate-950,
 html[data-theme="klasik"] .bg-slate-950\/95,
+html[data-theme="klasik"] .bg-slate-950\/94,
+html[data-theme="klasik"] .bg-slate-950\/92,
 html[data-theme="klasik"] .bg-slate-950\/90,
 html[data-theme="klasik"] .bg-slate-950\/85,
 html[data-theme="klasik"] .bg-slate-950\/80,
 html[data-theme="klasik"] .bg-slate-950\/75,
 html[data-theme="klasik"] .bg-slate-950\/70,
 html[data-theme="klasik"] .bg-slate-900,
+html[data-theme="klasik"] .bg-slate-900\/96,
 html[data-theme="klasik"] .bg-slate-900\/95,
 html[data-theme="klasik"] .bg-slate-900\/92,
 html[data-theme="klasik"] .bg-slate-900\/90,
@@ -406,33 +425,42 @@ html[data-theme="klasik"] .bg-slate-800\/90,
 html[data-theme="klasik"] .bg-slate-800\/80,
 html[data-theme="klasik"] .from-slate-900,
 html[data-theme="klasik"] .from-slate-950 {
-  background-color: #f8fcf9 !important;
+  background-color: #ffffff !important;
   background-image: none !important;
-  border-color: #2e7d47 !important;
-  box-shadow: 0 3px 8px rgba(5, 46, 22, 0.18) !important;
+  border-color: #cbd5e1 !important;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.06) !important;
 }
 
-/* Remove Root Screen Outer Background Override Inside Nested Wrappers */
-html[data-theme="klasik"] [data-testid="lobby-screen"] {
-  background-color: #157a3c !important;
+/* Modal backdrops stay clean dimmed overlay in Klasik */
+html[data-theme="klasik"] .fixed.inset-0 {
+  background-color: rgba(15, 23, 42, 0.58) !important;
 }
 
-html[data-theme="klasik"] [data-testid="lobby-screen"] > header {
-  background-color: #f4fbf6 !important;
-}
-
-/* Gradient Banners (Online Card, Bot Card, Scoreboard) -> Classic Mint/White Cards */
+/* Gradient Banners -> Flat White Cards with crisp Orange/Green accents */
 html[data-theme="klasik"] .bg-gradient-to-r.from-cyan-500\/20,
 html[data-theme="klasik"] .bg-gradient-to-r.from-emerald-500\/20,
 html[data-theme="klasik"] .bg-gradient-to-r.from-amber-500\/15,
 html[data-theme="klasik"] .bg-gradient-to-r.from-slate-900,
-html[data-theme="klasik"] .bg-gradient-to-b.from-slate-900 {
+html[data-theme="klasik"] .bg-gradient-to-b.from-slate-900,
+html[data-theme="klasik"] .bg-gradient-to-br.from-slate-900 {
   background-color: #ffffff !important;
   background-image: none !important;
-  border-color: #166534 !important;
+  border-color: #cbd5e1 !important;
 }
 
-/* High-Contrast Dark Text Inside Classic Light Cards */
+/* Featured Mode Card Accents in Klasik (Green primary & Orange secondary) */
+html[data-theme="klasik"] [data-testid="mode-online-btn"] {
+  background-color: #f0fdf4 !important;
+  border-color: #22c55e !important;
+}
+
+html[data-theme="klasik"] [data-testid="lobby-theme-toggle-btn"] {
+  background-color: #fff7ed !important;
+  border-color: #f97316 !important;
+  color: #ea580c !important;
+}
+
+/* High-Contrast Dark Text Inside Classic White Cards */
 html[data-theme="klasik"] .text-white,
 html[data-theme="klasik"] .text-slate-100,
 html[data-theme="klasik"] .text-slate-200 {
@@ -442,65 +470,83 @@ html[data-theme="klasik"] .text-slate-200 {
 html[data-theme="klasik"] .text-slate-300,
 html[data-theme="klasik"] .text-slate-400,
 html[data-theme="klasik"] .text-slate-500 {
-  color: #1e3a2f !important;
+  color: #475569 !important;
 }
 
 html[data-theme="klasik"] [data-testid="lobby-screen"] > div p.text-slate-400 {
-  color: #ecfdf5 !important;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+  color: #475569 !important;
+  text-shadow: none !important;
 }
 
 html[data-theme="klasik"] .text-emerald-300,
 html[data-theme="klasik"] .text-emerald-400 {
-  color: #15803d !important;
+  color: #16a34a !important;
 }
 
+html[data-theme="klasik"] .text-cyan-200,
 html[data-theme="klasik"] .text-cyan-300,
 html[data-theme="klasik"] .text-sky-300,
 html[data-theme="klasik"] .text-sky-400 {
-  color: #0369a1 !important;
+  color: #16a34a !important;
 }
 
 html[data-theme="klasik"] .text-amber-200,
 html[data-theme="klasik"] .text-amber-300,
-html[data-theme="klasik"] .text-amber-400 {
-  color: #b45309 !important;
+html[data-theme="klasik"] .text-amber-400,
+html[data-theme="klasik"] .text-orange-400 {
+  color: #ea580c !important;
 }
 
 html[data-theme="klasik"] .text-rose-200,
 html[data-theme="klasik"] .text-rose-300,
 html[data-theme="klasik"] .text-rose-400 {
-  color: #be123c !important;
+  color: #e11d48 !important;
 }
 
-/* Preserve High-Contrast White Text on Solid Colored Badges & Action Buttons */
+/* Orange secondary highlights & badges */
+html[data-theme="klasik"] .bg-amber-400,
+html[data-theme="klasik"] .bg-amber-500,
+html[data-theme="klasik"] .bg-gradient-to-r.from-amber-400 {
+  background-color: #f97316 !important;
+  background-image: none !important;
+  border-color: #ea580c !important;
+  color: #ffffff !important;
+}
+
+html[data-theme="klasik"] .bg-amber-400 *,
+html[data-theme="klasik"] .bg-amber-500 *,
+html[data-theme="klasik"] .bg-gradient-to-r.from-amber-400 * {
+  color: #ffffff !important;
+}
+
+/* Primary action buttons -> Vibrant Pitch Green (#16A34A) with pure white text */
 html[data-theme="klasik"] .bg-rose-500,
 html[data-theme="klasik"] .bg-emerald-600,
 html[data-theme="klasik"] .bg-green-600,
 html[data-theme="klasik"] .bg-cyan-600,
-html[data-theme="klasik"] .bg-sky-600 {
-  color: #ffffff !important;
-}
-
+html[data-theme="klasik"] .bg-sky-600,
 html[data-theme="klasik"] .bg-emerald-500,
 html[data-theme="klasik"] .bg-gradient-to-r.from-emerald-500,
+html[data-theme="klasik"] .bg-gradient-to-r.from-emerald-400,
 html[data-theme="klasik"] .bg-gradient-to-br.from-emerald-500 {
   background-color: #16a34a !important;
   background-image: none !important;
-  border-color: #14532d !important;
+  border-color: #15803d !important;
   color: #ffffff !important;
 }
 
 html[data-theme="klasik"] .bg-emerald-500 *,
+html[data-theme="klasik"] .bg-emerald-600 *,
 html[data-theme="klasik"] .bg-rose-500 *,
-html[data-theme="klasik"] .bg-gradient-to-r.from-emerald-500 * {
+html[data-theme="klasik"] .bg-gradient-to-r.from-emerald-500 *,
+html[data-theme="klasik"] .bg-gradient-to-r.from-emerald-400 * {
   color: #ffffff !important;
 }
 
-html[data-theme="klasik"] .bg-amber-400,
 html[data-theme="klasik"] .bg-cyan-400,
 html[data-theme="klasik"] .bg-emerald-400 {
-  color: #0f172a !important;
+  background-color: #22c55e !important;
+  color: #ffffff !important;
 }
 
 html[data-theme="klasik"] .animate-ping {
@@ -513,11 +559,22 @@ html[data-theme="klasik"] select,
 html[data-theme="klasik"] textarea {
   background-color: #ffffff !important;
   color: #0f172a !important;
-  border-color: #15803d !important;
+  border-color: #cbd5e1 !important;
+}
+
+html[data-theme="klasik"] input:focus,
+html[data-theme="klasik"] select:focus,
+html[data-theme="klasik"] textarea:focus {
+  border-color: #16a34a !important;
 }
 
 html[data-theme="klasik"] input::placeholder {
-  color: #475569 !important;
+  color: #64748b !important;
+}
+
+/* RTL Support Helpers */
+html[dir="rtl"] .rtl-flip {
+  transform: scaleX(-1);
 }
 
 

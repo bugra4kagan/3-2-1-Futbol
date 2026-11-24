@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
-import { CheckCircle2, ClipboardList, Coins, Film, Sparkles, X } from 'lucide-react';
+import { CheckCircle2, ClipboardList, Film, Sparkles, X } from 'lucide-react';
+import { CoinIcon } from './CoinIcon';
 import {
   BIG_CHEST_BASE_COINS,
   V3DailyQuestsState,
@@ -127,13 +128,15 @@ export const DailyQuestsModal: React.FC<DailyQuestsModalProps> = ({
                       type="button"
                       data-testid={`claim-v3-quest-${q.id}`}
                       onClick={() => onClaimQuest(q.id)}
-                      className="px-3 py-2 rounded-xl bg-gradient-to-r from-emerald-400 to-teal-300 hover:from-emerald-300 hover:to-teal-200 text-slate-950 text-xs font-black cursor-pointer transition active:scale-95"
+                      className="px-3 py-2 rounded-xl bg-gradient-to-r from-emerald-400 to-teal-300 hover:from-emerald-300 hover:to-teal-200 text-slate-950 text-xs font-black cursor-pointer transition active:scale-95 inline-flex items-center gap-1"
                     >
-                      +{q.rewardCoins} 🪙 Al
+                      <CoinIcon size="xs" />
+                      <span>+{q.rewardCoins} Al</span>
                     </button>
                   ) : (
-                    <span className="px-2.5 py-1.5 rounded-xl bg-slate-900 border border-slate-700 text-amber-300 text-[11px] font-black font-mono">
-                      +{q.rewardCoins} 🪙
+                    <span className="px-2.5 py-1.5 rounded-xl bg-slate-900 border border-slate-700 text-amber-300 text-[11px] font-black font-mono inline-flex items-center gap-1">
+                      <CoinIcon size="xs" />
+                      <span>+{q.rewardCoins}</span>
                     </span>
                   )}
                 </div>
@@ -169,7 +172,7 @@ export const DailyQuestsModal: React.FC<DailyQuestsModalProps> = ({
               onClick={onClaimBigChest}
               className="mt-3 w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-amber-400 to-yellow-400 hover:from-amber-300 hover:to-yellow-300 disabled:opacity-45 disabled:cursor-not-allowed text-slate-950 font-black text-xs uppercase tracking-wide flex items-center justify-center gap-1.5 cursor-pointer transition active:scale-95"
             >
-              <Coins className="w-4 h-4" />
+              <CoinIcon size="sm" />
               <span>Büyük Sandığı Aç (+{BIG_CHEST_BASE_COINS} Coin)</span>
             </button>
           ) : !questsState.bigChestDoubled ? (

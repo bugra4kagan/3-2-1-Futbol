@@ -12,7 +12,6 @@ import {
   AlertCircle,
   X,
   Gift,
-  Coins,
   Flame,
   Target,
   ShoppingBag,
@@ -20,6 +19,7 @@ import {
   CalendarDays,
   CheckCircle2,
   WifiOff,
+  Zap,
 } from 'lucide-react';
 import {
   GameMode,
@@ -31,8 +31,10 @@ import {
 } from '../game/types';
 import { MINIGAME_OPTIONS } from '../game/minigameEngine';
 import {
+  MAX_DAILY_ENERGY,
   canClaimDailyReward,
   formatPoints,
+  getEffectiveDailyEnergy,
   getLocalDateKey,
   hasUnlimitedEnergy,
 } from '../game/retentionEngine';
@@ -44,6 +46,7 @@ import {
 import { useLanguage } from '../game/LanguageContext';
 import { UiTheme } from '../game/themeEngine';
 import { BrandTitle } from './BrandTitle';
+import { CoinIcon } from './CoinIcon';
 import { MinigameSelectorModal } from './MinigameSelectorModal';
 import { BotSetupModal } from './BotSetupModal';
 import {
@@ -67,6 +70,7 @@ interface LobbyScreenProps {
   onOpenDailyRewards?: () => void;
   onOpenQuests?: () => void;
   onOpenStore?: (category?: StoreCategory) => void;
+  onOpenEnergy?: () => void;
   onOpenTournament?: () => void;
   onOpenDailyChallenge?: () => void;
   onOpenFriendsRequests?: () => void;
@@ -97,6 +101,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
   onOpenDailyRewards,
   onOpenQuests,
   onOpenStore,
+  onOpenEnergy,
   onOpenTournament,
   onOpenDailyChallenge,
   onOpenFriendsRequests,
@@ -186,47 +191,70 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
     ? progression.dailyQuests.filter((q) => !q.claimed && q.progress >= q.target).length
     : 0;
   const isVipUnlimited = progression ? hasUnlimitedEnergy(progression) : false;
+  const currentEnergy = progression ? getEffectiveDailyEnergy(progression) : MAX_DAILY_ENERGY;
 
   return (
     <div
       data-testid="lobby-screen"
       className="relative min-h-[100dvh] w-full flex flex-col items-center justify-between px-4 pb-[calc(8.5rem+env(safe-area-inset-bottom))] bg-slate-950 text-white overflow-x-clip"
     >
-      {/* Background Stadium Atmosphere */}
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-emerald-900/30 via-slate-950 to-slate-950 pointer-events-none" />
+      {/* Background Stadium Atmosphere (Pointer-events-none, behind content) */}
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-emerald-900/25 via-slate-950 to-slate-950 pointer-events-none" />
       <div className="absolute inset-0 bg-[radial-gradient(#10b981_1px,transparent_1px)] [background-size:24px_24px] opacity-10 pointer-events-none" />
 
-      {/* Clean Single-Row Top Header (42px+ Hit Targets) */}
+      {/* Crisp High-Contrast Top Header (Zero Blur / Overlap, Safe-Area Top Padding) */}
       <header
         data-testid="lobby-top-header"
-        className="sticky top-0 z-40 w-[calc(100%+2rem)] -mx-4 bg-slate-950/95 border-b border-slate-800/70 pt-[max(0.75rem,calc(env(safe-area-inset-top)+0.45rem))] pb-2.5"
+        className="sticky top-0 z-40 isolate w-[calc(100%+2rem)] -mx-4 bg-slate-950 border-b border-slate-800 pt-[max(0.75rem,calc(env(safe-area-inset-top)+0.45rem))] pb-2.5"
       >
-        <div className="w-full max-w-xl mx-auto px-3 sm:px-4 flex items-center justify-between gap-2">
+        <div className="w-full max-w-xl mx-auto px-3 sm:px-4 flex items-center justify-between gap-1.5">
           <div className="flex items-center gap-2 min-w-0 shrink-0">
             {!logoError ? (
               <img
                 src={`${import.meta.env.BASE_URL}logo.png`}
                 alt="3-2-1 Futbol Logosu"
                 onError={() => setLogoError(true)}
-                className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl object-cover border border-amber-400/40 shadow-md shrink-0"
+                className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl object-cover border border-amber-400/60 shrink-0"
               />
             ) : (
-              <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-gradient-to-br from-emerald-700 to-amber-600 border border-amber-400/40 flex items-center justify-center shrink-0">
+              <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-emerald-600 border border-amber-400/60 flex items-center justify-center shrink-0">
                 <Trophy className="w-4 h-4 text-white" />
               </div>
             )}
-            <span className="hidden sm:inline-flex items-center">
+            <span className="inline-flex items-center">
               <BrandTitle size="sm" />
             </span>
           </div>
 
-          <div className="flex items-center gap-1.5 shrink-0">
+          <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
+            {progression && (
+              <button
+                type="button"
+                data-testid="lobby-header-energy-indicator"
+                onClick={() => onOpenEnergy?.()}
+                title={t('energyLabel')}
+                aria-label={t('energyLabel')}
+                className={`flex items-center gap-1 min-h-[38px] sm:min-h-[42px] px-2 py-1.5 rounded-xl border text-[11px] sm:text-xs font-black font-mono whitespace-nowrap shrink-0 cursor-pointer touch-manipulation ${
+                  isVipUnlimited
+                    ? 'bg-amber-500/20 border-amber-400/60 text-amber-300'
+                    : currentEnergy <= 0
+                    ? 'bg-rose-950 border-rose-500 text-rose-200'
+                    : 'bg-slate-900 hover:bg-slate-800 border-cyan-400/60 text-cyan-300'
+                }`}
+              >
+                <Zap className="w-3.5 h-3.5 shrink-0" />
+                <span className="whitespace-nowrap">
+                  {isVipUnlimited ? '∞' : `${currentEnergy}/${MAX_DAILY_ENERGY}`}
+                </span>
+              </button>
+            )}
+
             {onOpenStore && (
               <button
                 type="button"
                 data-testid="header-store-btn"
                 onClick={() => onOpenStore('featured')}
-                className="flex items-center justify-center gap-1 min-w-[42px] min-h-[42px] px-2.5 py-1.5 rounded-xl bg-amber-400/20 hover:bg-amber-400/30 border border-amber-400/50 text-amber-300 text-xs font-black transition-transform active:scale-95 shadow-sm cursor-pointer touch-manipulation"
+                className="flex items-center justify-center gap-1 min-w-[38px] min-h-[38px] sm:min-w-[42px] sm:min-h-[42px] px-2 sm:px-2.5 py-1.5 rounded-xl bg-amber-400/25 hover:bg-amber-400/35 border border-amber-400/60 text-amber-300 text-xs font-black transition-transform active:scale-95 cursor-pointer touch-manipulation whitespace-nowrap shrink-0"
                 title={t('store')}
                 aria-label={t('store')}
               >
@@ -240,7 +268,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                 type="button"
                 data-testid="header-sound-toggle-btn"
                 onClick={onToggleMute}
-                className="min-w-[42px] min-h-[42px] p-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 hover:text-white transition-transform active:scale-95 flex items-center justify-center cursor-pointer touch-manipulation text-base leading-none"
+                className="min-w-[38px] min-h-[38px] sm:min-w-[42px] sm:min-h-[42px] p-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-white transition-transform active:scale-95 flex items-center justify-center cursor-pointer touch-manipulation text-base leading-none shrink-0"
                 title={isMuted ? 'Sesi Aç' : 'Sesi Kapat'}
                 aria-label={isMuted ? 'Sesi Aç' : 'Sesi Kapat'}
               >
@@ -253,7 +281,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                 type="button"
                 data-testid="header-settings-btn"
                 onClick={onOpenSettings}
-                className="min-w-[42px] min-h-[42px] p-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 hover:text-white transition-transform active:scale-95 flex items-center justify-center cursor-pointer touch-manipulation"
+                className="min-w-[38px] min-h-[38px] sm:min-w-[42px] sm:min-h-[42px] p-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-white transition-transform active:scale-95 flex items-center justify-center cursor-pointer touch-manipulation shrink-0"
                 title={t('settings')}
                 aria-label={t('settings')}
               >
@@ -266,7 +294,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                 type="button"
                 data-testid="header-exit-btn"
                 onClick={onExitApp}
-                className="flex min-w-[42px] min-h-[42px] p-2 rounded-xl bg-slate-900 hover:bg-rose-950/60 border border-slate-700 hover:border-rose-500 text-slate-400 hover:text-rose-400 transition-transform active:scale-95 items-center justify-center cursor-pointer touch-manipulation"
+                className="flex min-w-[38px] min-h-[38px] sm:min-w-[42px] sm:min-h-[42px] p-2 rounded-xl bg-slate-900 hover:bg-rose-950/60 border border-slate-700 hover:border-rose-500 text-slate-300 hover:text-rose-400 transition-transform active:scale-95 items-center justify-center cursor-pointer touch-manipulation shrink-0"
                 title="Oyundan Çıkış"
                 aria-label="Oyundan Çıkış"
               >
@@ -358,93 +386,123 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
           </div>
         )}
 
-        {/* Retention & Daily Rewards Strip (Clean 2x2 Mobile / 4-Col Desktop Grid) */}
+        {/* Retention & Daily Rewards Strip (Coin + Daily Streak + Energy + Rewards & Quests) */}
         {progression && (
           <div
             data-testid="lobby-retention-strip"
-            className="w-full mt-4 p-2.5 rounded-2xl bg-slate-900/90 border border-slate-800 grid grid-cols-2 sm:grid-cols-4 gap-2 shadow-lg"
+            className="w-full mt-4 p-2.5 rounded-2xl bg-slate-900/95 border border-slate-800 flex flex-col gap-2 shadow-lg"
           >
-            {/* Coin Balance Tile */}
-            <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-950/90 border border-amber-500/25 min-h-[48px]">
-              <div className="w-7 h-7 rounded-lg bg-amber-500/15 flex items-center justify-center shrink-0">
-                <Coins className="w-4 h-4 text-amber-400" />
-              </div>
-              <div className="min-w-0 text-left">
-                <span className="block text-[9px] font-black uppercase tracking-wider text-slate-400 leading-none">
-                  Coin
-                </span>
-                <span
-                  data-testid="lobby-coins"
-                  className="block text-sm font-black text-amber-400 font-mono tabular-nums mt-0.5 leading-tight"
-                >
-                  {formatPoints(progression.coins)}
-                </span>
-              </div>
-            </div>
-
-            {/* Daily Streak Tile */}
-            <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-950/90 border border-orange-500/25 min-h-[48px]">
-              <div className="w-7 h-7 rounded-lg bg-orange-500/15 flex items-center justify-center shrink-0">
-                <Flame className="w-4 h-4 text-orange-400" />
-              </div>
-              <div className="min-w-0 text-left">
-                <span className="block text-[9px] font-black uppercase tracking-wider text-slate-400 leading-none">
-                  Günlük Seri
-                </span>
-                <span
-                  data-testid="lobby-streak"
-                  className="block text-sm font-black text-orange-400 font-mono tabular-nums mt-0.5 leading-tight"
-                >
-                  {progression.dailyLogin.streakDays} Gün
-                </span>
-              </div>
-            </div>
-
-            {/* Daily Reward Action */}
-            {onOpenDailyRewards && (
-              <button
-                type="button"
-                data-testid="open-daily-rewards-btn"
-                onClick={onOpenDailyRewards}
-                className={`relative flex items-center justify-center gap-1.5 px-2.5 py-2 rounded-xl border text-xs font-black min-h-[48px] transition-transform active:scale-95 cursor-pointer ${
-                  dailyClaimable
-                    ? 'bg-gradient-to-r from-amber-400 to-yellow-400 hover:from-amber-300 hover:to-yellow-300 border-amber-300 text-slate-950 shadow-md shadow-amber-500/25'
-                    : 'bg-slate-950/90 hover:bg-slate-800 border-emerald-500/35 text-emerald-400'
-                }`}
-              >
-                {dailyClaimable && (
+            {/* Top 3 Metrics: Coin, Daily Streak, Energy */}
+            <div className="grid grid-cols-3 gap-1.5 sm:gap-2">
+              {/* Coin Balance Tile */}
+              <div className="flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-2 rounded-xl bg-slate-950 border border-amber-500/30 min-h-[48px] min-w-0">
+                <div className="w-7 h-7 rounded-lg bg-amber-500/15 flex items-center justify-center shrink-0">
+                  <CoinIcon size="sm" />
+                </div>
+                <div className="min-w-0 text-left">
+                  <span className="block text-[9px] font-black uppercase tracking-wider text-slate-400 leading-none truncate">
+                    {t('coinLabel')}
+                  </span>
                   <span
-                    className="absolute -top-1.5 -right-1.5 w-3 h-3 rounded-full bg-rose-500 border border-slate-950 shadow-[0_0_10px_rgba(244,63,94,0.95)] animate-ping"
-                    aria-hidden="true"
-                  />
-                )}
-                <Gift className="w-4 h-4 shrink-0" />
-                <span className="truncate">
-                  {dailyClaimable ? 'Günlük Ödül' : t('lobbyDailyDone')}
-                </span>
-              </button>
-            )}
+                    data-testid="lobby-coins"
+                    className="block text-xs sm:text-sm font-black text-amber-400 font-mono tabular-nums mt-0.5 leading-tight truncate"
+                  >
+                    {formatPoints(progression.coins)}
+                  </span>
+                </div>
+              </div>
 
-            {/* Daily Quests Action */}
-            {onOpenQuests && (
+              {/* Daily Streak Tile */}
+              <div className="flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-2 rounded-xl bg-slate-950 border border-orange-500/30 min-h-[48px] min-w-0">
+                <div className="w-7 h-7 rounded-lg bg-orange-500/15 flex items-center justify-center shrink-0">
+                  <Flame className="w-4 h-4 text-orange-400" />
+                </div>
+                <div className="min-w-0 text-left">
+                  <span className="block text-[9px] font-black uppercase tracking-wider text-slate-400 leading-none truncate">
+                    {t('dailyStreakLabel')}
+                  </span>
+                  <span
+                    data-testid="lobby-streak"
+                    className="block text-xs sm:text-sm font-black text-orange-400 font-mono tabular-nums mt-0.5 leading-tight whitespace-nowrap"
+                  >
+                    {progression.dailyLogin.streakDays} {t('dayUnit')}
+                  </span>
+                </div>
+              </div>
+
+              {/* Dedicated Energy Status Tile */}
               <button
                 type="button"
-                data-testid="open-quests-btn"
-                onClick={onOpenQuests}
-                className={`flex items-center justify-center gap-1.5 px-2.5 py-2 rounded-xl border text-xs font-black min-h-[48px] transition-transform active:scale-95 cursor-pointer ${
-                  claimableQuests > 0
-                    ? 'bg-emerald-500/20 hover:bg-emerald-500/30 border-emerald-400 text-emerald-300'
-                    : 'bg-slate-950/90 hover:bg-slate-800 border-slate-700 text-slate-200'
+                data-testid="lobby-energy"
+                onClick={() => onOpenEnergy?.()}
+                className={`flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-2 rounded-xl border min-h-[48px] min-w-0 text-left cursor-pointer transition active:scale-95 ${
+                  isVipUnlimited
+                    ? 'bg-slate-950 border-amber-400/45'
+                    : currentEnergy <= 0
+                    ? 'bg-rose-950/60 border-rose-500/70'
+                    : 'bg-slate-950 hover:bg-slate-800 border-cyan-500/35'
                 }`}
               >
-                <Target className="w-4 h-4 text-emerald-400 shrink-0" />
-                <span className="truncate">
-                  {claimableQuests > 0
-                    ? `Ödül Hazır (${claimableQuests})`
-                    : `${t('lobbyQuests')} (${completedQuests}/${progression.dailyQuests.length})`}
-                </span>
+                <div className="w-7 h-7 rounded-lg bg-cyan-500/15 flex items-center justify-center shrink-0">
+                  <Zap className="w-4 h-4 text-cyan-400" />
+                </div>
+                <div className="min-w-0">
+                  <span className="block text-[9px] font-black uppercase tracking-wider text-slate-400 leading-none truncate">
+                    {t('energyLabel')}
+                  </span>
+                  <span className="block text-xs sm:text-sm font-black text-cyan-300 font-mono tabular-nums mt-0.5 leading-tight whitespace-nowrap">
+                    {isVipUnlimited ? '⚡ ∞' : `⚡ ${currentEnergy}/${MAX_DAILY_ENERGY}`}
+                  </span>
+                </div>
               </button>
-            )}
+            </div>
+
+            {/* Bottom 2 Actions: Daily Reward & Daily Quests */}
+            <div className="grid grid-cols-2 gap-2">
+              {onOpenDailyRewards && (
+                <button
+                  type="button"
+                  data-testid="open-daily-rewards-btn"
+                  onClick={onOpenDailyRewards}
+                  className={`relative flex items-center justify-center gap-1.5 px-2.5 py-2 rounded-xl border text-xs font-black min-h-[44px] transition-transform active:scale-95 cursor-pointer ${
+                    dailyClaimable
+                      ? 'bg-gradient-to-r from-amber-400 to-yellow-400 hover:from-amber-300 hover:to-yellow-300 border-amber-300 text-slate-950 shadow-md shadow-amber-500/25'
+                      : 'bg-slate-950 hover:bg-slate-800 border-emerald-500/35 text-emerald-400'
+                  }`}
+                >
+                  {dailyClaimable && (
+                    <span
+                      className="absolute -top-1.5 -right-1.5 w-3 h-3 rounded-full bg-rose-500 border border-slate-950 shadow-[0_0_10px_rgba(244,63,94,0.95)] animate-ping"
+                      aria-hidden="true"
+                    />
+                  )}
+                  <Gift className="w-4 h-4 shrink-0" />
+                  <span className="truncate">
+                    {dailyClaimable ? t('lobbyDailyReward') : t('lobbyDailyDone')}
+                  </span>
+                </button>
+              )}
+
+              {onOpenQuests && (
+                <button
+                  type="button"
+                  data-testid="open-quests-btn"
+                  onClick={onOpenQuests}
+                  className={`flex items-center justify-center gap-1.5 px-2.5 py-2 rounded-xl border text-xs font-black min-h-[44px] transition-transform active:scale-95 cursor-pointer ${
+                    claimableQuests > 0
+                      ? 'bg-emerald-500/20 hover:bg-emerald-500/30 border-emerald-400 text-emerald-300'
+                      : 'bg-slate-950 hover:bg-slate-800 border-slate-700 text-slate-200'
+                  }`}
+                >
+                  <Target className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <span className="truncate">
+                    {claimableQuests > 0
+                      ? `${t('rewardReadyLabel')} (${claimableQuests})`
+                      : `${t('lobbyQuests')} (${completedQuests}/${progression.dailyQuests.length})`}
+                  </span>
+                </button>
+              )}
+            </div>
           </div>
         )}
 

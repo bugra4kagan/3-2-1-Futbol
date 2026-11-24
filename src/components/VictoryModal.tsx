@@ -32,6 +32,7 @@ import { buildFriendChallengeUrl } from '../game/challengeCodeEngine';
 import { sounds } from '../utils/audio';
 import { PlayerAvatar } from './PlayerAvatar';
 import { ClubBadge } from './ClubBadge';
+import { CoinIcon } from './CoinIcon';
 import { MatchHighlightsPanel } from './MatchHighlightsPanel';
 import {
   formatStoryMatchMetrics,
@@ -273,30 +274,21 @@ Ortak futbolcuları benden hızlı bulabilir misin? Meydan okuyorum! 🔥`;
     }, 800);
     const effectColors = getGoalEffectColors(goalEffect);
 
-    let confettiTimer: ReturnType<typeof setTimeout> | null = null;
     try {
       confetti({
-        particleCount: 90,
+        particleCount: 35,
         spread: 70,
-        origin: { y: 0.6 },
+        ticks: 120,
+        disableForReducedMotion: true,
+        origin: { y: 0.58 },
         colors: effectColors,
       });
-
-      confettiTimer = setTimeout(() => {
-        confetti({
-          particleCount: 130,
-          spread: 100,
-          origin: { y: 0.5 },
-          colors: effectColors,
-        });
-      }, 500);
     } catch {
       // In case canvas-confetti has issues
     }
 
     return () => {
       clearTimeout(fanfareTimer);
-      if (confettiTimer) clearTimeout(confettiTimer);
     };
   }, [goalEffect]);
 
@@ -675,7 +667,8 @@ Ortak futbolcuları benden hızlı bulabilir misin? Meydan okuyorum! 🔥`;
               </span>
               <span className="text-slate-600">•</span>
               <span className="text-amber-300 flex items-center gap-1">
-                🪙 +{matchRewards.earnedCoins} Coin Kazanıldı
+                <CoinIcon size="xs" />
+                <span>+{matchRewards.earnedCoins} Coin Kazanıldı</span>
               </span>
             </div>
 

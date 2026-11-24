@@ -3,7 +3,6 @@ import {
   UserCheck,
   Sparkles,
   Check,
-  Coins,
   Lock,
   Search,
   Shield,
@@ -26,6 +25,10 @@ import {
   STAR_PP_AVATARS,
   isPhotoAvatar,
 } from '../game/avatarCatalog';
+import { isAnimeAvatar } from '../game/animeAvatarCatalog';
+import { useLanguage } from '../game/LanguageContext';
+import { AnimeAvatarBuilder } from './AnimeAvatarBuilder';
+import { CoinIcon } from './CoinIcon';
 import { formatPoints } from '../game/retentionEngine';
 import {
   generateRandomUniqueStarterName,
@@ -97,8 +100,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   );
   const [clubSearch, setClubSearch] = useState('');
   const [showClubPicker, setShowClubPicker] = useState(false);
-  const [avatarTab, setAvatarTab] = useState<'pp' | 'emoji'>(
-    STAR_PP_AVATARS.some((s) => s.avatarValue === currentProfile.avatar) ? 'pp' : 'emoji'
+  const { t } = useLanguage();
+  const [avatarTab, setAvatarTab] = useState<'anime' | 'pp' | 'emoji'>(
+    isAnimeAvatar(currentProfile.avatar)
+      ? 'anime'
+      : STAR_PP_AVATARS.some((s) => s.avatarValue === currentProfile.avatar)
+      ? 'pp'
+      : 'anime'
   );
   const [ppFeedback, setPpFeedback] = useState<{ type: 'ok' | 'err'; text: string } | null>(
     null
@@ -472,13 +480,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               data-testid="auth-coins-badge"
               className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-950/90 border border-amber-400/40 text-amber-400 text-xs font-black font-mono mb-2"
             >
-              <Coins className="w-3.5 h-3.5" />
+              <CoinIcon size="xs" />
               <span>{formatPoints(coins)} Coin</span>
             </div>
           )}
 
           <div className="mx-auto mb-2 flex items-center justify-center">
-            {isPhotoAvatar(avatar) ? (
+            {isPhotoAvatar(avatar) || isAnimeAvatar(avatar) ? (
               <PlayerAvatar
                 avatar={avatar}
                 name={name || 'Oyuncu'}
@@ -790,36 +798,48 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               )}
             </div>
 
-            {/* Avatar Tab Switcher: Yıldız PP vs Ücretsiz Avatarlar */}
+            {/* Avatar Tab Switcher: Anime Karakter Oluştur & Giydir vs Hazır Yıldız PP'ler */}
             <div>
-              <div className="flex items-center justify-between gap-2 mb-2">
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
                 <label className="text-xs font-black uppercase tracking-wider text-slate-300">
                   Avatar &amp; PP Seç
                 </label>
-                <div className="flex rounded-xl bg-slate-950 p-0.5 border border-slate-800">
+                <div className="flex rounded-xl bg-slate-950 p-0.5 border border-slate-800 gap-0.5">
                   <button
                     type="button"
-                    data-testid="auth-tab-emoji"
-                    onClick={() => setAvatarTab('emoji')}
-                    className={`px-2.5 py-1 rounded-lg text-[11px] font-black transition cursor-pointer ${
-                      avatarTab === 'emoji'
+                    data-testid="auth-tab-anime"
+                    onClick={() => setAvatarTab('anime')}
+                    className={`px-2 py-1 rounded-lg text-[10px] sm:text-[11px] font-black transition cursor-pointer ${
+                      avatarTab === 'anime'
                         ? 'bg-emerald-500 text-slate-950'
                         : 'text-slate-400 hover:text-white'
                     }`}
                   >
-                    Başlangıç PP
+                    {t('animeTabBuild')}
                   </button>
                   <button
                     type="button"
                     data-testid="auth-tab-pp"
                     onClick={() => setAvatarTab('pp')}
-                    className={`px-2.5 py-1 rounded-lg text-[11px] font-black transition cursor-pointer ${
+                    className={`px-2 py-1 rounded-lg text-[10px] sm:text-[11px] font-black transition cursor-pointer ${
                       avatarTab === 'pp'
                         ? 'bg-amber-400 text-slate-950'
                         : 'text-slate-400 hover:text-white'
                     }`}
                   >
-                    Yıldız PP (Coin)
+                    {t('animeTabStars')}
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="auth-tab-emoji"
+                    onClick={() => setAvatarTab('emoji')}
+                    className={`px-2 py-1 rounded-lg text-[10px] sm:text-[11px] font-black transition cursor-pointer ${
+                      avatarTab === 'emoji'
+                        ? 'bg-cyan-400 text-slate-950'
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    Başlangıç
                   </button>
                 </div>
               </div>
@@ -837,7 +857,19 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 </div>
               )}
 
-              {avatarTab === 'pp' ? (
+              {avatarTab === 'anime' ? (
+                <AnimeAvatarBuilder
+                  currentAvatar={avatar}
+                  userCoins={coins}
+                  unlockedGiftIds={progression?.unlockedGiftIds || []}
+                  onEquipAvatar={(av) => setAvatar(av)}
+                  onPurchaseGear={(giftId) =>
+                    onPurchaseGift
+                      ? onPurchaseGift(giftId)
+                      : { ok: false, reason: 'Satın alma şu anda kullanılamıyor.' }
+                  }
+                />
+              ) : avatarTab === 'pp' ? (
                 <div className="grid grid-cols-4 gap-1.5 p-2 rounded-2xl bg-slate-950/80 border border-slate-800">
                   {STAR_PP_AVATARS.map((pp) => {
                     const unlocked = unlockedSet.has(pp.giftId);

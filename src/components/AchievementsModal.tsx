@@ -1,6 +1,7 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
-import { CheckCircle2, Coins, Lock, Trophy, X } from 'lucide-react';
+import { CheckCircle2, Lock, Trophy, X } from 'lucide-react';
+import { CoinIcon } from './CoinIcon';
 import {
   CAREER_ACHIEVEMENTS,
   CareerAchievementsState,
@@ -121,12 +122,12 @@ export const AchievementsModal: React.FC<AchievementsModalProps> = ({
                       onClick={() => onClaimReward(ach.id)}
                       className="inline-flex items-center gap-1 px-3 py-2 rounded-xl bg-gradient-to-r from-amber-400 to-yellow-400 hover:from-amber-300 hover:to-yellow-300 text-slate-950 text-xs font-black shadow-md cursor-pointer transition active:scale-95"
                     >
-                      <Coins className="w-3.5 h-3.5" />
+                      <CoinIcon size="xs" />
                       <span>+{ach.rewardCoins}</span>
                     </button>
                   ) : (
                     <span className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-slate-900 border border-slate-700 text-amber-300/80 text-[11px] font-black font-mono">
-                      <Coins className="w-3 h-3" />
+                      <CoinIcon size="xs" />
                       +{ach.rewardCoins}
                     </span>
                   )}

@@ -56,7 +56,7 @@ export const ScoreBoard: React.FC<ScoreBoardProps> = ({
   const gameMeta = getMinigameMeta(minigameType);
 
   return (
-    <header className="sticky top-0 z-30 w-full max-w-4xl mx-auto px-2.5 sm:px-4 pt-[max(0.65rem,calc(env(safe-area-inset-top)+0.4rem))] pb-1.5 sm:pb-2 bg-slate-950/95">
+    <header className="shrink-0 z-30 w-full max-w-4xl mx-auto px-2.5 sm:px-4 pt-[max(0.65rem,calc(env(safe-area-inset-top)+0.4rem))] pb-1 sm:pb-1.5 bg-slate-950 border-b border-slate-800/70">
       {/* Top utility bar: Single-line on all screen sizes */}
       <div className="flex items-center justify-between gap-1.5 sm:gap-2 text-xs text-slate-300 font-semibold mb-2 sm:mb-2.5">
         <button

@@ -25,6 +25,7 @@
             android:label="3-2-1 Futbol: Bilgi Yarışması"
             android:screenOrientation="portrait"
             android:theme="@style/AppTheme.NoActionBarLaunch"
+            android:windowSoftInputMode="adjustResize"
             android:launchMode="singleTask"
             android:exported="true">
 

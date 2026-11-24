@@ -1,6 +1,7 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
-import { CheckCircle2, Coins, Crown, Lock, Sparkles, Ticket, X } from 'lucide-react';
+import { CheckCircle2, Crown, Lock, Sparkles, Ticket, X } from 'lucide-react';
+import { CoinIcon } from './CoinIcon';
 import {
   FOOTBALL_PASS_TIERS,
   FootballPassState,
@@ -206,7 +207,7 @@ export const FootballPassModal: React.FC<FootballPassModalProps> = ({
                       onClick={() => onClaimReward(tierDef.tier, 'vip')}
                       className="px-2.5 py-1 rounded-lg bg-gradient-to-r from-amber-400 to-yellow-300 hover:from-amber-300 hover:to-yellow-200 text-slate-950 text-[10px] font-black cursor-pointer transition active:scale-95 flex items-center gap-1"
                     >
-                      <Coins className="w-3 h-3" /> Al
+                      <CoinIcon size="xs" /> Al
                     </button>
                   ) : (
                     <span className="text-[10px] text-slate-500 font-bold flex items-center gap-1">

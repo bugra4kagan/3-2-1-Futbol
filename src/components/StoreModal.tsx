@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useState } from 'react';
 import confetti from 'canvas-confetti';
 import {
   CheckCircle2,
-  Coins,
   CreditCard,
   Crown,
   Film,
@@ -19,6 +18,7 @@ import { formatPoints } from '../game/retentionEngine';
 import { formatTry, getFrameClasses, STORE_ITEMS } from '../game/storeCatalog';
 import { isPhotoAvatar } from '../game/avatarCatalog';
 import { PlayerAvatar } from './PlayerAvatar';
+import { CoinIcon } from './CoinIcon';
 import { sounds } from '../utils/audio';
 
 interface StoreModalProps {
@@ -154,8 +154,10 @@ export const StoreModal: React.FC<StoreModalProps> = ({
       if (method === 'money') {
         try {
           confetti({
-            particleCount: 70,
-            spread: 70,
+            particleCount: 30,
+            spread: 65,
+            ticks: 120,
+            disableForReducedMotion: true,
             origin: { y: 0.65 },
             colors: ['#fbbf24', '#10b981', '#38bdf8'],
           });
@@ -193,9 +195,9 @@ export const StoreModal: React.FC<StoreModalProps> = ({
   return (
     <div
       data-testid="store-modal"
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/92 overflow-y-auto animate-screen-fade"
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 pt-[max(0.75rem,env(safe-area-inset-top))] bg-slate-950/94 overflow-y-auto animate-screen-fade"
     >
-      <div className="relative w-full max-w-2xl bg-gradient-to-b from-slate-900 via-slate-900 to-slate-950 border border-amber-400/40 rounded-3xl p-4 sm:p-6 shadow-2xl text-left my-auto max-h-[92dvh] flex flex-col overflow-hidden">
+      <div className="relative w-full max-w-2xl bg-slate-900 border border-amber-400/50 rounded-3xl p-4 sm:p-6 shadow-2xl text-left my-auto max-h-[92dvh] flex flex-col overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between gap-2 pb-3 border-b border-slate-800 shrink-0">
           <div className="flex items-center gap-2.5 min-w-0">
@@ -261,8 +263,8 @@ export const StoreModal: React.FC<StoreModalProps> = ({
 
         {/* Inventory & Balance Strip */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 py-3 shrink-0">
-          <div className="px-2.5 py-2 rounded-xl bg-slate-950/90 border border-amber-500/30 flex items-center gap-2">
-            <Coins className="w-4 h-4 text-amber-400 shrink-0" />
+          <div className="px-2.5 py-2 rounded-xl bg-slate-950 border border-amber-500/35 flex items-center gap-2">
+            <CoinIcon size="sm" />
             <div className="min-w-0">
               <span className="block text-[9px] font-black uppercase text-slate-400">Coin</span>
               <span
@@ -404,8 +406,9 @@ export const StoreModal: React.FC<StoreModalProps> = ({
                       </span>
                     </div>
                   </div>
-                  <span className="px-2 py-1 rounded-lg bg-slate-950 text-amber-300 text-[10px] font-black shrink-0">
-                    +250 🪙
+                  <span className="px-2 py-1 rounded-lg bg-slate-950 text-amber-300 text-[10px] font-black shrink-0 inline-flex items-center gap-1">
+                    <CoinIcon size="xs" />
+                    <span>+250</span>
                   </span>
                 </button>
               )}
@@ -574,7 +577,8 @@ export const StoreModal: React.FC<StoreModalProps> = ({
                             onClick={() => handleCoinPurchase(item)}
                             className="flex-1 py-2 px-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-[11px] transition active:scale-95 cursor-pointer flex items-center justify-center gap-1"
                           >
-                            <span>🪙 {formatPoints(item.costCoins)}</span>
+                            <CoinIcon size="xs" />
+                            <span>{formatPoints(item.costCoins)}</span>
                           </button>
                         )}
                         {item.priceTry && item.priceTry > 0 && (
@@ -626,10 +630,15 @@ export const StoreModal: React.FC<StoreModalProps> = ({
 
               <div className="my-3 p-3 rounded-2xl bg-slate-950 border border-slate-800 flex items-center justify-between">
                 <span className="text-xs font-bold text-slate-400">Toplam Tutar</span>
-                <span className="text-base sm:text-lg font-black text-emerald-400 font-mono">
-                  {pendingPurchase.method === 'money'
-                    ? formatTry(pendingPurchase.item.priceTry)
-                    : `🪙 ${formatPoints(pendingPurchase.item.costCoins)} Coin`}
+                <span className="text-base sm:text-lg font-black text-emerald-400 font-mono inline-flex items-center gap-1.5">
+                  {pendingPurchase.method === 'money' ? (
+                    formatTry(pendingPurchase.item.priceTry)
+                  ) : (
+                    <>
+                      <CoinIcon size="sm" />
+                      <span>{formatPoints(pendingPurchase.item.costCoins)} Coin</span>
+                    </>
+                  )}
                 </span>
               </div>
 

@@ -243,6 +243,26 @@ export function compareSilhouetteGuess(
 const ALL_PLAYERS_LIST: Player[] = Object.values(PLAYERS);
 const ALL_PLAYER_IDS: string[] = Object.keys(PLAYERS);
 
+interface IndexedPlayerSearchEntry {
+  player: Player;
+  normName: string;
+  nameWords: string[];
+  normCommon: string;
+  normAliases: string[];
+}
+
+// Precompute normalized search strings once at startup for zero-lag autocomplete across 3,000+ players
+const PRECOMPUTED_PLAYER_SEARCH: IndexedPlayerSearchEntry[] = ALL_PLAYERS_LIST.map((player) => {
+  const normName = normalizeText(player.name);
+  return {
+    player,
+    normName,
+    nameWords: normName.split(' ').filter(Boolean),
+    normCommon: player.commonName ? normalizeText(player.commonName) : '',
+    normAliases: player.aliases.map(normalizeText),
+  };
+});
+
 /**
  * Akıllı arama: 2 veya daha fazla karakter girildiğinde Türkçe/İngilizce karakter duyarsız eşleşen
  * futbolcuları uyruk ve mevki bilgileriyle döndürür.
@@ -250,7 +270,7 @@ const ALL_PLAYER_IDS: string[] = Object.keys(PLAYERS);
 export function searchPlayersForAutocomplete(
   rawQuery: string,
   excludePlayerIds: string[] = [],
-  limit: number = 8
+  limit: number = 6
 ): Player[] {
   const normQuery = normalizeText(rawQuery);
   if (!normQuery || normQuery.length < 2) return [];
@@ -260,20 +280,17 @@ export function searchPlayersForAutocomplete(
 export function searchSilhouettePlayers(
   rawQuery: string,
   excludePlayerIds: string[] = [],
-  limit: number = 8
+  limit: number = 6
 ): Player[] {
   const normQuery = normalizeText(rawQuery);
   if (!normQuery || normQuery.length < 1) return [];
 
-  const excludeSet = new Set(excludePlayerIds);
+  const excludeSet = excludePlayerIds.length > 0 ? new Set(excludePlayerIds) : null;
   const scored: { player: Player; score: number }[] = [];
 
-  for (const player of ALL_PLAYERS_LIST) {
-    if (excludeSet.has(player.id)) continue;
-
-    const normName = normalizeText(player.name);
-    const normCommon = player.commonName ? normalizeText(player.commonName) : '';
-    const normAliases = player.aliases.map(normalizeText);
+  for (const entry of PRECOMPUTED_PLAYER_SEARCH) {
+    const { player, normName, nameWords, normCommon, normAliases } = entry;
+    if (excludeSet && excludeSet.has(player.id)) continue;
 
     let score = 0;
 
@@ -281,7 +298,7 @@ export function searchSilhouettePlayers(
       score = 100;
     } else if (normName.startsWith(normQuery)) {
       score = 90;
-    } else if (normName.split(' ').some((w) => w.startsWith(normQuery))) {
+    } else if (nameWords.some((w) => w.startsWith(normQuery))) {
       score = 80;
     } else if (normCommon && normCommon.startsWith(normQuery)) {
       score = 75;

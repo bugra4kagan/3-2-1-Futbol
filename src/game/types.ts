@@ -287,6 +287,7 @@ export interface ShopGiftItem {
   type:
     | 'title'
     | 'avatar'
+    | 'avatar_gear'
     | 'ad_free'
     | 'vip_bundle'
     | 'coin_pack'

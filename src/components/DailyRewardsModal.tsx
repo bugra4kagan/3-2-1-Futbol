@@ -1,6 +1,7 @@
 import React from 'react';
 import confetti from 'canvas-confetti';
-import { Flame, Gift, CheckCircle2, X, Coins, Sparkles } from 'lucide-react';
+import { Flame, Gift, CheckCircle2, X, Sparkles } from 'lucide-react';
+import { CoinIcon } from './CoinIcon';
 import { UserProgression } from '../game/types';
 import {
   canClaimDailyReward,
@@ -39,8 +40,10 @@ export const DailyRewardsModal: React.FC<DailyRewardsModalProps> = ({
     soundManager.playVictoryFanfare();
     try {
       confetti({
-        particleCount: 70,
-        spread: 65,
+        particleCount: 30,
+        spread: 60,
+        ticks: 120,
+        disableForReducedMotion: true,
         origin: { y: 0.6 },
         colors: ['#fbbf24', '#10b981', '#ffffff'],
       });
@@ -111,7 +114,7 @@ export const DailyRewardsModal: React.FC<DailyRewardsModalProps> = ({
                     <span className="text-emerald-300">🛡️ Lig Kalkanı</span>
                   ) : (
                     <>
-                      <Coins className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                      <CoinIcon size="xs" />
                       <span>{tier.coins}</span>
                     </>
                   )}

@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { CheckCircle2, Coins, Film, Search, Sparkles, Swords, Timer, Trophy, X } from 'lucide-react';
+import { CheckCircle2, Film, Search, Sparkles, Swords, Timer, Trophy, X } from 'lucide-react';
+import { CoinIcon } from './CoinIcon';
 import { Player } from '../game/types';
 import { PLAYERS_LIST } from '../game/database';
 import { FriendChallengePayload } from '../game/challengeCodeEngine';
@@ -229,7 +230,7 @@ export const SpecialEventModal: React.FC<SpecialEventModalProps> = ({
                   onClick={() => handleLaunchRun('coin')}
                   className="w-full py-3 px-4 rounded-xl bg-amber-400 hover:bg-amber-300 disabled:opacity-45 disabled:cursor-not-allowed text-slate-950 font-black text-xs sm:text-sm flex items-center justify-center gap-2 cursor-pointer transition active:scale-95"
                 >
-                  <Coins className="w-4 h-4" />
+                  <CoinIcon size="sm" />
                   <span>{SPECIAL_EVENT_COIN_COST} Coin ile Kupaya Katıl</span>
                 </button>
               </div>

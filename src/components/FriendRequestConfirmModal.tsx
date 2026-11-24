@@ -26,7 +26,7 @@ export const FriendRequestConfirmModal: React.FC<FriendRequestConfirmModalProps>
       aria-modal="true"
       aria-labelledby="friend-req-confirm-title"
       aria-describedby="friend-req-confirm-desc"
-      className="fixed inset-0 z-[90] flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-sm animate-screen-fade"
+      className="fixed inset-0 z-[90] flex items-center justify-center p-4 bg-slate-950/94 animate-screen-fade"
     >
       <div className="relative w-full max-w-sm rounded-3xl bg-gradient-to-b from-slate-900 via-slate-900 to-slate-950 border border-emerald-500/45 p-5 sm:p-6 shadow-2xl text-center animate-screen-slide-up">
         <button

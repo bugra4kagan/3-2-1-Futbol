@@ -67,8 +67,10 @@ export const RoundResultSheet: React.FC<RoundResultSheetProps> = ({
     if (!didUserWinRound) return;
     try {
       confetti({
-        particleCount: 45,
-        spread: 65,
+        particleCount: 28,
+        spread: 62,
+        ticks: 110,
+        disableForReducedMotion: true,
         origin: { y: 0.65 },
         colors: getGoalEffectColors(goalEffect),
       });

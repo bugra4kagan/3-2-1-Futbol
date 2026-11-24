@@ -170,24 +170,26 @@ test('buildLeagueStandings ranks user dynamically and Star PPs sit in 5k-10k coi
   assert.equal(bought.progression.coins, 0);
   assert.equal(bought.progression.equippedTitle, 'Orta Saha Maestrosu');
 
-  // All Star PPs must sit in the long-term goal band (1.500 - 5.000 coin)
+  // All Star PPs sit in the balanced 7,500 - 10,000 Coin band
   for (const pp of STAR_PP_AVATARS) {
-    assert.ok(pp.costCoins >= 1500 && pp.costCoins <= 5000);
+    assert.ok(pp.costCoins >= 7500 && pp.costCoins <= 10000);
   }
-  assert.equal(STAR_PP_AVATARS.find((p) => p.giftId === 'gift_pp_lionel_messi')?.costCoins, 5000);
-  assert.equal(STAR_PP_AVATARS.find((p) => p.giftId === 'gift_pp_cristiano_ronaldo')?.costCoins, 5000);
-  assert.equal(STAR_PP_AVATARS.find((p) => p.giftId === 'gift_pp_jude_bellingham')?.costCoins, 3500);
-  assert.equal(STAR_PP_AVATARS.find((p) => p.giftId === 'gift_pp_erling_haaland')?.costCoins, 4000);
-  assert.equal(STAR_PP_AVATARS.find((p) => p.giftId === 'gift_pp_mohamed_salah')?.costCoins, 2500);
+  assert.equal(STAR_PP_AVATARS.find((p) => p.giftId === 'gift_pp_lionel_messi')?.costCoins, 10000);
+  assert.equal(STAR_PP_AVATARS.find((p) => p.giftId === 'gift_pp_cristiano_ronaldo')?.costCoins, 10000);
+  assert.equal(STAR_PP_AVATARS.find((p) => p.giftId === 'gift_pp_kylian_mbappe')?.costCoins, 10000);
+  assert.equal(STAR_PP_AVATARS.find((p) => p.giftId === 'gift_pp_jude_bellingham')?.costCoins, 8500);
+  assert.equal(STAR_PP_AVATARS.find((p) => p.giftId === 'gift_pp_erling_haaland')?.costCoins, 9000);
+  assert.equal(STAR_PP_AVATARS.find((p) => p.giftId === 'gift_pp_victor_osimhen')?.costCoins, 7500);
+  assert.equal(STAR_PP_AVATARS.find((p) => p.giftId === 'gift_pp_mohamed_salah')?.costCoins, 7500);
 
   const fresh = createInitialProgression('user_5');
   const ardaBlocked = purchaseGift(fresh, 'gift_pp_arda_guler');
   assert.equal(ardaBlocked.ok, false);
 
-  fresh.coins = 6000;
+  fresh.coins = 10000;
   const ardaBought = purchaseGift(fresh, 'gift_pp_arda_guler');
   assert.equal(ardaBought.ok, true);
-  assert.equal(ardaBought.progression.coins, 4500);
+  assert.equal(ardaBought.progression.coins, 2500);
   assert.equal(ardaBought.gift?.type, 'avatar');
   assert.equal(ardaBought.gift?.value, 'pp:arda_guler');
   assert.ok(ardaBought.progression.unlockedGiftIds.includes('gift_pp_arda_guler'));
