@@ -718,7 +718,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                       : raw.replace(/[^A-Za-z0-9]/g, '').slice(0, 6);
                     setInputCode(extracted.toUpperCase());
                   }}
-                  placeholder="5 HANELİ ODA KODU"
+                  placeholder="6 HANELİ ODA KODU"
                   className="w-full bg-slate-950 text-white font-mono font-black text-center text-lg tracking-widest px-3 py-3 rounded-xl border border-purple-500/50 mb-3 outline-none uppercase"
                 />
                 <button

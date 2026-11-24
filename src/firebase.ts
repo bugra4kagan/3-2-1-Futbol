@@ -33,7 +33,7 @@ import {
   Timestamp,
   updateDoc,
 } from 'firebase/firestore';
-import firebaseConfig from '../firebase-applet-config.json';
+import { getDatabase } from 'firebase/database';
 import { normalizeUsernameKey } from './game/accountEngine';
 import { calibrateServerTimeOffset } from './game/serverTime';
 import {
@@ -46,8 +46,20 @@ import {
   UserProgression,
 } from './game/types';
 
+export const firebaseConfig = {
+  apiKey: 'AIzaSyB_45IPtJ-o7mqi6mXNqyq625Ch0qHuR4Q',
+  authDomain: 'futbol-9013e.firebaseapp.com',
+  databaseURL: 'https://futbol-9013e-default-rtdb.europe-west1.firebasedatabase.app',
+  projectId: 'futbol-9013e',
+  storageBucket: 'futbol-9013e.firebasestorage.app',
+  messagingSenderId: '895309340693',
+  appId: '1:895309340693:web:88fd344ace312fb56f2e1c',
+  measurementId: 'G-H0C2LRZL6Q',
+};
+
 export const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+export const rtdb = getDatabase(app);
+export const db = getFirestore(app);
 export const auth = getAuth(app);
 
 export const googleProvider = new GoogleAuthProvider();

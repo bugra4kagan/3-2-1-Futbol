@@ -359,20 +359,20 @@ export const StoreModal: React.FC<StoreModalProps> = ({
               <button
                 type="button"
                 data-testid="store-vip-adfree-buy"
-                disabled={adFreeOwned}
-                onClick={() => setPendingPurchase({ item: adFreeItem, method: 'money' })}
+                disabled
+                aria-disabled="true"
                 className={`mt-2.5 w-full py-2 rounded-xl font-black text-xs flex items-center justify-center gap-1.5 transition ${
                   adFreeOwned
                     ? 'bg-emerald-500/20 border border-emerald-400/60 text-emerald-300 cursor-default'
-                    : 'bg-gradient-to-r from-amber-300 to-yellow-200 hover:from-amber-200 hover:to-yellow-100 text-slate-950 active:scale-[0.99] cursor-pointer shadow-lg'
+                    : 'bg-slate-800 border border-slate-600 text-slate-300 cursor-not-allowed opacity-85'
                 }`}
               >
                 {adFreeOwned ? (
                   <span>VIP Reklamsız Aktif ✓</span>
                 ) : (
                   <>
-                    <Crown className="w-4 h-4" />
-                    <span>Hemen Al • {formatTry(adFreeItem.priceTry)}</span>
+                    <Crown className="w-4 h-4 text-amber-300" />
+                    <span>Yakında (Coming Soon)</span>
                   </>
                 )}
               </button>
@@ -417,15 +417,14 @@ export const StoreModal: React.FC<StoreModalProps> = ({
                 <button
                   type="button"
                   data-testid="store-vip-bundle-btn"
-                  onClick={() =>
+                  disabled={!vipOwned}
+                  onClick={() => {
+                    if (vipOwned) handleEquip(vipBundle);
+                  }}
+                  className={`p-2.5 rounded-2xl border font-black text-xs flex items-center justify-between gap-2 transition text-left ${
                     vipOwned
-                      ? handleEquip(vipBundle)
-                      : setPendingPurchase({ item: vipBundle, method: 'money' })
-                  }
-                  className={`p-2.5 rounded-2xl border font-black text-xs flex items-center justify-between gap-2 transition active:scale-[0.99] cursor-pointer text-left ${
-                    vipOwned
-                      ? 'bg-emerald-950/50 border-emerald-400/60 text-emerald-200'
-                      : 'bg-gradient-to-r from-fuchsia-600/25 via-purple-900/50 to-amber-500/25 hover:from-fuchsia-600/35 hover:to-amber-500/35 border-fuchsia-400/60 text-white shadow-lg shadow-fuchsia-500/15'
+                      ? 'bg-emerald-950/50 border-emerald-400/60 text-emerald-200 cursor-pointer'
+                      : 'bg-slate-900/90 border-slate-700 text-slate-300 cursor-not-allowed opacity-85'
                   }`}
                 >
                   <div className="flex items-center gap-2 min-w-0">
@@ -436,17 +435,23 @@ export const StoreModal: React.FC<StoreModalProps> = ({
                       <span className="block text-xs font-black truncate">
                         Reklamları Kaldır + VIP Çerçeve
                       </span>
-                      <span className="block text-[10px] font-semibold text-slate-300 truncate">
+                      <span className="block text-[10px] font-semibold text-slate-400 truncate">
                         {vipOwned
                           ? progression.equippedFrame === 'vip'
                             ? 'VIP Çerçeve Aktif ✓'
                             : 'VIP Çerçeveyi Kullan'
-                          : 'Kalıcı Reklamsız + Özel VIP Çerçeve'}
+                          : 'Google Play Faturalandırma yakında aktif'}
                       </span>
                     </div>
                   </div>
-                  <span className="px-2 py-1 rounded-lg bg-emerald-400 text-slate-950 text-[10px] font-black shrink-0">
-                    {vipOwned ? 'AKTİF ✓' : formatTry(vipBundle.priceTry)}
+                  <span
+                    className={`px-2 py-1 rounded-lg text-[10px] font-black shrink-0 ${
+                      vipOwned
+                        ? 'bg-emerald-400 text-slate-950'
+                        : 'bg-slate-800 text-amber-300 border border-slate-600'
+                    }`}
+                  >
+                    {vipOwned ? 'AKTİF ✓' : 'Yakında'}
                   </span>
                 </button>
               )}
@@ -564,9 +569,9 @@ export const StoreModal: React.FC<StoreModalProps> = ({
                     )
                   ) : (
                     <div className="w-full flex flex-col gap-1.5">
-                      {item.costCoins <= 0 && item.type !== 'coin_pack' && (
-                        <span className="inline-flex items-center justify-center gap-1 px-2 py-0.5 rounded-md bg-purple-500/15 border border-purple-400/40 text-purple-200 font-black text-[10px] uppercase tracking-wide">
-                          💳 Sadece Gerçek Para (₺)
+                      {item.costCoins <= 0 && (
+                        <span className="inline-flex items-center justify-center gap-1 px-2 py-0.5 rounded-md bg-slate-800 border border-slate-700 text-amber-300 font-black text-[10px] uppercase tracking-wide">
+                          Google Play Ödeme Yakında
                         </span>
                       )}
                       <div className="flex items-center gap-1.5 w-full">
@@ -581,15 +586,16 @@ export const StoreModal: React.FC<StoreModalProps> = ({
                             <span>{formatPoints(item.costCoins)}</span>
                           </button>
                         )}
-                        {item.priceTry && item.priceTry > 0 && (
+                        {item.costCoins <= 0 && item.priceTry && item.priceTry > 0 && (
                           <button
                             type="button"
                             data-testid={`store-buy-money-${item.id}`}
-                            onClick={() => setPendingPurchase({ item, method: 'money' })}
-                            className="flex-1 py-2 px-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black text-[11px] transition active:scale-95 cursor-pointer flex items-center justify-center gap-1"
+                            disabled
+                            aria-disabled="true"
+                            className="flex-1 py-2 px-2 rounded-xl bg-slate-800 border border-slate-700 text-slate-300 font-black text-[11px] cursor-not-allowed opacity-85 flex items-center justify-center gap-1"
                           >
                             <CreditCard className="w-3.5 h-3.5 shrink-0" />
-                            <span>{formatTry(item.priceTry)}</span>
+                            <span>Yakında (Coming Soon)</span>
                           </button>
                         )}
                       </div>

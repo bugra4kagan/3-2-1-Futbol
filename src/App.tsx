@@ -173,6 +173,25 @@ import { CoinIcon } from './components/CoinIcon';
 import { initializeAdMob } from './services/admobService';
 import { logTelemetryEvent } from './services/telemetryService';
 import {
+  RtdbRoomRecord,
+  advanceRtdbNextRound,
+  cleanupRtdbRoom,
+  createRtdbRoom,
+  expireRtdbRound,
+  fetchRtdbLeaderboard,
+  getRtdbRoundPayload,
+  joinRtdbRoom,
+  parseRtdbXoxState,
+  requestRtdbRematch,
+  startRtdbMatchmaking,
+  subscribeRtdbLeaderboard,
+  subscribeRtdbRoom,
+  submitRtdbAnswer,
+  syncPlayerToRtdbLeaderboard,
+  updateRtdbCountdown,
+} from './services/realtimeMultiplayerService';
+import { sanitizeRtdbKey } from './game/realtimeSyncHelpers';
+import {
   FootballPassState,
   PASS_XP_DAILY_CHALLENGE,
   PASS_XP_DAILY_QUEST,
@@ -604,6 +623,14 @@ export default function App() {
     'idle' | 'waiting' | 'opponent_requested' | 'opponent_left'
   >('idle');
   const wsRef = useRef<WebSocket | null>(null);
+  const activeRtdbRoomCodeRef = useRef<string | null>(null);
+  const unsubRtdbRoomRef = useRef<(() => void) | null>(null);
+  const cancelRtdbMatchmakingRef = useRef<(() => void) | null>(null);
+  const rtdbHostTickTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const rtdbHostNextTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const rtdbRoomPhaseKeyRef = useRef<string>('');
+  const rtdbWrongPulseSeqRef = useRef<number>(0);
+  const rtdbCountdownStartedAtRef = useRef<number>(0);
   const notifWsRef = useRef<WebSocket | null>(null);
   const notifReconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const seenFriendEventIdsRef = useRef<Set<string>>(new Set());
@@ -1362,39 +1389,79 @@ export default function App() {
       profileToSync: PlayerProfile,
       options?: { suppressAutoHighScore?: boolean }
     ) => {
+      // 1. Sync live profile/stats directly to Firebase Realtime Database (`leaderboard/{playerId}`)
+      void syncPlayerToRtdbLeaderboard(progToSync, profileToSync);
+      const rtdbPlayers = await fetchRtdbLeaderboard();
+      if (rtdbPlayers.length > 0) {
+        setLiveLeaderboardPlayers(rtdbPlayers);
+      }
+
+      // 2. Also sync legacy server endpoint when running under local Node Express dev server
+      if (
+        typeof window !== 'undefined' &&
+        (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') &&
+        window.location.protocol !== 'capacitor:'
+      ) {
+        try {
+          const res = await fetch('/api/leaderboard/sync', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              id: profileToSync.id,
+              friendCode: progToSync.friendCode,
+              name: profileToSync.name,
+              avatar: profileToSync.avatar,
+              favoriteClubId: profileToSync.favoriteClubId,
+              weeklyPoints: progToSync.weeklyPoints,
+              totalPoints: progToSync.totalPoints,
+              subtitle: progToSync.equippedTitle,
+              equippedCrest: progToSync.equippedCrest,
+              equippedFrame: progToSync.equippedFrame,
+              equippedBadge: progToSync.equippedBadge,
+              hasCrown: progToSync.unlockedGiftIds.includes('gift_title_legend'),
+              matchesPlayed: progToSync.matchesPlayed,
+              wins: progToSync.wins,
+              losses: progToSync.losses,
+              winStreak: progToSync.winStreak,
+              bestWinStreak: progToSync.bestWinStreak,
+              totalCorrectAnswers: progToSync.totalCorrectAnswers,
+              totalWrongAttempts: progToSync.totalWrongAttempts,
+              fastestAnswerSec: progToSync.fastestAnswerSec,
+              clutchAnswers: progToSync.clutchAnswers,
+              minigameMatchCounts: progToSync.minigameMatchCounts,
+              dailyStreakDays: progToSync.dailyLogin?.streakDays ?? 0,
+              tournamentWins: progToSync.tournamentWins ?? 0,
+              tournamentsPlayed: progToSync.tournamentsPlayed ?? 0,
+              suppressAutoHighScore: options?.suppressAutoHighScore,
+            }),
+          });
+          if (res.ok) {
+            const data = await res.json();
+            if (Array.isArray(data.players) && rtdbPlayers.length === 0) {
+              setLiveLeaderboardPlayers(data.players);
+            }
+          }
+        } catch {
+          // Offline / static hosting fallback
+        }
+      }
+    },
+    []
+  );
+
+  const fetchServerLeaderboard = useCallback(async () => {
+    const rtdbPlayers = await fetchRtdbLeaderboard();
+    if (rtdbPlayers.length > 0) {
+      setLiveLeaderboardPlayers(rtdbPlayers);
+      return;
+    }
+    if (
+      typeof window !== 'undefined' &&
+      (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') &&
+      window.location.protocol !== 'capacitor:'
+    ) {
       try {
-        const res = await fetch('/api/leaderboard/sync', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            id: profileToSync.id,
-            friendCode: progToSync.friendCode,
-            name: profileToSync.name,
-            avatar: profileToSync.avatar,
-            favoriteClubId: profileToSync.favoriteClubId,
-            weeklyPoints: progToSync.weeklyPoints,
-            totalPoints: progToSync.totalPoints,
-            subtitle: progToSync.equippedTitle,
-            equippedCrest: progToSync.equippedCrest,
-            equippedFrame: progToSync.equippedFrame,
-            equippedBadge: progToSync.equippedBadge,
-            hasCrown: progToSync.unlockedGiftIds.includes('gift_title_legend'),
-            matchesPlayed: progToSync.matchesPlayed,
-            wins: progToSync.wins,
-            losses: progToSync.losses,
-            winStreak: progToSync.winStreak,
-            bestWinStreak: progToSync.bestWinStreak,
-            totalCorrectAnswers: progToSync.totalCorrectAnswers,
-            totalWrongAttempts: progToSync.totalWrongAttempts,
-            fastestAnswerSec: progToSync.fastestAnswerSec,
-            clutchAnswers: progToSync.clutchAnswers,
-            minigameMatchCounts: progToSync.minigameMatchCounts,
-            dailyStreakDays: progToSync.dailyLogin?.streakDays ?? 0,
-            tournamentWins: progToSync.tournamentWins ?? 0,
-            tournamentsPlayed: progToSync.tournamentsPlayed ?? 0,
-            suppressAutoHighScore: options?.suppressAutoHighScore,
-          }),
-        });
+        const res = await fetch('/api/leaderboard');
         if (res.ok) {
           const data = await res.json();
           if (Array.isArray(data.players)) {
@@ -1402,23 +1469,8 @@ export default function App() {
           }
         }
       } catch {
-        // Offline / server unreachable fallback handled smoothly
+        // ignore
       }
-    },
-    []
-  );
-
-  const fetchServerLeaderboard = useCallback(async () => {
-    try {
-      const res = await fetch('/api/leaderboard');
-      if (res.ok) {
-        const data = await res.json();
-        if (Array.isArray(data.players)) {
-          setLiveLeaderboardPlayers(data.players);
-        }
-      }
-    } catch {
-      // ignore
     }
   }, []);
 
@@ -1451,6 +1503,9 @@ export default function App() {
   useEffect(() => {
     if (screen === 'lobby' && (activeTab === 'league' || activeTab === 'stats')) {
       fetchServerLeaderboard();
+      return subscribeRtdbLeaderboard((players) => {
+        setLiveLeaderboardPlayers(players);
+      });
     }
   }, [screen, activeTab, fetchServerLeaderboard]);
 
@@ -1652,6 +1707,38 @@ export default function App() {
   }, [screen]);
 
   const closeOnlineSocket = () => {
+    if (cancelRtdbMatchmakingRef.current) {
+      try {
+        cancelRtdbMatchmakingRef.current();
+      } catch {
+        // ignore
+      }
+      cancelRtdbMatchmakingRef.current = null;
+    }
+    if (rtdbHostTickTimerRef.current) {
+      clearInterval(rtdbHostTickTimerRef.current);
+      rtdbHostTickTimerRef.current = null;
+    }
+    if (rtdbHostNextTimerRef.current) {
+      clearTimeout(rtdbHostNextTimerRef.current);
+      rtdbHostNextTimerRef.current = null;
+    }
+    if (unsubRtdbRoomRef.current) {
+      try {
+        unsubRtdbRoomRef.current();
+      } catch {
+        // ignore
+      }
+      unsubRtdbRoomRef.current = null;
+    }
+    if (activeRtdbRoomCodeRef.current) {
+      const codeToClean = activeRtdbRoomCodeRef.current;
+      activeRtdbRoomCodeRef.current = null;
+      void cleanupRtdbRoom(codeToClean);
+    }
+    rtdbRoomPhaseKeyRef.current = '';
+    rtdbWrongPulseSeqRef.current = 0;
+
     if (wsRef.current) {
       const sock = wsRef.current;
       wsRef.current = null;
@@ -1725,6 +1812,10 @@ export default function App() {
     setXoxState(null);
     setXoxNotice(null);
     setRematchState('idle');
+    if (exitTarget === 'intro' && typeof window !== 'undefined' && Capacitor.isNativePlatform()) {
+      void CapacitorApp.exitApp().catch(() => {});
+      return;
+    }
     setScreen(exitTarget);
   };
 
@@ -1817,6 +1908,10 @@ export default function App() {
       }
       if (showSettingsModal) {
         setShowSettingsModal(false);
+        return;
+      }
+      if (showOnboardingModal) {
+        setShowOnboardingModal(false);
         return;
       }
       if (showAuthModal && screen !== 'intro') {
@@ -2459,9 +2554,286 @@ export default function App() {
     [handleAnswerWinner]
   );
 
-  // Online Multiplayer WebSocket Setup (supports all 5 minigames!)
+  const attachRtdbRoomListener = useCallback((code: string) => {
+    activeRtdbRoomCodeRef.current = code;
+    setRoomCode(code);
+    rtdbRoomPhaseKeyRef.current = '';
+    rtdbWrongPulseSeqRef.current = 0;
+
+    if (unsubRtdbRoomRef.current) {
+      unsubRtdbRoomRef.current();
+      unsubRtdbRoomRef.current = null;
+    }
+
+    const myId = sessionPlayerIdRef.current;
+    const myKey = sanitizeRtdbKey(myId);
+
+    const stopRtdbTimers = () => {
+      if (rtdbHostTickTimerRef.current) {
+        clearInterval(rtdbHostTickTimerRef.current);
+        rtdbHostTickTimerRef.current = null;
+      }
+      if (rtdbHostNextTimerRef.current) {
+        clearTimeout(rtdbHostNextTimerRef.current);
+        rtdbHostNextTimerRef.current = null;
+      }
+    };
+
+    const unsub = subscribeRtdbRoom(code, (room: RtdbRoomRecord | null) => {
+      if (activeRtdbRoomCodeRef.current !== code) return;
+
+      if (!room) {
+        if (screenRef.current === 'game_over') {
+          setRematchState('opponent_left');
+        } else if (screenRef.current === 'room_waiting' || screenRef.current === 'playing') {
+          stopRtdbTimers();
+          setIsRoundPlaying(false);
+          setShowResultSheet(false);
+          setOnlineError('Oda kapatıldı veya rakibin bağlantısı kesildi.');
+          setScreen('lobby');
+        }
+        return;
+      }
+
+      if (room.minigameType) {
+        setMinigameType(room.minigameType);
+        minigameTypeRef.current = room.minigameType;
+      }
+
+      const playersMap = room.players || {};
+      const oppKey = Object.keys(playersMap).find((k) => k !== myKey) || null;
+      const oppEntry = oppKey ? playersMap[oppKey] : null;
+      const myEntry = playersMap[myKey];
+      const isHost = room.hostId === myKey;
+
+      if (oppEntry) {
+        setPlayer2({
+          id: oppEntry.id,
+          name: oppEntry.name,
+          avatar: oppEntry.avatar,
+          favoriteClubId: oppEntry.favoriteClubId,
+          score: room.scores?.[oppKey!] ?? oppEntry.score ?? 0,
+        });
+        if (!oppEntry.connected && screenRef.current === 'playing') {
+          stopRtdbTimers();
+          setIsRoundPlaying(false);
+          setShowResultSheet(false);
+          setOnlineError('Rakibin bağlantısı kesildi!');
+          setScreen('lobby');
+          void cleanupRtdbRoom(code);
+          return;
+        }
+      }
+
+      if (myEntry) {
+        setPlayer1((prev) => ({
+          ...prev,
+          score: room.scores?.[myKey] ?? myEntry.score ?? 0,
+        }));
+      }
+
+      if (myEntry?.stats) setPlayer1Stats(myEntry.stats);
+      if (oppEntry?.stats) setPlayer2Stats(oppEntry.stats);
+
+      const roundPayload = getRtdbRoundPayload(room);
+      if (roundPayload) setOnlineRound(roundPayload);
+
+      const xox = parseRtdbXoxState(room);
+      setXoxState(xox);
+      if (room.xoxNotice) setXoxNotice(room.xoxNotice);
+
+      if (
+        room.wrongAttemptPulse &&
+        room.wrongAttemptPulse.byPlayerId !== myId &&
+        room.wrongAttemptPulse.seq !== rtdbWrongPulseSeqRef.current
+      ) {
+        rtdbWrongPulseSeqRef.current = room.wrongAttemptPulse.seq;
+        setOpponentMissedPulse((prev) => prev + 1);
+      }
+
+      const phaseKey = `${room.matchSeq}-${room.currentRoundIndex}-${room.state}`;
+      const phaseChanged = rtdbRoomPhaseKeyRef.current !== phaseKey;
+
+      if (room.state === 'waiting') {
+        setScreen('room_waiting');
+        return;
+      }
+
+      if (room.state === 'countdown') {
+        if (phaseChanged) {
+          rtdbRoomPhaseKeyRef.current = phaseKey;
+          stopRtdbTimers();
+
+          if (room.currentRoundIndex === 0) {
+            resetMatchComboAndClock();
+            setMatchHighlights([]);
+          }
+
+          if (energyChargedMatchInstanceRef.current !== matchInstanceIdRef.current) {
+            energyChargedMatchInstanceRef.current = matchInstanceIdRef.current;
+            const onlineEnergyCheck = consumeMatchEntryEnergy(progressionRef.current);
+            if (onlineEnergyCheck.ok) {
+              persistProgression(onlineEnergyCheck.progression);
+              syncServerLeaderboard(onlineEnergyCheck.progression, player1Ref.current);
+            }
+          }
+
+          setShowResultSheet(false);
+          setRoundWinnerPlayer(null);
+          setAcceptedAnswerText('');
+          setIsTimeExpired(false);
+          setRoundEndReason('timeout');
+          setOnlineSilhouetteExhausted(false);
+          setIsRoundPlaying(false);
+          setServerWrongFeedback(null);
+          setTimeRemaining(getRoundDurationSeconds(room.minigameType));
+          setRematchState('idle');
+          setCurrentRoundIndex(room.currentRoundIndex || 0);
+          setScreen('playing');
+
+          if (isHost) {
+            let countVal = 3;
+            rtdbCountdownStartedAtRef.current = Date.now();
+            rtdbHostTickTimerRef.current = setInterval(() => {
+              countVal -= 1;
+              void updateRtdbCountdown(code, countVal);
+              if (countVal <= 0 && rtdbHostTickTimerRef.current) {
+                clearInterval(rtdbHostTickTimerRef.current);
+                rtdbHostTickTimerRef.current = null;
+              }
+            }, 1000);
+          }
+        }
+        setCountdown(room.countdownValue ?? 3);
+        return;
+      }
+
+      if (room.state === 'playing') {
+        if (phaseChanged) {
+          rtdbRoomPhaseKeyRef.current = phaseKey;
+          stopRtdbTimers();
+          roundStartedAtRef.current = room.roundStartedAt || Date.now();
+          setCountdown(0);
+          setOnlineSilhouetteExhausted(false);
+          setIsRoundPlaying(true);
+          setShowResultSheet(false);
+
+          const totalSec = getRoundDurationSeconds(room.minigameType);
+          const startedAt = room.roundStartedAt || Date.now();
+          let expireFired = false;
+
+          rtdbHostTickTimerRef.current = setInterval(() => {
+            const elapsed = Math.floor((Date.now() - startedAt) / 1000);
+            const rem = Math.max(0, totalSec - elapsed);
+            setTimeRemaining(rem);
+            if (isHost && rem <= 0 && !expireFired) {
+              expireFired = true;
+              void expireRtdbRound(code);
+            }
+          }, 250);
+        }
+        return;
+      }
+
+      if (room.state === 'round_ended') {
+        if (phaseChanged) {
+          rtdbRoomPhaseKeyRef.current = phaseKey;
+          stopRtdbTimers();
+          setIsRoundPlaying(false);
+
+          const winner = room.roundWinnerId
+            ? room.roundWinnerId === myId
+              ? player1Ref.current
+              : player2Ref.current
+            : null;
+          setRoundWinnerPlayer(winner);
+          setAcceptedAnswerText(room.acceptedPlayerName || room.acceptedAnswer || '');
+          setIsTimeExpired(room.roundEndReason === 'timeout');
+          setRoundEndReason(
+            room.roundEndReason === 'attempts_exhausted'
+              ? 'attempts_exhausted'
+              : room.roundEndReason === 'timeout'
+              ? 'timeout'
+              : 'draw'
+          );
+
+          const elapsedSec = room.roundStartedAt
+            ? Number(((Date.now() - room.roundStartedAt) / 1000).toFixed(1))
+            : null;
+          if (room.roundWinnerId === myId) {
+            if (elapsedSec !== null && elapsedSec < FAST_COMBO_THRESHOLD_SEC) {
+              const nextCombo = fastComboStreakRef.current + 1;
+              fastComboStreakRef.current = nextCombo;
+              maxFastComboRef.current = Math.max(maxFastComboRef.current, nextCombo);
+              setFastComboStreak(nextCombo);
+            } else {
+              fastComboStreakRef.current = 0;
+              setFastComboStreak(0);
+            }
+            sounds.playGoal();
+            haptics.correct();
+          } else {
+            fastComboStreakRef.current = 0;
+            setFastComboStreak(0);
+            sounds.playWrong();
+            haptics.wrong();
+          }
+
+          const p1After = room.scores?.[myKey] ?? player1Ref.current.score;
+          const p2After = oppKey ? (room.scores?.[oppKey] ?? player2Ref.current.score) : 0;
+          setMatchHighlights((prev) => [
+            ...prev,
+            {
+              roundNumber: (room.currentRoundIndex || 0) + 1,
+              minigameType: room.minigameType,
+              winnerPlayerId: room.roundWinnerId ?? null,
+              winnerName: winner?.name,
+              acceptedAnswer: room.acceptedPlayerName || room.acceptedAnswer || undefined,
+              elapsedSec,
+              reason: room.roundEndReason || 'draw',
+              scoreAfter: { p1: p1After, p2: p2After },
+            },
+          ]);
+          setShowResultSheet(true);
+
+          if (isHost) {
+            rtdbHostNextTimerRef.current = setTimeout(() => {
+              rtdbHostNextTimerRef.current = null;
+              void advanceRtdbNextRound(code);
+            }, 3500);
+          }
+        }
+        return;
+      }
+
+      if (room.state === 'game_over') {
+        if (phaseChanged) {
+          rtdbRoomPhaseKeyRef.current = phaseKey;
+          stopRtdbTimers();
+          setShowResultSheet(false);
+          setIsRoundPlaying(false);
+          setRematchState('idle');
+          void transitionToGameOver();
+          if (isHost) {
+            rtdbHostNextTimerRef.current = setTimeout(() => {
+              void cleanupRtdbRoom(code);
+            }, 45_000);
+          }
+        } else {
+          const iReq = Boolean(myEntry?.rematchRequested);
+          const oppReq = Boolean(oppEntry?.rematchRequested);
+          if (iReq) setRematchState('waiting');
+          else if (oppReq) setRematchState('opponent_requested');
+        }
+      }
+    });
+
+    unsubRtdbRoomRef.current = unsub;
+  }, [persistProgression, resetMatchComboAndClock, syncServerLeaderboard]);
+
+  // Online Multiplayer (Firebase Realtime Database Rooms + 4s Smart Bot Fallback)
   const handleSelectOnlineMode = useCallback(
-    (
+    async (
       onlineMode: 'online_match' | 'online_room',
       options?: { roomCode?: string; minigameType?: MinigameType }
     ) => {
@@ -2517,338 +2889,52 @@ export default function App() {
       setIsRoundPlaying(false);
       setScreen('room_waiting');
 
+      const selfProfile: PlayerProfile = {
+        ...player1Ref.current,
+        id: sessionPlayerIdRef.current,
+        score: 0,
+      };
+
       try {
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const wsUrl = `${protocol}//${window.location.host}/ws`;
-        const ws = new WebSocket(wsUrl);
-        wsRef.current = ws;
-
-        const selfProfile = player1Ref.current;
-        const selfAccountStats = {
-          totalMatches: progression.matchesPlayed,
-          totalWins: progression.wins,
-        };
-
-        ws.onopen = () => {
-          if (isQuick) {
-            ws.send(
-              JSON.stringify({
-                type: 'quick_match',
-                minigameType: chosenMinigame,
-                playerId: sessionPlayerIdRef.current,
-                name: selfProfile.name,
-                avatar: selfProfile.avatar,
-                favoriteClubId: selfProfile.favoriteClubId,
-                accountStats: selfAccountStats,
-              })
-            );
-          } else if (options?.roomCode) {
-            ws.send(
-              JSON.stringify({
-                type: 'join_room',
-                code: options.roomCode.trim().toUpperCase(),
-                playerId: sessionPlayerIdRef.current,
-                name: selfProfile.name,
-                avatar: selfProfile.avatar,
-                favoriteClubId: selfProfile.favoriteClubId,
-                accountStats: selfAccountStats,
-              })
-            );
-          } else {
-            ws.send(
-              JSON.stringify({
-                type: 'create_room',
-                minigameType: chosenMinigame,
-                playerId: sessionPlayerIdRef.current,
-                name: selfProfile.name,
-                avatar: selfProfile.avatar,
-                favoriteClubId: selfProfile.favoriteClubId,
-                accountStats: selfAccountStats,
-              })
-            );
-          }
-        };
-
-        ws.onmessage = (event) => {
-          try {
-            const msg = JSON.parse(event.data);
-            const myId = sessionPlayerIdRef.current;
-
-            if (msg.minigameType) {
-              setMinigameType(msg.minigameType);
-              minigameTypeRef.current = msg.minigameType;
-            }
-
-            if (msg.type === 'room_created') {
-              setRoomCode(msg.code);
-            } else if (msg.type === 'room_joined') {
-              setRoomCode(msg.code);
-              resetMatchComboAndClock();
-              if (msg.opponent) {
-                setPlayer2({ ...msg.opponent, score: 0 });
-              }
-            } else if (msg.type === 'opponent_joined') {
-              resetMatchComboAndClock();
-              if (msg.opponent) {
-                setPlayer2({ ...msg.opponent, score: 0 });
-              }
-            } else if (msg.type === 'match_found') {
-              setRoomCode(msg.code);
-              resetMatchComboAndClock();
-              const opponent = (msg.players || []).find((p: PlayerProfile) => p.id !== myId);
-              if (opponent) {
-                setPlayer2({ ...opponent, score: 0 });
-              }
-            } else if (msg.type === 'round_countdown') {
-              if (energyChargedMatchInstanceRef.current !== matchInstanceIdRef.current) {
-                energyChargedMatchInstanceRef.current = matchInstanceIdRef.current;
-                const onlineEnergyCheck = consumeMatchEntryEnergy(progressionRef.current);
-                if (onlineEnergyCheck.ok) {
-                  persistProgression(onlineEnergyCheck.progression);
-                  syncServerLeaderboard(onlineEnergyCheck.progression, player1Ref.current);
-                }
-              }
-              const incomingRound: MinigameRoundPayload | null = msg.round
-                ? msg.round
-                : msg.pairing
-                ? { minigameType: msg.minigameType || 'two_clubs', pairing: msg.pairing }
-                : null;
-              if (incomingRound) setOnlineRound(incomingRound);
-              setXoxState(msg.xoxState || null);
-              setXoxNotice(null);
-
-              if (msg.scores) {
-                setPlayer1((p) => ({ ...p, score: msg.scores[myId] ?? p.score }));
-                setPlayer2((p) => ({ ...p, score: msg.scores[p.id] ?? p.score }));
-              }
-              setShowResultSheet(false);
-              setRoundWinnerPlayer(null);
-              setAcceptedAnswerText('');
-              setIsTimeExpired(false);
-              setRoundEndReason('timeout');
-              setOnlineSilhouetteExhausted(false);
-              setIsRoundPlaying(false);
-              setServerWrongFeedback(null);
-              setTimeRemaining(
-                getRoundDurationSeconds(msg.minigameType || minigameTypeRef.current)
-              );
-              setRematchState('idle');
-              setScreen('playing');
-              setCountdown(msg.countdown ?? 3);
-              setCurrentRoundIndex((msg.roundIndex || 1) - 1);
-            } else if (msg.type === 'countdown_tick') {
-              setCountdown(msg.countdown);
-            } else if (msg.type === 'round_started') {
-              const incomingRound: MinigameRoundPayload | null = msg.round
-                ? msg.round
-                : msg.pairing
-                ? { minigameType: msg.minigameType || 'two_clubs', pairing: msg.pairing }
-                : null;
-              if (incomingRound) setOnlineRound(incomingRound);
-              if (msg.xoxState) setXoxState(msg.xoxState);
-              roundStartedAtRef.current = Date.now();
-              setCountdown(0);
-              setOnlineSilhouetteExhausted(false);
-              setIsRoundPlaying(true);
-              setTimeRemaining(
-                msg.timeRemaining ??
-                  getRoundDurationSeconds(msg.minigameType || minigameTypeRef.current)
-              );
-              setShowResultSheet(false);
-            } else if (msg.type === 'time_tick') {
-              setTimeRemaining(msg.timeRemaining);
-            } else if (msg.type === 'xox_updated') {
-              if (msg.xoxState) setXoxState(msg.xoxState);
-              if (typeof msg.timeRemaining === 'number') setTimeRemaining(msg.timeRemaining);
-              if (msg.turnNotice) {
-                setXoxNotice(msg.turnNotice);
-              } else if (msg.lastMove) {
-                setXoxNotice(`${msg.lastMove.playerName} ile kare alındı!`);
-                sounds.playCorrect();
-                if (msg.lastMove.ownerId === myId) {
-                  haptics.correct();
-                }
-              }
-            } else if (msg.type === 'answer_wrong') {
-              fastComboStreakRef.current = 0;
-              setFastComboStreak(0);
-              if (msg.reason === 'attempts_exhausted' || msg.attemptsRemaining === 0) {
-                setOnlineSilhouetteExhausted(true);
-              }
-              if (msg.xoxTurnChanged && msg.xoxState) {
-                setXoxState(msg.xoxState);
-                if (typeof msg.timeRemaining === 'number') setTimeRemaining(msg.timeRemaining);
-                setXoxNotice('Yanlış tahmin! Sıra rakibe geçti.');
-              }
-              setServerWrongFeedback({
-                attempt: msg.attempt || '',
-                seq: Date.now() + Math.random(),
+        if (isQuick) {
+          cancelRtdbMatchmakingRef.current = startRtdbMatchmaking({
+            profile: selfProfile,
+            minigameType: chosenMinigame,
+            onRoomMatched: (matchedCode) => {
+              cancelRtdbMatchmakingRef.current = null;
+              attachRtdbRoomListener(matchedCode);
+            },
+            onFallbackToBot: (bot) => {
+              cancelRtdbMatchmakingRef.current = null;
+              // Seamless realistic bot opponent pairing after 4s wait
+              startBotMatch(bot.difficulty, chosenMinigame, {
+                id: bot.id,
+                name: bot.name,
+                avatar: bot.avatar,
               });
-            } else if (msg.type === 'opponent_wrong_attempt') {
-              if (msg.xoxTurnChanged && msg.xoxState) {
-                setXoxState(msg.xoxState);
-                if (typeof msg.timeRemaining === 'number') setTimeRemaining(msg.timeRemaining);
-                setXoxNotice('Rakip yanlış yazdı! Sıra sende.');
-              }
-              setOpponentMissedPulse((prev) => prev + 1);
-            } else if (msg.type === 'round_ended') {
-              setIsRoundPlaying(false);
-              if (msg.xoxState) setXoxState(msg.xoxState);
-              if (msg.winnerId) {
-                const winner =
-                  msg.winnerId === myId ? player1Ref.current : player2Ref.current;
-                const exactOnlineElapsed = (Date.now() - roundStartedAtRef.current) / 1000;
-                const effectiveElapsed =
-                  typeof msg.elapsedSec === 'number' && msg.elapsedSec < exactOnlineElapsed
-                    ? msg.elapsedSec
-                    : exactOnlineElapsed;
-                setRoundWinnerPlayer(winner);
-                setAcceptedAnswerText(msg.acceptedPlayerName || msg.acceptedAnswer || '');
-                setIsTimeExpired(false);
-                setRoundEndReason('draw');
-                if (msg.winnerId === myId) {
-                  if (effectiveElapsed < FAST_COMBO_THRESHOLD_SEC) {
-                    const nextCombo = fastComboStreakRef.current + 1;
-                    fastComboStreakRef.current = nextCombo;
-                    maxFastComboRef.current = Math.max(maxFastComboRef.current, nextCombo);
-                    setFastComboStreak(nextCombo);
-                  } else {
-                    fastComboStreakRef.current = 0;
-                    setFastComboStreak(0);
-                  }
-                  sounds.playGoal();
-                  haptics.correct();
-                } else {
-                  fastComboStreakRef.current = 0;
-                  setFastComboStreak(0);
-                  sounds.playWrong();
-                  haptics.wrong();
-                }
-              } else {
-                fastComboStreakRef.current = 0;
-                setFastComboStreak(0);
-                setRoundWinnerPlayer(null);
-                const exhausted = msg.reason === 'Deneme hakları doldu!';
-                const timedOut = msg.reason === 'Süre doldu!';
-                setIsTimeExpired(timedOut);
-                setRoundEndReason(
-                  exhausted ? 'attempts_exhausted' : timedOut ? 'timeout' : 'draw'
-                );
-                sounds.playWrong();
-                haptics.wrong();
-              }
-              if (msg.scores) {
-                setPlayer1((p) => ({ ...p, score: msg.scores[myId] ?? 0 }));
-                setPlayer2((p) => ({ ...p, score: msg.scores[p.id] ?? 0 }));
-              }
-              if (msg.stats) {
-                if (msg.stats[myId]) setPlayer1Stats(msg.stats[myId]);
-                const oppId = player2Ref.current.id;
-                if (oppId && msg.stats[oppId]) setPlayer2Stats(msg.stats[oppId]);
-              }
-              const oppIdForLog = player2Ref.current.id;
-              const p1After = msg.scores ? (msg.scores[myId] ?? player1Ref.current.score) : player1Ref.current.score;
-              const p2After = msg.scores && oppIdForLog ? (msg.scores[oppIdForLog] ?? player2Ref.current.score) : player2Ref.current.score;
-              const roundNo = typeof msg.roundIndex === 'number' ? msg.roundIndex : currentRoundIndexRef.current + 1;
-              const roundReason: MatchRoundHighlight['reason'] = msg.winnerId
-                ? 'scored'
-                : msg.reason === 'Deneme hakları doldu!'
-                ? 'attempts_exhausted'
-                : msg.reason === 'Süre doldu!'
-                ? 'timeout'
-                : 'draw';
-              const winObj = msg.winnerId
-                ? msg.winnerId === myId
-                  ? player1Ref.current
-                  : player2Ref.current
-                : null;
-              setMatchHighlights((prev) => [
-                ...prev,
-                {
-                  roundNumber: roundNo,
-                  minigameType: minigameTypeRef.current,
-                  winnerPlayerId: msg.winnerId ?? null,
-                  winnerName: winObj?.name,
-                  acceptedAnswer: msg.acceptedPlayerName || msg.acceptedAnswer || undefined,
-                  elapsedSec: typeof msg.elapsedSec === 'number' ? msg.elapsedSec : null,
-                  wasClutch: Boolean(msg.wasClutch),
-                  reason: roundReason,
-                  scoreAfter: { p1: p1After, p2: p2After },
-                },
-              ]);
-              setShowResultSheet(true);
-            } else if (msg.type === 'match_over') {
-              setShowResultSheet(false);
-              setIsRoundPlaying(false);
-              if (msg.scores) {
-                setPlayer1((p) => ({ ...p, score: msg.scores[myId] ?? p.score }));
-                setPlayer2((p) => ({ ...p, score: msg.scores[p.id] ?? p.score }));
-              }
-              if (msg.stats) {
-                if (msg.stats[myId]) setPlayer1Stats(msg.stats[myId]);
-                const oppId = player2Ref.current.id;
-                if (oppId && msg.stats[oppId]) setPlayer2Stats(msg.stats[oppId]);
-              }
-              setRematchState('idle');
-              void transitionToGameOver();
-            } else if (msg.type === 'rematch_waiting') {
-              setRematchState('waiting');
-            } else if (msg.type === 'opponent_rematch_requested') {
-              setRematchState('opponent_requested');
-            } else if (msg.type === 'rematch_started') {
-              matchInstanceIdRef.current += 1;
-              setLastMatchRewards(null);
-              setPlayer1((p) => ({ ...p, score: 0 }));
-              setPlayer2((p) => ({ ...p, score: 0 }));
-              setPlayer1Stats({ ...initialStats });
-              setPlayer2Stats({ ...initialStats });
-              setMatchHighlights([]);
-              setRematchState('idle');
-            } else if (msg.type === 'opponent_disconnected') {
-              if (screenRef.current === 'game_over') {
-                setRematchState('opponent_left');
-              } else {
-                closeOnlineSocket();
-                setIsRoundPlaying(false);
-                setShowResultSheet(false);
-                setOnlineError(msg.message || 'Rakibin bağlantısı kesildi!');
-                setScreen('lobby');
-              }
-            } else if (msg.type === 'error') {
-              closeOnlineSocket();
-              setOnlineError(msg.message || 'Odaya bağlanılamadı.');
-              setScreen('lobby');
-            }
-          } catch (e) {
-            console.error(e);
-          }
-        };
+            },
+          });
+          return;
+        }
 
-        ws.onerror = () => {
-          if (wsRef.current !== ws) return;
-          closeOnlineSocket();
-          setOnlineError('Sunucu bağlantısı kurulamadı. Lütfen tekrar dene!');
-          setScreen('lobby');
-        };
-
-        ws.onclose = () => {
-          if (wsRef.current !== ws) return;
-          wsRef.current = null;
-          if (screenRef.current === 'game_over') {
-            setRematchState('opponent_left');
-          } else if (screenRef.current === 'room_waiting' || screenRef.current === 'playing') {
-            setIsRoundPlaying(false);
-            setShowResultSheet(false);
-            setOnlineError('Sunucu bağlantısı kesildi. Lütfen tekrar dene!');
+        if (options?.roomCode) {
+          const joined = await joinRtdbRoom(options.roomCode, selfProfile);
+          if (!joined.ok) {
+            setOnlineError(joined.error);
             setScreen('lobby');
+            return;
           }
-        };
+          attachRtdbRoomListener(joined.room.code);
+        } else {
+          const created = await createRtdbRoom(selfProfile, chosenMinigame);
+          attachRtdbRoomListener(created.code);
+        }
       } catch {
-        setOnlineError('Çevrim içi bağlantı başlatılamadı.');
+        setOnlineError('Firebase oda bağlantısı başlatılamadı. Lütfen tekrar dene!');
         setScreen('lobby');
       }
     },
-    []
+    [attachRtdbRoomListener]
   );
 
   // Auto-join room from ?room=XXXXX invite URL once user is in lobby
@@ -2865,7 +2951,23 @@ export default function App() {
   }, [screen, pendingInviteRoom, handleSelectOnlineMode]);
 
   const handleSubmitOnlineAnswer = useCallback(
-    (answer: string, cellPos?: { row: number; col: number }) => {
+    async (answer: string, cellPos?: { row: number; col: number }) => {
+      const activeCode = activeRtdbRoomCodeRef.current;
+      if (activeCode) {
+        const res = await submitRtdbAnswer(activeCode, sessionPlayerIdRef.current, answer, cellPos);
+        if (!res.accepted) {
+          fastComboStreakRef.current = 0;
+          setFastComboStreak(0);
+          if (res.reason === 'attempts_exhausted' || res.attemptsRemaining === 0) {
+            setOnlineSilhouetteExhausted(true);
+          }
+          setServerWrongFeedback({
+            attempt: answer,
+            seq: Date.now() + Math.random(),
+          });
+        }
+        return;
+      }
       if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
         wsRef.current.send(
           JSON.stringify({
@@ -2912,7 +3014,11 @@ export default function App() {
       return;
     }
     if (mode === 'online_match' || mode === 'online_room') {
-      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      const activeCode = activeRtdbRoomCodeRef.current;
+      if (activeCode) {
+        setRematchState('waiting');
+        void requestRtdbRematch(activeCode, sessionPlayerIdRef.current);
+      } else if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
         wsRef.current.send(JSON.stringify({ type: 'rematch_request' }));
       } else {
         setOnlineError('Maç bağlantısı kapandı. Yeniden eşleşebilirsin.');

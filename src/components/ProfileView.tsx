@@ -1413,7 +1413,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             </div>
 
             <div className="flex flex-col gap-2">
-              {confirmGearItem.costCoins > 0 && (
+              {confirmGearItem.costCoins > 0 ? (
                 <button
                   type="button"
                   data-testid="gear-confirm-buy-btn"
@@ -1447,6 +1447,15 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                   className="w-full py-3 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs sm:text-sm transition active:scale-95 cursor-pointer"
                 >
                   Evet, Satın Al (🪙 {formatPoints(confirmGearItem.costCoins)} Coin)
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  disabled
+                  aria-disabled="true"
+                  className="w-full py-3 rounded-xl bg-slate-800 border border-slate-700 text-slate-300 font-black text-xs sm:text-sm cursor-not-allowed opacity-85"
+                >
+                  Yakında (Coming Soon)
                 </button>
               )}
 
