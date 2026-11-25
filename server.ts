@@ -12,7 +12,11 @@ import {
   PublicPlayerProfile,
 } from './src/game/types.js';
 import { AccountStore, buildPublicProfileFromRecord } from './src/game/accountStore.js';
-import { normalizeUsernameKey } from './src/game/accountEngine.js';
+import {
+  isLegacyFlaggedUsername,
+  normalizeUsernameKey,
+  sanitizePublicDisplayName,
+} from './src/game/accountEngine.js';
 
 const VALID_MINIGAMES: MinigameType[] = ['two_clubs', 'xox', 'career', 'country_club'];
 
@@ -64,8 +68,17 @@ for (const acc of accountStore.listAll()) {
   liveLeaderboard.set(acc.accountId, buildPublicProfileFromRecord(acc));
 }
 
+function sanitizeLeaderboardEntry(rec: LiveLeaderboardRecord): LiveLeaderboardRecord {
+  return {
+    ...rec,
+    name: sanitizePublicDisplayName(rec.name, rec.id),
+    usernameKey: isLegacyFlaggedUsername(rec.name) ? undefined : rec.usernameKey,
+  };
+}
+
 function getSortedLiveLeaderboard(): LiveLeaderboardRecord[] {
   return Array.from(liveLeaderboard.values())
+    .map(sanitizeLeaderboardEntry)
     .sort((a, b) => b.weeklyPoints - a.weeklyPoints)
     .slice(0, 50);
 }
@@ -91,6 +104,7 @@ app.get('/api/accounts/by-id/:accountId', (req, res) => {
   res.json({
     ok: true,
     found: true,
+    requiresUsernameRename: isLegacyFlaggedUsername(rec.profile?.name || rec.username),
     account: {
       accountId: rec.accountId,
       recoveryCode: rec.recoveryCode,
@@ -134,6 +148,7 @@ app.post('/api/accounts/register', (req, res) => {
 
   res.json({
     ok: true,
+    requiresUsernameRename: isLegacyFlaggedUsername(acc.profile?.name || acc.username),
     account: {
       accountId: acc.accountId,
       recoveryCode: acc.recoveryCode,
@@ -176,6 +191,7 @@ app.post('/api/accounts/recover', (req, res) => {
   const acc = result.account;
   res.json({
     ok: true,
+    requiresUsernameRename: isLegacyFlaggedUsername(acc.profile?.name || acc.username),
     account: {
       accountId: acc.accountId,
       recoveryCode: acc.recoveryCode,
@@ -205,13 +221,15 @@ app.post('/api/leaderboard/sync', (req, res) => {
       prevTopWeekly = rec.weeklyPoints;
     }
   }
-  const cleanName = String(name).slice(0, 20);
+  const cleanName = sanitizePublicDisplayName(String(name).slice(0, 20), cleanId);
   const nextWeekly = Math.max(0, Number(weeklyPoints) || 0);
   const nextAvatar = String(avatar || existing?.avatar || '⚽').slice(0, 64);
   const nextFriendCode = friendCode ? String(friendCode).slice(0, 12) : existing?.friendCode;
   liveLeaderboard.set(cleanId, {
     id: cleanId,
-    usernameKey: normalizeUsernameKey(cleanName) || existing?.usernameKey,
+    usernameKey: isLegacyFlaggedUsername(String(name))
+      ? undefined
+      : normalizeUsernameKey(cleanName) || existing?.usernameKey,
     friendCode: friendCode ? String(friendCode).slice(0, 12) : existing?.friendCode,
     name: cleanName,
     avatar: String(avatar || existing?.avatar || '⚽').slice(0, 64),
@@ -341,6 +359,7 @@ app.get('/api/profiles', (req, res) => {
   }
 
   const profiles = Array.from(merged.values())
+    .map(sanitizeLeaderboardEntry)
     .sort((a, b) => b.weeklyPoints - a.weeklyPoints || b.totalPoints - a.totalPoints)
     .slice(0, limit);
 
@@ -384,7 +403,7 @@ app.get('/api/profiles/:identifier', (req, res) => {
     return res.json({ ok: false, found: false });
   }
 
-  res.json({ ok: true, found: true, profile: chosen });
+  res.json({ ok: true, found: true, profile: sanitizeLeaderboardEntry(chosen) });
 });
 
 app.get('/api/pairings', (_req, res) => {

@@ -1,3 +1,19 @@
+import {
+  USERNAME_INAPPROPRIATE_ERROR,
+  isLegacyFlaggedUsername,
+  isUsernameProfane,
+  sanitizePublicDisplayName,
+  validateUsername,
+} from './usernameFilter';
+
+export {
+  USERNAME_INAPPROPRIATE_ERROR,
+  isLegacyFlaggedUsername,
+  isUsernameProfane,
+  sanitizePublicDisplayName,
+  validateUsername,
+};
+
 const TURKISH_CHAR_MAP: Record<string, string> = {
   ç: 'c',
   Ç: 'c',
@@ -56,14 +72,16 @@ export function validateUsernameFormat(rawName: string): UsernameValidationResul
   const cleanedDisplay = cleanDisplayName(rawName);
   const key = normalizeUsernameKey(cleanedDisplay);
 
-  if (cleanedDisplay.length < 3) {
+  const profanityCheck = validateUsername(cleanedDisplay);
+  if (!profanityCheck.ok) {
     return {
       ok: false,
-      reason: 'Kullanıcı adı en az 3 karakter olmalıdır.',
+      reason: profanityCheck.error || USERNAME_INAPPROPRIATE_ERROR,
       cleanedDisplay,
       key,
     };
   }
+
   if (cleanedDisplay.length > 18) {
     return {
       ok: false,

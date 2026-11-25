@@ -118,38 +118,19 @@ export const PlayerAvatar: React.FC<PlayerAvatarProps> = ({
 
   const frameClasses = getFrameClasses(frame);
 
-  // Özel Anime Futbolcu Avatarı ("Karakter Oluştur & Giydir" sistemi)
-  if (animeAvatarConfig) {
+  // For user profile badges (whenever no explicit `player` or `appearance` prop is passed),
+  // render a unified, streamlined football/bot badge instead of star portraits or custom anime builders.
+  if (!player && !appearance) {
+    const isBotBadge = avatar === '🤖' || avatar === 'bot';
     return (
       <div
         data-testid={isCardMode ? 'player-avatar-card' : 'player-avatar'}
         role="img"
-        aria-label={`${displayName} Anime Futbolcu Avatarı`}
-        className={`relative overflow-hidden shrink-0 select-none bg-slate-950 border border-cyan-400/45 shadow-lg ${boxSizeMap[size]} ${radiusClass} ${frameClasses} ${className}`}
+        aria-label={`${displayName} profil simgesi`}
+        className={`relative overflow-hidden shrink-0 select-none bg-[#101B24] border border-[#22C55E]/35 flex items-center justify-center ${boxSizeMap[size]} ${radiusClass} ${frameClasses} ${className}`}
       >
-        <AnimeFootballerSvg config={animeAvatarConfig} className="w-full h-full block" />
-      </div>
-    );
-  }
-
-  // Gerçek futbolcu olmayan ikon/emoji avatarlarında jenerik insan yüzü çizilmez;
-  // doğrudan şık neon futbol rozeti içinde futbol ikonu (⚽, 🏆, 👟, 👕 vb.) gösterilir.
-  if (isCustomEmojiAvatar) {
-    return (
-      <div
-        data-testid={isCardMode ? 'player-avatar-card' : 'player-avatar'}
-        role="img"
-        aria-label={`${displayName} futbol ikonu`}
-        className={`relative overflow-hidden shrink-0 select-none bg-gradient-to-br from-slate-900 via-indigo-950 to-emerald-950 border border-emerald-400/35 shadow-lg flex items-center justify-center ${boxSizeMap[size]} ${radiusClass} ${frameClasses} ${className}`}
-      >
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_30%_25%,rgba(34,211,238,0.28),transparent_60%),radial-gradient(circle_at_75%_80%,rgba(251,191,36,0.22),transparent_60%)]"
-        />
-        <span
-          className={`relative z-10 leading-none drop-shadow-[0_2px_6px_rgba(0,0,0,0.6)] ${iconFontSizeMap[size]}`}
-        >
-          {avatar}
+        <span className={`relative z-10 leading-none ${iconFontSizeMap[size]}`}>
+          {isBotBadge ? '🤖' : '⚽'}
         </span>
       </div>
     );

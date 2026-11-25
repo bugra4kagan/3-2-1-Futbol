@@ -13,7 +13,8 @@ import {
   MinigameType,
 } from './types';
 
-export const ONLINE_MATCHMAKING_FALLBACK_MS = 4000;
+export const ONLINE_MATCHMAKING_TIMEOUT_MS = 12000;
+export const ONLINE_MATCHMAKING_FALLBACK_MS = ONLINE_MATCHMAKING_TIMEOUT_MS;
 
 export function sanitizeRtdbKey(raw: string): string {
   const cleaned = String(raw || '')

@@ -24,6 +24,7 @@ import {
   getLeagueTierInfo,
   getTimeUntilSundaySeasonEnd,
 } from '../game/retentionEngine';
+import { sanitizePublicDisplayName } from '../game/usernameFilter';
 import { PlayerAvatar } from './PlayerAvatar';
 
 interface LeagueViewProps {
@@ -345,7 +346,9 @@ export const LeagueView: React.FC<LeagueViewProps> = ({
                 Eşleşen oyuncu bulunamadı.
               </p>
             ) : (
-              combinedSearchResults.map((item) => (
+              combinedSearchResults.map((item) => {
+                const safeItemName = sanitizePublicDisplayName(item.name, item.id);
+                return (
                 <button
                   key={item.id}
                   type="button"
@@ -358,15 +361,15 @@ export const LeagueView: React.FC<LeagueViewProps> = ({
                 >
                   <div className="flex items-center gap-2.5 min-w-0">
                     <PlayerAvatar
-                      avatar={item.avatar}
-                      name={item.name}
+                      avatar="⚽"
+                      name={safeItemName}
                       size="sm"
                       variant="circle"
                       className="bg-slate-800 border border-slate-700"
                     />
                     <div className="min-w-0">
                       <span className="block font-bold text-xs text-white truncate">
-                        {item.name}
+                        {safeItemName}
                       </span>
                       <span className="block text-[10px] text-slate-400 truncate">
                         {formatPoints(item.totalPoints)} toplam puan
@@ -379,7 +382,8 @@ export const LeagueView: React.FC<LeagueViewProps> = ({
                     <span>İncele</span>
                   </span>
                 </button>
-              ))
+              );
+              })
             )}
           </div>
         )}

@@ -234,50 +234,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </button>
           </section>
 
-          {/* 1.5 Visual Theme Switcher (Modern vs Klasik) */}
-          {onToggleTheme && (
-            <section className="p-3.5 rounded-2xl bg-slate-950/85 border border-slate-800 flex items-center justify-between gap-3">
-              <div className="flex items-center gap-3 min-w-0">
-                <div
-                  className={`w-10 h-10 rounded-xl border flex items-center justify-center shrink-0 ${
-                    uiTheme === 'klasik'
-                      ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400'
-                      : 'bg-cyan-500/15 border-cyan-500/40 text-cyan-300'
-                  }`}
-                >
-                  <Palette className="w-5 h-5" />
-                </div>
-                <div className="min-w-0">
-                  <span className="block text-sm font-black text-white">
-                    {t('themeSectionTitle')}
-                  </span>
-                  <span className="block text-[11px] text-slate-400 leading-snug">
-                    {uiTheme === 'klasik'
-                      ? t('themeClassicDesc')
-                      : t('themeModernDesc')}
-                  </span>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                data-testid="settings-theme-toggle"
-                aria-pressed={uiTheme === 'klasik'}
-                onClick={() => {
-                  sounds.playCorrect();
-                  onToggleTheme();
-                }}
-                className={`px-3.5 py-2 rounded-xl border text-xs font-black transition cursor-pointer shrink-0 active:scale-95 ${
-                  uiTheme === 'klasik'
-                    ? 'bg-emerald-600 hover:bg-emerald-500 border-emerald-400 text-white'
-                    : 'bg-slate-800 hover:bg-slate-700 border-cyan-400/50 text-cyan-200'
-                }`}
-              >
-                {uiTheme === 'klasik' ? t('themeClassicLabel') : t('themeModernLabel')}
-              </button>
-            </section>
-          )}
-
           {/* 1.75 Interactive Onboarding Tutorial Re-open Button */}
           {onOpenTutorial && (
             <section className="p-3.5 rounded-2xl bg-slate-950/85 border border-slate-800 flex items-center justify-between gap-3">

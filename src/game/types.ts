@@ -235,7 +235,7 @@ export interface RoundState {
   revealedPlayers: Player[];
 }
 
-export type MainTab = 'stats' | 'friends' | 'play' | 'league' | 'profile';
+export type MainTab = 'play' | 'league' | 'profile';
 
 export type QuestMetric =
   | 'matches_played'

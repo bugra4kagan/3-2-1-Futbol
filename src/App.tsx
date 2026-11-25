@@ -161,6 +161,8 @@ import { ToastContainer } from './components/ToastContainer';
 import { ClubBadge } from './components/ClubBadge';
 import { NightMatchPitchBackground } from './components/NightMatchPitchBackground';
 import { FriendRequestConfirmModal } from './components/FriendRequestConfirmModal';
+import { isLegacyFlaggedUsername } from './game/accountEngine';
+import { BOT_TIER_METADATA } from './game/botEngine';
 import { EnergyEmptyModal } from './components/EnergyEmptyModal';
 import { DailyWheelModal } from './components/DailyWheelModal';
 import { FootballPassModal } from './components/FootballPassModal';
@@ -180,6 +182,7 @@ import {
 import {
   advanceRoomRound,
   beginRoomRound,
+  cleanupActiveMatchmakingQueue,
   createRoom,
   deleteRoom,
   describeRoomError,
@@ -197,8 +200,11 @@ import {
   getRoomPhaseKey,
   getRoomPlayerKey,
   getRoomRoundPayload,
+  normalizeRoomCode,
   parseRoomXoxState,
 } from './game/roomEngine';
+import { getAuthoritativeServerNowMs } from './game/serverTime';
+import { ONLINE_MATCHMAKING_TIMEOUT_MS } from './game/realtimeSyncHelpers';
 import {
   FootballPassState,
   PASS_XP_DAILY_CHALLENGE,
@@ -621,7 +627,11 @@ export default function App() {
   // Online Room & Sync States
   const [roomCode, setRoomCode] = useState<string>('');
   const [isMatchmaking, setIsMatchmaking] = useState<boolean>(false);
+  const [matchmakingSecondsLeft, setMatchmakingSecondsLeft] = useState<number>(12);
+  const [noOpponentFound, setNoOpponentFound] = useState<boolean>(false);
+  const [botStatus, setBotStatus] = useState<'idle' | 'thinking' | 'answered'>('idle');
   const [onlineError, setOnlineError] = useState<string | null>(null);
+  const matchmakingTickTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [pendingInviteRoom, setPendingInviteRoom] = useState<string | null>(null);
   const [onlineSilhouetteExhausted, setOnlineSilhouetteExhausted] = useState<boolean>(false);
   const [serverWrongFeedback, setServerWrongFeedback] = useState<{
@@ -1197,17 +1207,26 @@ export default function App() {
     const handleOffline = () => {
       setIsNetworkOnline(false);
     };
+    const handleBeforeUnload = () => {
+      cleanupActiveMatchmakingQueue();
+    };
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
+    window.addEventListener('beforeunload', handleBeforeUnload);
     return () => {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('beforeunload', handleBeforeUnload);
     };
   }, []);
 
   useEffect(() => {
     if (screen !== 'lobby' || typeof window === 'undefined') return;
     if (suppressDemoAutoRecordRef.current) return;
+    if (isLegacyFlaggedUsername(player1.name)) {
+      setAuthModalTab('profile');
+      setShowAuthModal(true);
+    }
     try {
       const done = localStorage.getItem(ONBOARDING_STORAGE_KEY) === 'true';
       if (!done) {
@@ -1216,7 +1235,7 @@ export default function App() {
     } catch {
       // ignore
     }
-  }, [screen]);
+  }, [screen, player1.name]);
 
   // Re-calibrate Firebase serverTimestamp() clock on window focus/visibility change
   useEffect(() => {
@@ -1519,7 +1538,7 @@ export default function App() {
   }, [screen]);
 
   useEffect(() => {
-    if (screen === 'lobby' && (activeTab === 'league' || activeTab === 'stats')) {
+    if (screen === 'lobby' && activeTab === 'league') {
       fetchServerLeaderboard();
       return subscribeRtdbLeaderboard((players) => {
         setLiveLeaderboardPlayers(players);
@@ -1553,6 +1572,7 @@ trackGameEvent('match_complete', {
     const outcome = recordMatchOutcome(progression, {
       won,
       isDraw,
+      isBotMatch: mode === 'bot',
       minigameType,
       stats: player1Stats,
     });
@@ -1748,6 +1768,10 @@ trackGameEvent('match_complete', {
    */
   const teardownOnlineRoom = (options: { deleteRoomDoc?: boolean } = {}) => {
     onlineRequestSeqRef.current += 1;
+    if (matchmakingTickTimerRef.current) {
+      clearInterval(matchmakingTickTimerRef.current);
+      matchmakingTickTimerRef.current = null;
+    }
     if (cancelMatchmakingRef.current) {
       try {
         cancelMatchmakingRef.current();
@@ -1756,6 +1780,7 @@ trackGameEvent('match_complete', {
       }
       cancelMatchmakingRef.current = null;
     }
+    cleanupActiveMatchmakingQueue();
     stopOnlineRoomTimers();
     if (stopRoomPresenceRef.current) {
       stopRoomPresenceRef.current();
@@ -2038,28 +2063,21 @@ trackGameEvent('match_complete', {
     });
   };
 
-  // Start Solo Bot or Tournament Match (non-repeating questions across consecutive matches!)
+  // Start Solo Bot or Tournament Match (no energy blocking; transparent BOT badge)
   const startBotMatch = (
     selectedBotDifficulty: BotDifficulty = 'medium',
     selectedMinigame: MinigameType = 'two_clubs',
     customOpponent?: { id: string; name: string; avatar: string }
   ) => {
-    const energyCheck = consumeMatchEntryEnergy(progressionRef.current);
-    if (!energyCheck.ok) {
-      persistProgression(energyCheck.progression);
-      setShowEnergyModal(true);
-      return;
-    }
-
     matchInstanceIdRef.current += 1;
     energyChargedMatchInstanceRef.current = matchInstanceIdRef.current;
     lastChanceUsedInMatchRef.current = false;
     bonusReviveTimeRef.current = 0;
     resetMatchComboAndClock();
-    persistProgression(energyCheck.progression);
-    syncServerLeaderboard(energyCheck.progression, player1Ref.current);
     setLastMatchEnergyDeltaLabel(null);
     setLastMatchRewards(null);
+    setNoOpponentFound(false);
+    setBotStatus('idle');
     setMode('bot');
     setBotDiff(selectedBotDifficulty);
     setMinigameType(selectedMinigame);
@@ -2078,15 +2096,11 @@ trackGameEvent('match_complete', {
     setCurrentRoundIndex(0);
     currentRoundIndexRef.current = 0;
 
-    const botNames: Record<BotDifficulty, { name: string; avatar: string }> = {
-      easy: { name: 'Çırak', avatar: '🌱' },
-      medium: { name: 'Şampiyon', avatar: '🏆' },
-      hard: { name: 'Efsane', avatar: '👑' },
-    };
+    const tierMeta = BOT_TIER_METADATA[selectedBotDifficulty];
     const b = customOpponent || {
-      id: 'bot_ai',
-      name: botNames[selectedBotDifficulty].name,
-      avatar: botNames[selectedBotDifficulty].avatar,
+      id: `bot_${selectedBotDifficulty}`,
+      name: `${tierMeta.title} Bot`,
+      avatar: '🤖',
     };
     setPlayer2({
       id: b.id,
@@ -2740,15 +2754,6 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
           setMatchHighlights([]);
           setRematchState('idle');
           trackGameEvent('match_start', { mode: 'online', minigame: room.minigameType });
-
-          if (energyChargedMatchInstanceRef.current !== matchInstanceIdRef.current) {
-            energyChargedMatchInstanceRef.current = matchInstanceIdRef.current;
-            const onlineEnergyCheck = consumeMatchEntryEnergy(progressionRef.current);
-            if (onlineEnergyCheck.ok) {
-              persistProgression(onlineEnergyCheck.progression);
-              syncServerLeaderboard(onlineEnergyCheck.progression, player1Ref.current);
-            }
-          }
         }
         setCurrentRoundIndex(room.currentRoundIndex || 0);
         setScreen('playing');
@@ -2770,18 +2775,34 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
           setTimeRemaining(getRoundDurationSeconds(room.minigameType));
           setRematchState('idle');
 
-          // Local 3-2-1 on each device; whoever reaches 0 first starts the round
-          let countVal = 3;
-          setCountdown(countVal);
+          // Synchronized 3-2-1 countdown anchored to shared countdownEndsAt via server clock
+          const serverNow = getAuthoritativeServerNowMs();
+          const rawRemaining =
+            typeof room.countdownEndsAt === 'number'
+              ? room.countdownEndsAt - serverNow
+              : 3000;
+          const useSharedClock = rawRemaining >= -500 && rawRemaining <= 4500;
+          const localCountdownStartMs = Date.now();
+          const initialDelayMs = useSharedClock ? Math.max(0, rawRemaining) : 3000;
+
+          const computeCount = () => {
+            const remMs = useSharedClock
+              ? (room.countdownEndsAt as number) - getAuthoritativeServerNowMs()
+              : 3000 - (Date.now() - localCountdownStartMs);
+            if (remMs <= 0) return 0;
+            return Math.min(3, Math.max(1, Math.ceil(remMs / 1000)));
+          };
+
+          setCountdown(Math.max(1, computeCount()));
           roomTickTimerRef.current = setInterval(() => {
-            countVal -= 1;
-            setCountdown(Math.max(0, countVal));
-            if (countVal <= 0 && roomTickTimerRef.current) {
+            const nextVal = computeCount();
+            setCountdown(nextVal);
+            if (nextVal <= 0 && roomTickTimerRef.current) {
               clearInterval(roomTickTimerRef.current);
               roomTickTimerRef.current = null;
             }
-          }, 1000);
-          scheduleRoomAction(3000, () => beginRoomRound(code, phase));
+          }, 150);
+          scheduleRoomAction(initialDelayMs, () => beginRoomRound(code, phase));
         }
         return;
       }
@@ -2790,22 +2811,33 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
         if (phaseChanged) {
           roomPhaseKeyRef.current = phaseKey;
           stopOnlineRoomTimers();
-          // Measure the round locally (immune to clock differences between phones)
+
+          const totalSec = getRoundDurationSeconds(room.minigameType);
+          const serverNow = getAuthoritativeServerNowMs();
+          const useSharedRoundStart =
+            typeof room.roundStartedAt === 'number' &&
+            Math.abs(serverNow - room.roundStartedAt) <= (totalSec + 4) * 1000;
           const localStartedAt = Date.now();
           roundStartedAtRef.current = localStartedAt;
+
           setCountdown(0);
           setOnlineSilhouetteExhausted(false);
           setIsRoundPlaying(true);
           setShowResultSheet(false);
 
-          const totalSec = getRoundDurationSeconds(room.minigameType);
-          setTimeRemaining(totalSec);
+          const computeRemainingSec = () => {
+            const elapsedSec = useSharedRoundStart
+              ? Math.max(0, Math.floor((getAuthoritativeServerNowMs() - (room.roundStartedAt as number)) / 1000))
+              : Math.max(0, Math.floor((Date.now() - localStartedAt) / 1000));
+            return Math.max(0, totalSec - elapsedSec);
+          };
+
+          setTimeRemaining(computeRemainingSec());
           let expireRequestedAt = 0;
 
           roomTickTimerRef.current = setInterval(() => {
             const now = Date.now();
-            const elapsed = Math.floor((now - localStartedAt) / 1000);
-            const rem = Math.max(0, totalSec - elapsed);
+            const rem = computeRemainingSec();
             setTimeRemaining(rem);
             if (rem <= 0 && now - expireRequestedAt >= 3000) {
               expireRequestedAt = now;
@@ -2912,18 +2944,10 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
     ) => {
       if (typeof navigator !== 'undefined' && navigator.onLine === false) {
         setOnlineError(
-          'İnternet bağlantısı yok! Online 1v1 ve oda modları için bağlantını kontrol et. Dilersen Bot Antrenmanı oynayabilirsin.'
+          'İnternet bağlantısı yok! Online 1v1 ve oda modları için bağlantını kontrol et. Dilersen Botla Maç oynayabilirsin.'
         );
         setScreen('lobby');
         setActiveTab('play');
-        return;
-      }
-
-      if (
-        !hasUnlimitedEnergy(progressionRef.current) &&
-        getEffectiveDailyEnergy(progressionRef.current) <= 0
-      ) {
-        setShowEnergyModal(true);
         return;
       }
 
@@ -2947,13 +2971,17 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
 
       const isQuick = onlineMode === 'online_match';
       setIsMatchmaking(isQuick);
+      setMatchmakingSecondsLeft(Math.ceil(ONLINE_MATCHMAKING_TIMEOUT_MS / 1000));
+      setNoOpponentFound(false);
+      setBotStatus('idle');
       setOnlineError(null);
       setOnlineRound(null);
       setXoxState(null);
       setXoxNotice(null);
-      setRoomCode(options?.roomCode ? options.roomCode.toUpperCase() : '');
+      const normalizedRoomCode = options?.roomCode ? normalizeRoomCode(options.roomCode) : '';
+      setRoomCode(normalizedRoomCode);
       setPlayer1((prev) => ({ ...prev, id: sessionPlayerIdRef.current, score: 0 }));
-      setPlayer2({ id: 'p2', name: 'Rakip Oyuncu', avatar: '🔥', score: 0 });
+      setPlayer2({ id: 'p2', name: 'Rakip Oyuncu', avatar: '⚽', score: 0 });
       setPlayer1Stats({ ...initialStats });
       setPlayer2Stats({ ...initialStats });
       setMatchHighlights([]);
@@ -2972,30 +3000,53 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
 
       try {
         if (isQuick) {
+          const searchStartedAt = Date.now();
+          matchmakingTickTimerRef.current = setInterval(() => {
+            const elapsedSec = Math.floor((Date.now() - searchStartedAt) / 1000);
+            const rem = Math.max(0, Math.ceil(ONLINE_MATCHMAKING_TIMEOUT_MS / 1000) - elapsedSec);
+            setMatchmakingSecondsLeft(rem);
+          }, 250);
+
           cancelMatchmakingRef.current = startRoomMatchmaking({
             profile: selfProfile,
             minigameType: chosenMinigame,
             onRoomMatched: (matchedCode) => {
               cancelMatchmakingRef.current = null;
+              if (matchmakingTickTimerRef.current) {
+                clearInterval(matchmakingTickTimerRef.current);
+                matchmakingTickTimerRef.current = null;
+              }
               if (isStaleRequest()) return;
+              setNoOpponentFound(false);
               attachOnlineRoomListener(matchedCode);
             },
-            onFallbackToBot: (bot) => {
+            onNoOpponentTimeout: () => {
               cancelMatchmakingRef.current = null;
+              if (matchmakingTickTimerRef.current) {
+                clearInterval(matchmakingTickTimerRef.current);
+                matchmakingTickTimerRef.current = null;
+              }
               if (isStaleRequest()) return;
-              // Seamless realistic bot opponent pairing after 4s wait
-              startBotMatch(bot.difficulty, chosenMinigame, {
-                id: bot.id,
-                name: bot.name,
-                avatar: bot.avatar,
-              });
+              // Never start a bot automatically; show explicit choices to the player
+              setMatchmakingSecondsLeft(0);
+              setNoOpponentFound(true);
+            },
+            onMatchmakingError: (errMsg) => {
+              cancelMatchmakingRef.current = null;
+              if (matchmakingTickTimerRef.current) {
+                clearInterval(matchmakingTickTimerRef.current);
+                matchmakingTickTimerRef.current = null;
+              }
+              if (isStaleRequest()) return;
+              setOnlineError(errMsg);
+              setScreen('lobby');
             },
           });
           return;
         }
 
-        if (options?.roomCode) {
-          const joined = await joinRoom(options.roomCode, selfProfile);
+        if (options?.roomCode !== undefined) {
+          const joined = await joinRoom(normalizedRoomCode || options.roomCode, selfProfile);
           if (isStaleRequest()) {
             // User cancelled while joining: leave the room we just entered
             if (joined.ok) void deleteRoom(joined.room.code);
@@ -3092,13 +3143,6 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
   };
 
   const handleRematch = () => {
-    if (
-      !hasUnlimitedEnergy(progressionRef.current) &&
-      getEffectiveDailyEnergy(progressionRef.current) <= 0
-    ) {
-      setShowEnergyModal(true);
-      return;
-    }
     if (mode === 'online_match' || mode === 'online_room') {
       const activeCode = activeRoomCodeRef.current;
       if (activeCode) {
@@ -4317,8 +4361,6 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
   const userClub = player1.favoriteClubId ? CLUBS[player1.favoriteClubId] : null;
   const tabHeaderTitle: Record<MainTab, string> = {
     play: '3-2-1 FUTBOL',
-    stats: t('tabStatsTitle'),
-    friends: t('tabFriendsTitle'),
     league: t('tabLeagueTitle'),
     profile: t('tabProfileTitle'),
   };
@@ -4330,7 +4372,7 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
     <main
       data-testid="app-container"
       data-state={screen}
-      className="relative min-h-[100dvh] w-full flex flex-col bg-slate-950 font-sans selection:bg-emerald-500 selection:text-black overflow-x-clip text-white"
+      className="relative min-h-[100dvh] w-full flex flex-col bg-[#080E14] font-sans selection:bg-[#22C55E] selection:text-[#080E14] overflow-x-clip text-[#F8FAFC]"
     >
       {/* Screen 0: Animated Intro / Splash Screen */}
       {screen === 'intro' && (
@@ -4389,11 +4431,9 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
                 onClearOnlineError={() => setOnlineError(null)}
               />
             ) : (
-              <div className="relative min-h-[100dvh] w-full flex flex-col bg-slate-950 text-white overflow-x-clip">
-                <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-emerald-900/20 via-slate-950 to-slate-950 pointer-events-none" />
-
-                {/* Shared Hub Top Header for Secondary Tabs (Mobile Safe-Area, Crisp High-Contrast, Zero Blur) */}
-                <header className="sticky top-0 z-40 isolate w-full bg-slate-950 border-b border-slate-800 pt-[max(0.75rem,calc(env(safe-area-inset-top)+0.45rem))] pb-2">
+              <div className="relative min-h-[100dvh] w-full flex flex-col bg-[#080E14] text-[#F8FAFC] overflow-x-clip">
+                {/* Shared Hub Top Header for Secondary Tabs */}
+                <header className="sticky top-0 z-40 isolate w-full bg-[#101B24]/95 border-b border-white/10 pt-[max(0.75rem,calc(env(safe-area-inset-top)+0.45rem))] pb-2">
                   <div className="w-full max-w-xl mx-auto px-3 sm:px-4 flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2 min-w-0">
                       {!headerLogoError ? (
@@ -4401,85 +4441,58 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
                           src={`${import.meta.env.BASE_URL}logo.png`}
                           alt="3-2-1 Futbol Logosu"
                           onError={() => setHeaderLogoError(true)}
-                          className="w-8 h-8 rounded-xl object-cover border border-amber-400/60 shrink-0"
+                          className="w-8 h-8 rounded-xl object-cover border border-[#22C55E]/40 shrink-0"
                         />
                       ) : (
-                        <div className="w-8 h-8 rounded-xl bg-emerald-600 text-white font-black text-[11px] flex items-center justify-center border border-amber-300/60 shrink-0">
+                        <div className="w-8 h-8 rounded-xl bg-[#123D2B] text-[#22C55E] font-black text-[11px] flex items-center justify-center border border-[#22C55E]/50 shrink-0">
                           321
                         </div>
                       )}
                       <span
                         data-testid="tab-header-title"
-                        className="font-black tracking-tight text-white text-sm sm:text-base whitespace-nowrap shrink-0"
+                        className="font-black tracking-tight text-[#F8FAFC] text-sm sm:text-base whitespace-nowrap shrink-0"
                       >
                         {tabHeaderTitle[activeTab]}
                       </span>
                     </div>
 
-                    <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
+                    <div className="flex items-center gap-1.5 shrink-0">
                       <button
                         type="button"
                         data-testid="header-store-btn"
                         onClick={() => handleOpenStore('featured')}
-                        className="min-w-[36px] min-h-[38px] sm:min-w-[42px] sm:min-h-[42px] px-2 sm:px-2.5 py-1.5 rounded-xl bg-amber-400/25 hover:bg-amber-400/35 border border-amber-400/60 text-amber-300 text-xs font-black flex items-center justify-center gap-1 cursor-pointer touch-manipulation shrink-0"
+                        className="min-w-[36px] min-h-[38px] px-2.5 py-1.5 rounded-xl bg-[#14232C] hover:bg-[#123D2B] border border-white/10 text-[#F8FAFC] text-xs font-black flex items-center justify-center gap-1 cursor-pointer touch-manipulation shrink-0"
                         aria-label={t('store')}
                         title={t('store')}
                       >
-                        <ShoppingBag className="w-4 h-4 shrink-0" />
+                        <ShoppingBag className="w-4 h-4 text-[#22C55E] shrink-0" />
                         <span className="hidden sm:inline">{t('store')}</span>
                       </button>
 
-                      <button
-                        type="button"
-                        onClick={() => setShowDailyModal(true)}
-                        className="flex items-center gap-1 min-h-[38px] sm:min-h-[42px] px-2 sm:px-2.5 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-amber-500/45 text-[11px] sm:text-xs font-black text-amber-400 font-mono cursor-pointer touch-manipulation whitespace-nowrap shrink-0"
-                        title="Coin Bakiyesi & Günlük Seri"
+                      <div
+                        className="flex items-center gap-1 min-h-[38px] px-2.5 py-1.5 rounded-xl bg-[#14232C] border border-white/10 text-xs font-black text-[#FBBF24] font-mono whitespace-nowrap shrink-0"
+                        title="Coin Bakiyesi"
                       >
                         <CoinIcon size="xs" />
                         <span>{formatPoints(progression.coins)}</span>
-                        <span className="text-slate-600 hidden sm:inline">•</span>
-                        <Flame className="w-3.5 h-3.5 text-orange-400 shrink-0 hidden sm:inline" />
-                        <span className="text-orange-400 hidden sm:inline">{progression.dailyLogin.streakDays}</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        data-testid="tab-header-energy-indicator"
-                        onClick={() => setShowEnergyModal(true)}
-                        title={t('energyLabel')}
-                        aria-label={t('energyLabel')}
-                        className={`flex items-center gap-1 min-h-[38px] sm:min-h-[42px] px-2 py-1.5 rounded-xl border text-[11px] sm:text-xs font-black font-mono whitespace-nowrap shrink-0 cursor-pointer touch-manipulation ${
-                          hasUnlimitedEnergy(progression)
-                            ? 'bg-amber-500/20 border-amber-400/60 text-amber-300'
-                            : getEffectiveDailyEnergy(progression) <= 0
-                            ? 'bg-rose-950 border-rose-400 text-rose-200 animate-pulse'
-                            : 'bg-slate-900 hover:bg-slate-800 border-cyan-400/60 text-cyan-300'
-                        }`}
-                      >
-                        <Zap className="w-3.5 h-3.5 shrink-0" />
-                        <span className="whitespace-nowrap">
-                          {hasUnlimitedEnergy(progression)
-                            ? '∞'
-                            : `${getEffectiveDailyEnergy(progression)}/${MAX_DAILY_ENERGY}`}
-                        </span>
-                      </button>
+                      </div>
 
                       <button
                         type="button"
                         data-testid="header-settings-btn"
                         onClick={() => setShowSettingsModal(true)}
-                        className="min-w-[38px] min-h-[38px] sm:min-w-[42px] sm:min-h-[42px] p-2 rounded-xl bg-slate-900/80 hover:bg-slate-800 border border-slate-700 text-slate-200 hover:text-white flex items-center justify-center cursor-pointer touch-manipulation"
+                        className="min-w-[38px] min-h-[38px] p-2 rounded-xl bg-[#14232C] hover:bg-[#101B24] border border-white/10 text-[#94A3B8] hover:text-[#F8FAFC] flex items-center justify-center cursor-pointer touch-manipulation"
                         title={t('settings')}
                         aria-label={t('settings')}
                       >
-                        <Settings className="w-4 h-4 text-emerald-400" />
+                        <Settings className="w-4 h-4" />
                       </button>
 
                       <button
                         type="button"
                         data-testid="header-exit-btn"
                         onClick={handlePromptExitApp}
-                        className="flex min-w-[38px] min-h-[38px] sm:min-w-[42px] sm:min-h-[42px] p-2 rounded-xl bg-slate-900/80 hover:bg-rose-950/60 border border-slate-700 hover:border-rose-500 text-slate-400 hover:text-rose-400 items-center justify-center cursor-pointer touch-manipulation"
+                        className="flex min-w-[38px] min-h-[38px] p-2 rounded-xl bg-[#14232C] hover:bg-red-950/60 border border-white/10 hover:border-[#EF4444] text-[#94A3B8] hover:text-[#EF4444] items-center justify-center cursor-pointer touch-manipulation"
                         title="Oyundan Çıkış"
                         aria-label="Oyundan Çıkış"
                       >
@@ -4490,30 +4503,6 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
                 </header>
 
                 <div className="relative z-10 flex-1 w-full pb-[env(safe-area-inset-bottom)]">
-                  {activeTab === 'stats' && (
-                    <StatsView
-                      playerProfile={player1}
-                      progression={progression}
-                      liveServerPlayers={liveLeaderboardPlayers}
-                      onInspectPlayer={handleInspectPlayer}
-                    />
-                  )}
-                  {activeTab === 'friends' && (
-                    <FriendsView
-                      progression={progression}
-                      selfPlayerId={player1.id}
-                      liveServerPlayers={liveLeaderboardPlayers}
-                      onInspectPlayer={handleInspectPlayer}
-                      onAddFriend={handleRequestAddFriend}
-                      onAcceptFriendRequest={handleAcceptFriendRequest}
-                      onRejectFriendRequest={handleRejectFriendRequest}
-                      onCancelOutgoingRequest={handleCancelOutgoingRequest}
-                      onRemoveFriend={handleRemoveFriendAction}
-                      onChallengeFriend={(mg) =>
-                        handleSelectOnlineMode('online_room', { minigameType: mg })
-                      }
-                    />
-                  )}
                   {activeTab === 'league' && (
                     <LeagueView
                       playerProfile={player1}
@@ -4587,9 +4576,19 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
             roomCode={roomCode}
             minigameType={minigameType}
             isMatchmaking={isMatchmaking}
+            matchmakingSecondsLeft={matchmakingSecondsLeft}
+            noOpponentFound={noOpponentFound}
             player1={player1}
             player2={player2.id !== 'p2' ? player2 : null}
             onInspectPlayer={handleInspectPlayer}
+            onRetryMatchmaking={() =>
+              handleSelectOnlineMode('online_match', { minigameType })
+            }
+            onPlayBotInstead={() => {
+              teardownOnlineRoom();
+              setNoOpponentFound(false);
+              startBotMatch('medium', minigameType);
+            }}
             onCancel={handleExitToLobby}
           />
         </div>
@@ -4607,7 +4606,7 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
           }
           className="relative h-[100dvh] max-h-[100dvh] w-full flex flex-col justify-between overflow-hidden animate-screen-slide"
         >
-          <NightMatchPitchBackground theme={progression.equippedPitchTheme} />
+          <NightMatchPitchBackground />
 
           <div className="relative z-10 flex flex-col flex-1 min-h-0 justify-between overflow-hidden">
             <ScoreBoard
@@ -4618,6 +4617,10 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
               timeRemaining={timeRemaining}
               minigameType={currentRound.minigameType}
               fastComboStreak={fastComboStreak}
+              isBotMatch={mode === 'bot'}
+              botStatus={botStatus}
+              player1Stats={player1Stats}
+              player2Stats={player2Stats}
               player1Frame={progression.equippedFrame}
               player1Crest={progression.equippedCrest}
               player1Badge={progression.equippedBadge}
@@ -4638,17 +4641,21 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
                 isBotMatch={mode === 'bot'}
                 isOnlineMatch={isOnlineMode}
                 botDifficulty={botDiff}
-                energyDrinks={progression.energyDrinks ?? 0}
-                extraTimeCards={progression.extraTimeCards ?? 0}
+                timeRemaining={timeRemaining}
                 userCoins={progression.coins}
                 freeJokerTickets={progression.freeJokerTickets ?? 0}
                 roundSeed={`${matchInstanceIdRef.current}-${currentRoundIndex}-${currentRound.pairing.id}`}
                 onSpendCoinsForJoker={handleSpendCoinsForJoker}
-                onUseEnergyDrinkHint={handleUseEnergyDrinkHint}
-                onUseEnergyDrinkPass={handleUseEnergyDrinkPass}
-                onUseExtraTimeCard={handleUseExtraTimeCard}
                 onOpenStore={() => handleOpenStore('featured')}
                 onAnswerWinner={handleAnswerWinner}
+                onBotWrongAttempt={() =>
+                  setPlayer2Stats((prev) => ({
+                    ...prev,
+                    currentStreak: 0,
+                    totalWrongAttempts: prev.totalWrongAttempts + 1,
+                  }))
+                }
+                onBotStatusChange={setBotStatus}
                 onSubmitOnlineAnswer={(ans) => handleSubmitOnlineAnswer(ans)}
                 serverWrongFeedback={serverWrongFeedback}
                 opponentMissedPulse={opponentMissedPulse}
@@ -4667,17 +4674,20 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
                 botDifficulty={botDiff}
                 timeRemaining={timeRemaining}
                 disabled={!isRoundPlaying}
-                energyDrinks={progression.energyDrinks ?? 0}
-                extraTimeCards={progression.extraTimeCards ?? 0}
                 userCoins={progression.coins}
                 freeJokerTickets={progression.freeJokerTickets ?? 0}
                 roundSeed={`${matchInstanceIdRef.current}-${currentRoundIndex}-${currentRound.minigameType}-${currentRound.silhouette?.id || currentRound.career?.id || currentRound.countryClub?.id || currentRound.xoxBoard?.id || 'r'}`}
                 onSpendCoinsForJoker={handleSpendCoinsForJoker}
-                onUseEnergyDrinkHint={handleUseEnergyDrinkHint}
-                onUseEnergyDrinkPass={handleUseEnergyDrinkPass}
-                onUseExtraTimeCard={handleUseExtraTimeCard}
                 onOpenStore={() => handleOpenStore('featured')}
                 onAnswerWinner={handleAnswerWinner}
+                onBotWrongAttempt={() =>
+                  setPlayer2Stats((prev) => ({
+                    ...prev,
+                    currentStreak: 0,
+                    totalWrongAttempts: prev.totalWrongAttempts + 1,
+                  }))
+                }
+                onBotStatusChange={setBotStatus}
                 onSubmitOnlineAnswer={handleSubmitOnlineAnswer}
                 serverWrongFeedback={serverWrongFeedback}
                 opponentMissedPulse={opponentMissedPulse}
@@ -4710,7 +4720,7 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
         </div>
       )}
 
-      {/* Screen 4: Victory / Game Over Modal with Achievements & Badges */}
+      {/* Screen 4: Victory / Game Over Modal */}
       {screen === 'game_over' && (
         <VictoryModal
           key="screen-game-over"
@@ -4720,16 +4730,15 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
           player2Stats={player2Stats}
           matchHighlights={matchHighlights}
           isOnlineMatch={isOnlineMode}
+          isBotMatch={mode === 'bot'}
           rematchState={rematchState}
           matchRewards={lastMatchRewards}
           player1Frame={progression.equippedFrame}
           goalEffect={progression.equippedGoalEffect}
-          energyDeltaLabel={lastMatchEnergyDeltaLabel}
           userLeagueName={getLeagueTierInfo(progression.leagueTierId).name}
           userLeagueIcon={getLeagueTierInfo(progression.leagueTierId).icon}
           onRequestDoubleMatchReward={handleRequestDoubleMatchReward}
           doubleRewardAdLoading={matchDoubleAdLoading}
-          onRequestRematchAd={handleRequestRematchAd}
           onInspectOpponent={(opp) => handleInspectPlayer(opp)}
           onRematch={handleRematch}
           onHome={handleExitToLobby}

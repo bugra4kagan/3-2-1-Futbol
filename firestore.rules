@@ -391,12 +391,33 @@ service cloud.firestore {
         && isValidRoom(incoming(), roomCode)
         && incoming().hostUid == existing().hostUid
         && incoming().hostId == existing().hostId
+        && incoming().minigameType == existing().minigameType
         && incoming().createdAt == existing().createdAt
+        && (
+          // Aynı maç içerisinde soru dizisi değiştirilemez; yeni rövanşta matchSeq +1 artar
+          (incoming().matchSeq == existing().matchSeq
+            && incoming().questionSeed == existing().questionSeed
+            && incoming().roundIds == existing().roundIds
+            && (!(existing().hostId in existing().scores)
+              || (incoming().scores[existing().hostId] is int
+                && incoming().scores[existing().hostId] >= existing().scores[existing().hostId]
+                && incoming().scores[existing().hostId] <= existing().scores[existing().hostId] + 1
+                && incoming().scores[existing().hostId] <= 10))
+            && (existing().guestId == null
+              || !(existing().guestId in existing().scores)
+              || (incoming().scores[existing().guestId] is int
+                && incoming().scores[existing().guestId] >= existing().scores[existing().guestId]
+                && incoming().scores[existing().guestId] <= existing().scores[existing().guestId] + 1
+                && incoming().scores[existing().guestId] <= 10)))
+          || (incoming().matchSeq == existing().matchSeq + 1
+            && existing().state == 'game_over'
+            && request.auth.uid in existing().memberUids)
+        )
         && (
           // Odadaki oyuncular maç durumunu, skoru ve hamleleri güncelleyebilir
           (request.auth.uid in existing().memberUids
             && incoming().memberUids == existing().memberUids)
-          // Bekleyen odaya 2. oyuncu olarak katılma
+          // Bekleyen odaya 2. oyuncu olarak katılma (aynı oturum/hesap katılamaz)
           || (existing().state == 'waiting'
             && existing().memberUids.size() == 1
             && !(request.auth.uid in existing().memberUids)

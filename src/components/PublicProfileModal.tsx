@@ -21,6 +21,7 @@ import { MINIGAME_OPTIONS } from '../game/minigameEngine';
 import { formatPoints } from '../game/retentionEngine';
 import { getCrestBadgeInfo } from '../game/storeCatalog';
 import { MinigameType, PublicPlayerProfile } from '../game/types';
+import { sanitizePublicDisplayName } from '../game/usernameFilter';
 import { ClubBadge } from './ClubBadge';
 import { PlayerAvatar } from './PlayerAvatar';
 
@@ -65,6 +66,7 @@ export const PublicProfileModal: React.FC<PublicProfileModalProps> = ({
 
   if (!isOpen || !profile) return null;
 
+  const safeProfileName = sanitizePublicDisplayName(profile.name, profile.id);
   const favoriteClub = profile.favoriteClubId ? CLUBS[profile.favoriteClubId] : undefined;
   const crestInfo = getCrestBadgeInfo(profile.equippedCrest);
 
@@ -129,17 +131,16 @@ export const PublicProfileModal: React.FC<PublicProfileModalProps> = ({
         <div className="mt-4 p-3.5 sm:p-4 rounded-2xl bg-slate-950/80 border border-slate-800 flex items-center gap-3.5 shadow-inner">
           <div className="relative shrink-0">
             <PlayerAvatar
-              avatar={profile.avatar}
-              name={profile.name}
+              avatar={profile.isBot ? '🤖' : '⚽'}
+              name={safeProfileName}
               size="lg"
               variant="circle"
               frame={profile.equippedFrame}
-              className="bg-slate-800 border border-slate-700"
             />
             {profile.isOnline && (
               <span
                 title="Çevrim içi"
-                className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-emerald-400 border-2 border-slate-950"
+                className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-[#22C55E] border-2 border-[#080E14]"
               />
             )}
           </div>
@@ -148,9 +149,9 @@ export const PublicProfileModal: React.FC<PublicProfileModalProps> = ({
             <div className="flex items-center gap-1.5 flex-wrap">
               <h2
                 data-testid="public-profile-name"
-                className="text-lg sm:text-xl font-black text-white truncate"
+                className="text-lg sm:text-xl font-black text-[#F8FAFC] truncate"
               >
-                {profile.name}
+                {safeProfileName}
               </h2>
               {profile.equippedBadge && (
                 <span className="text-base leading-none" title="Profil Rozeti">

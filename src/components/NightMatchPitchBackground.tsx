@@ -17,87 +17,20 @@ interface PitchPalette {
   floodlightColor: string;
 }
 
-function resolvePitchPalette(theme?: string): PitchPalette {
-  switch (theme) {
-    case 'winter_snow':
-      return {
-        skyTop: '#071122',
-        turfDark: '#0c223b',
-        turfMid: '#123354',
-        stripeA: 'rgba(186, 230, 253, 0.12)',
-        stripeB: 'rgba(224, 242, 254, 0.05)',
-        glowPrimary: 'rgba(125, 211, 252, 0.24)',
-        glowSecondary: 'rgba(224, 242, 254, 0.20)',
-        lineColor: 'rgba(240, 249, 255, 0.72)',
-        lineGlow: 'rgba(186, 230, 253, 0.72)',
-        floodlightColor: 'rgba(224, 242, 254, 0.24)',
-      };
-    case 'final_stadium':
-      return {
-        skyTop: '#090617',
-        turfDark: '#120d29',
-        turfMid: '#1c1540',
-        stripeA: 'rgba(250, 204, 21, 0.09)',
-        stripeB: 'rgba(139, 92, 246, 0.08)',
-        glowPrimary: 'rgba(250, 204, 21, 0.24)',
-        glowSecondary: 'rgba(244, 63, 94, 0.16)',
-        lineColor: 'rgba(254, 249, 195, 0.65)',
-        lineGlow: 'rgba(250, 204, 21, 0.72)',
-        floodlightColor: 'rgba(253, 224, 71, 0.24)',
-      };
-    case 'ucl_night':
-      return {
-        skyTop: '#030816',
-        turfDark: '#06152b',
-        turfMid: '#09223f',
-        stripeA: 'rgba(14, 116, 144, 0.10)',
-        stripeB: 'rgba(15, 23, 42, 0.24)',
-        glowPrimary: 'rgba(56, 189, 248, 0.24)',
-        glowSecondary: 'rgba(99, 102, 241, 0.22)',
-        lineColor: 'rgba(224, 242, 254, 0.58)',
-        lineGlow: 'rgba(56, 189, 248, 0.65)',
-        floodlightColor: 'rgba(125, 211, 252, 0.18)',
-      };
-    case 'gold_stadium':
-      return {
-        skyTop: '#060a14',
-        turfDark: '#071919',
-        turfMid: '#0b2922',
-        stripeA: 'rgba(245, 158, 11, 0.08)',
-        stripeB: 'rgba(6, 78, 59, 0.16)',
-        glowPrimary: 'rgba(251, 191, 36, 0.20)',
-        glowSecondary: 'rgba(16, 185, 129, 0.18)',
-        lineColor: 'rgba(254, 243, 199, 0.56)',
-        lineGlow: 'rgba(251, 191, 36, 0.55)',
-        floodlightColor: 'rgba(253, 224, 71, 0.16)',
-      };
-    case 'cyber_arena':
-      return {
-        skyTop: '#050614',
-        turfDark: '#0b1026',
-        turfMid: '#12183a',
-        stripeA: 'rgba(168, 85, 247, 0.11)',
-        stripeB: 'rgba(6, 182, 212, 0.07)',
-        glowPrimary: 'rgba(192, 38, 211, 0.24)',
-        glowSecondary: 'rgba(34, 211, 238, 0.22)',
-        lineColor: 'rgba(236, 254, 255, 0.56)',
-        lineGlow: 'rgba(34, 211, 238, 0.68)',
-        floodlightColor: 'rgba(192, 132, 252, 0.18)',
-      };
-    default:
-      return {
-        skyTop: '#040918',
-        turfDark: '#061a22',
-        turfMid: '#08292b',
-        stripeA: 'rgba(16, 185, 129, 0.10)',
-        stripeB: 'rgba(124, 58, 237, 0.07)',
-        glowPrimary: 'rgba(16, 185, 129, 0.22)',
-        glowSecondary: 'rgba(139, 92, 246, 0.22)',
-        lineColor: 'rgba(236, 253, 245, 0.54)',
-        lineGlow: 'rgba(52, 211, 153, 0.60)',
-        floodlightColor: 'rgba(110, 231, 183, 0.15)',
-      };
-  }
+function resolvePitchPalette(_theme?: string): PitchPalette {
+  // Unified dark football stadium night pitch (#080E14, #101B24, #123D2B, #22C55E)
+  return {
+    skyTop: '#080E14',
+    turfDark: '#0C1720',
+    turfMid: '#123D2B',
+    stripeA: 'rgba(34, 197, 94, 0.08)',
+    stripeB: 'rgba(16, 27, 36, 0.25)',
+    glowPrimary: 'rgba(34, 197, 94, 0.16)',
+    glowSecondary: 'rgba(18, 61, 43, 0.24)',
+    lineColor: 'rgba(248, 250, 252, 0.42)',
+    lineGlow: 'rgba(34, 197, 94, 0.38)',
+    floodlightColor: 'rgba(248, 250, 252, 0.10)',
+  };
 }
 
 export const NightMatchPitchBackground: React.FC<NightMatchPitchBackgroundProps> = ({ theme }) => {

@@ -29,6 +29,7 @@ import { buildOpponentMiniSummary } from '../game/opponentSummary';
 import { buildMatchHighlightsSummary } from '../game/matchHighlights';
 import { CLUBS, PLAYERS_LIST } from '../game/database';
 import { buildFriendChallengeUrl } from '../game/challengeCodeEngine';
+import { sanitizePublicDisplayName } from '../game/usernameFilter';
 import { sounds } from '../utils/audio';
 import { PlayerAvatar } from './PlayerAvatar';
 import { ClubBadge } from './ClubBadge';
@@ -47,6 +48,7 @@ interface VictoryModalProps {
   player2Stats?: MatchPlayerStats;
   matchHighlights?: MatchRoundHighlight[];
   isOnlineMatch?: boolean;
+  isBotMatch?: boolean;
   rematchState?: 'idle' | 'waiting' | 'opponent_requested' | 'opponent_left';
   matchRewards?: {
     earnedPoints: number;
@@ -87,23 +89,24 @@ export const VictoryModal: React.FC<VictoryModalProps> = ({
   player2Stats = DEFAULT_STATS,
   matchHighlights = [],
   isOnlineMatch = false,
+  isBotMatch = false,
   rematchState = 'idle',
   matchRewards = null,
   player1Frame,
   goalEffect,
-  energyDeltaLabel = null,
   userLeagueName = 'Amatör Lig',
   userLeagueIcon = '🥉',
   onRequestDoubleMatchReward,
   doubleRewardAdLoading = false,
-  onRequestRematchAd,
   onInspectOpponent,
   onRematch,
   onHome,
 }) => {
   const isDraw = player1.score === player2.score;
   const userLost = player1.score < player2.score;
-  const winner = player1.score > player2.score ? player1 : player2;
+  const p1Name = sanitizePublicDisplayName(player1.name, player1.id);
+  const p2Name = sanitizePublicDisplayName(player2.name, player2.id);
+  const winner = player1.score > player2.score ? { ...player1, name: p1Name } : { ...player2, name: p2Name };
   const [activeView, setActiveView] = useState<'overview' | 'highlights'>('overview');
   const [selectedPlayerTab, setSelectedPlayerTab] = useState<'p1' | 'p2'>('p1');
   const [isCopied, setIsCopied] = useState(false);
@@ -352,30 +355,31 @@ Ortak futbolcuları benden hızlı bulabilir misin? Meydan okuyorum! 🔥`;
         )}
 
         {/* Final Score Duel Box */}
-        <div className="my-4 p-3 sm:p-4 rounded-2xl bg-slate-950/80 border border-slate-800 flex items-center justify-around">
+        <div className="my-4 p-3 sm:p-4 rounded-2xl bg-[#14232C] border border-white/10 flex items-center justify-around">
           <div className="flex flex-col items-center">
             <PlayerAvatar
-              avatar={player1.avatar}
-              name={player1.name}
+              avatar="⚽"
+              name={p1Name}
               size="sm"
               variant="circle"
               frame={player1Frame}
-              className="bg-slate-800 border border-slate-700"
             />
-            <span className="text-xs font-bold text-slate-300 truncate max-w-[90px] mt-1">
-              {player1.name}
+            <span className="text-xs font-bold text-[#F8FAFC] truncate max-w-[95px] mt-1">
+              {p1Name}
             </span>
-            <span className="text-2xl sm:text-3xl font-mono font-black text-emerald-400 mt-0.5">
+            <span className="text-2xl sm:text-3xl font-mono font-black text-[#22C55E] mt-0.5">
               {player1.score}
             </span>
-            <span className="text-[9px] text-slate-400 uppercase font-bold">GALİBİYET</span>
+            <span className="text-[10px] text-[#94A3B8] font-bold">
+              {player1Stats.totalCorrect} Doğru · 🔥 {player1Stats.maxStreak} Seri
+            </span>
           </div>
 
           <div className="flex flex-col items-center">
-            <span className="text-[10px] font-black text-slate-400 px-2 py-0.5 rounded bg-slate-800 border border-slate-700">
-              FİNAL
+            <span className="text-[10px] font-black text-[#94A3B8] px-2 py-0.5 rounded bg-[#080E14] border border-white/10">
+              MAÇ SONU
             </span>
-            <span className="text-lg font-bold text-slate-600 mt-1">-</span>
+            <span className="text-lg font-bold text-[#94A3B8] mt-1">-</span>
           </div>
 
           <button
@@ -383,38 +387,30 @@ Ortak futbolcuları benden hızlı bulabilir misin? Meydan okuyorum! 🔥`;
             data-testid="victory-opponent-profile-btn"
             onClick={() => setShowOpponentSummary((prev) => !prev)}
             aria-expanded={showOpponentSummary}
-            aria-label={`${player2.name} profil ve performans özetini görüntüle`}
-            className={`group flex flex-col items-center px-2.5 py-1.5 rounded-2xl border transition cursor-pointer active:scale-95 ${
-              showOpponentSummary
-                ? 'bg-emerald-500/15 border-emerald-400/60 shadow-md shadow-emerald-500/10'
-                : 'bg-slate-900/50 hover:bg-slate-900 border-slate-800 hover:border-emerald-400/50'
-            }`}
+            aria-label={`${p2Name} profil ve performans özetini görüntüle`}
+            className="group flex flex-col items-center px-2.5 py-1.5 rounded-2xl border border-transparent hover:border-white/15 transition cursor-pointer active:scale-95"
           >
-            <div className="relative">
-              <PlayerAvatar
-                avatar={player2.avatar}
-                name={player2.name}
-                size="sm"
-                variant="circle"
-                className="bg-slate-800 border border-slate-700 group-hover:border-emerald-400 transition"
-              />
-              <span className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-slate-900 border border-emerald-400/70 text-emerald-300 flex items-center justify-center shadow">
-                <BarChart3 className="w-2.5 h-2.5" />
+            <PlayerAvatar
+              avatar={isBotMatch ? '🤖' : '⚽'}
+              name={p2Name}
+              size="sm"
+              variant="circle"
+            />
+            <div className="flex items-center gap-1 mt-1">
+              {isBotMatch && (
+                <span className="text-[8px] font-black px-1 py-0.2 rounded bg-[#080E14] border border-white/15 text-[#94A3B8]">
+                  BOT
+                </span>
+              )}
+              <span className="text-xs font-bold text-[#F8FAFC] truncate max-w-[90px]">
+                {p2Name}
               </span>
             </div>
-            <span className="text-xs font-bold text-slate-200 group-hover:text-white truncate max-w-[90px] mt-1">
-              {player2.name}
-            </span>
-            <span className="text-2xl sm:text-3xl font-mono font-black text-emerald-400 mt-0.5">
+            <span className="text-2xl sm:text-3xl font-mono font-black text-[#22C55E] mt-0.5">
               {player2.score}
             </span>
-            <span className="inline-flex items-center gap-0.5 text-[9px] text-emerald-300 uppercase font-black mt-0.5">
-              <span>{showOpponentSummary ? 'Özeti Gizle' : 'Profil Özeti'}</span>
-              {showOpponentSummary ? (
-                <ChevronUp className="w-2.5 h-2.5" />
-              ) : (
-                <ChevronDown className="w-2.5 h-2.5" />
-              )}
+            <span className="text-[10px] text-[#94A3B8] font-bold">
+              {player2Stats.totalCorrect} Doğru · 🔥 {player2Stats.maxStreak} Seri
             </span>
           </button>
         </div>
@@ -644,63 +640,34 @@ Ortak futbolcuları benden hızlı bulabilir misin? Meydan okuyorum! 🔥`;
               </span>
             </button>
 
-            {/* Earned League Points & Coins Pill + Watch Ad to Double Button */}
+        {/* Earned League Points & Coins Pill */}
         {matchRewards && (
           <div
             data-testid="victory-rewards-pill"
-            className="mb-4 p-3 rounded-2xl bg-gradient-to-r from-amber-500/15 via-emerald-500/15 to-amber-500/15 border border-amber-400/40 flex flex-col items-center gap-2 text-xs font-black"
+            className="mb-4 p-3 rounded-2xl bg-[#14232C] border border-white/10 flex flex-col items-center gap-2 text-xs font-black"
           >
             <div className="flex flex-wrap items-center justify-center gap-2.5">
-              {matchRewards.multiplierApplied && (
-                <span className="px-2 py-0.5 rounded-md bg-emerald-400 text-slate-950 text-[10px] font-black">
-                  ⚡ 2x AKTİF
+              {isBotMatch ? (
+                <span className="text-[#94A3B8]">
+                  🤖 Bot Maçı • 0 Lig Puanı (Lig puanını etkilemez)
+                </span>
+              ) : (
+                <span
+                  className={`flex items-center gap-1 ${
+                    matchRewards.earnedPoints < 0 ? 'text-[#EF4444]' : 'text-[#22C55E]'
+                  }`}
+                >
+                  {matchRewards.earnedPoints < 0
+                    ? `📉 ${matchRewards.earnedPoints} Lig Puanı`
+                    : `🏆 +${matchRewards.earnedPoints} Lig Puanı`}
                 </span>
               )}
-              <span
-                className={`flex items-center gap-1 ${
-                  matchRewards.earnedPoints < 0 ? 'text-rose-300' : 'text-emerald-300'
-                }`}
-              >
-                {matchRewards.earnedPoints < 0
-                  ? `📉 ${matchRewards.earnedPoints} Lig Puanı`
-                  : `🏆 +${matchRewards.earnedPoints} Lig Puanı`}
-              </span>
-              <span className="text-slate-600">•</span>
-              <span className="text-amber-300 flex items-center gap-1">
+              <span className="text-white/20">•</span>
+              <span className="text-[#FBBF24] flex items-center gap-1">
                 <CoinIcon size="xs" />
                 <span>+{matchRewards.earnedCoins} Coin Kazanıldı</span>
               </span>
             </div>
-
-            {(matchRewards.comboLevel ?? 0) >= 2 && (matchRewards.comboBonusCoins ?? 0) > 0 && (
-              <div
-                data-testid="victory-speed-combo-bonus"
-                className="px-2.5 py-1 rounded-lg bg-gradient-to-r from-amber-500/20 to-orange-500/20 border border-orange-400/50 text-amber-200 text-[11px] font-black flex items-center gap-1.5"
-              >
-                <Zap className="w-3.5 h-3.5 text-orange-400 shrink-0" />
-                <span>
-                  🔥 {matchRewards.comboLevel}x Hız Kombosu Bonusu: +{matchRewards.comboBonusCoins} Coin
-                </span>
-              </div>
-            )}
-
-            {matchRewards.shieldProtected && (
-              <div
-                data-testid="victory-shield-protected"
-                className="px-2.5 py-1 rounded-lg bg-indigo-500/20 border border-indigo-400/50 text-indigo-200 text-[11px] font-black"
-              >
-                🛡️ Lig Kalkanı devrede! Lig Puanı (LP) düşüşü engellendi!
-              </div>
-            )}
-
-            {energyDeltaLabel && (
-              <div
-                data-testid="victory-energy-status"
-                className="px-2.5 py-1 rounded-lg bg-cyan-500/15 border border-cyan-400/40 text-cyan-200 text-[11px] font-black font-mono"
-              >
-                {energyDeltaLabel}
-              </div>
-            )}
 
             {onRequestDoubleMatchReward &&
               !isDraw &&
@@ -717,10 +684,10 @@ Ortak futbolcuları benden hızlı bulabilir misin? Meydan okuyorum! 🔥`;
                 }}
                 className={`relative overflow-hidden w-full py-2.5 px-3 rounded-xl font-black text-xs sm:text-sm flex items-center justify-center gap-1.5 transition ${
                   matchRewards.doubledByAd
-                    ? 'bg-emerald-500/20 border border-emerald-400/60 text-emerald-300 cursor-default'
+                    ? 'bg-[#123D2B] border border-[#22C55E]/50 text-[#22C55E] cursor-default'
                     : doubleRewardAdLoading
-                    ? 'bg-amber-400/70 text-slate-900 cursor-wait animate-pulse'
-                    : 'bg-gradient-to-r from-amber-300 via-yellow-300 to-orange-400 hover:from-amber-200 hover:to-orange-300 text-slate-950 border border-yellow-100/80 shadow-[0_0_18px_rgba(251,191,36,0.55)] active:scale-95 cursor-pointer'
+                    ? 'bg-[#FBBF24]/70 text-[#080E14] cursor-wait animate-pulse'
+                    : 'bg-[#FBBF24] hover:bg-amber-300 text-[#080E14] active:scale-95 cursor-pointer'
                 }`}
               >
                 {matchRewards.doubledByAd ? (
@@ -743,15 +710,6 @@ Ortak futbolcuları benden hızlı bulabilir misin? Meydan okuyorum! 🔥`;
                 )}
               </button>
             )}
-          </div>
-        )}
-
-        {!matchRewards && energyDeltaLabel && (
-          <div
-            data-testid="victory-energy-status"
-            className="mb-4 px-3 py-1.5 rounded-xl bg-cyan-500/15 border border-cyan-400/40 text-cyan-200 text-xs font-black font-mono inline-block"
-          >
-            {energyDeltaLabel}
           </div>
         )}
 
@@ -949,25 +907,12 @@ Ortak futbolcuları benden hızlı bulabilir misin? Meydan okuyorum! 🔥`;
           </div>
         )}
 
-        {/* Loss Rewarded Ad Rematch CTA */}
-        {userLost && onRequestRematchAd && (
-          <button
-            type="button"
-            data-testid="victory-rematch-ad-btn"
-            onClick={onRequestRematchAd}
-            className="w-full mb-2.5 flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-gradient-to-r from-amber-400 via-orange-400 to-rose-400 hover:from-amber-300 hover:to-rose-300 text-slate-950 font-black text-sm transition transform active:scale-95 shadow-lg shadow-amber-500/20 cursor-pointer"
-          >
-            <Film className="w-4 h-4 shrink-0" />
-            <span>Reklam İzle &amp; Rövanş Hakkı Kazan</span>
-          </button>
-        )}
-
         {/* Action Buttons */}
         <div className="flex flex-col sm:flex-row gap-2.5">
           <button
             onClick={onRematch}
             disabled={isOnlineMatch && (rematchState === 'waiting' || rematchState === 'opponent_left')}
-            className="flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 disabled:opacity-50 disabled:cursor-not-allowed text-slate-950 font-black text-sm transition transform active:scale-95 shadow-lg shadow-emerald-500/20"
+            className="flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-[#22C55E] hover:bg-[#16a34a] disabled:opacity-50 disabled:cursor-not-allowed text-[#080E14] font-black text-sm transition transform active:scale-95 cursor-pointer"
           >
             <RotateCcw className="w-4 h-4" />
             <span>
@@ -975,16 +920,16 @@ Ortak futbolcuları benden hızlı bulabilir misin? Meydan okuyorum! 🔥`;
                 ? 'Onay Bekleniyor...'
                 : isOnlineMatch && rematchState === 'opponent_requested'
                 ? 'Rövanşı Kabul Et'
-                : 'Rövanş Maçı Yap'}
+                : 'Tekrar Oyna'}
             </span>
           </button>
 
           <button
             onClick={onHome}
-            className="flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-sm transition active:scale-95 border border-slate-700"
+            className="flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-[#14232C] hover:bg-[#080E14] text-[#F8FAFC] font-bold text-sm transition active:scale-95 border border-white/10 cursor-pointer"
           >
             <Home className="w-4 h-4" />
-            <span>Ana Menü</span>
+            <span>Ana Menüye Dön</span>
           </button>
         </div>
       </div>

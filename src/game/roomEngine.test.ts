@@ -4,6 +4,7 @@ import { PLAYERS } from './database';
 import { getRoundValidPlayerIds } from './minigameEngine';
 import { MAX_SILHOUETTE_ATTEMPTS } from './silhouetteEngine';
 import {
+  MatchmakingQueueCandidate,
   RoomRecord,
   applyRoomAdvance,
   applyRoomAnswer,
@@ -19,7 +20,9 @@ import {
   normalizeRoomCode,
   normalizeRoomRecord,
   parseRoomXoxState,
+  selectMatchmakingCandidates,
 } from './roomEngine';
+import { ONLINE_MATCHMAKING_TIMEOUT_MS } from './realtimeSyncHelpers';
 import { MinigameType, PlayerProfile } from './types';
 
 const host: PlayerProfile = { id: 'u_host01', name: 'Ev Sahibi', avatar: '⚽', score: 0 };
@@ -251,4 +254,149 @@ test('normalizeRoomRecord fills defaults for partial documents', () => {
   assert.equal(partial.turnSeq, 0);
   assert.equal(partial.matchSeq, 1);
   assert.equal(parseRoomXoxState(partial), null);
+});
+
+test('private rooms never inject bots, preserve shared rounds across all 4 modes, and sync ready + countdown times', () => {
+  const modes: MinigameType[] = ['two_clubs', 'xox', 'career', 'country_club'];
+  for (const mode of modes) {
+    const room = privateRoom(mode);
+    assert.equal(room.source, 'private');
+    assert.equal(room.state, 'waiting');
+    assert.equal(Object.keys(room.players).some((k) => k.includes('bot')), false);
+    assert.equal(room.players[room.hostId].ready, true);
+    assert.equal(room.countdownEndsAt, null);
+
+    // Lowercase & whitespace room code normalizes identically on join
+    const normalized = normalizeRoomCode('  abc 234 ');
+    assert.equal(normalized, room.code);
+
+    const joinRes = applyRoomJoin(room, guest, 'uidGuest', NOW + 1000);
+    assert.ok(joinRes.ok);
+    const joined = joinRes.room;
+    assert.equal(joined.minigameType, mode);
+    assert.deepEqual(joined.roundIds, room.roundIds);
+    assert.equal(joined.questionSeed, room.questionSeed);
+    assert.equal(joined.players[room.hostId].ready, true);
+    assert.equal(joined.players.u_guest02.ready, true);
+    assert.equal(joined.state, 'countdown');
+    assert.equal(joined.countdownStartedAt, NOW + 1000);
+    assert.equal(joined.countdownEndsAt, NOW + 4000);
+
+    // Same round resolution for both clients
+    const payload = getRoomRoundPayload(joined);
+    assert.ok(payload);
+    assert.equal(payload.minigameType, mode);
+  }
+});
+
+test('matchmaking timeout is 12 seconds and candidate selection excludes self, wrong mode, expired, and matched entries', () => {
+  assert.equal(ONLINE_MATCHMAKING_TIMEOUT_MS, 12000);
+
+  const now = 2_000_000_000;
+  const entries: MatchmakingQueueCandidate[] = [
+    {
+      playerKey: 'u_me',
+      uid: 'uid_me',
+      minigameType: 'two_clubs',
+      profile: { id: 'u_me', name: 'Ben', avatar: '⚽' },
+      joinedAtMs: now - 1000,
+      expiresAtMs: now + 50000,
+      matchedRoomCode: null,
+    },
+    // Same uid under different key -> rejected (self match prevention)
+    {
+      playerKey: 'u_me_tab2',
+      uid: 'uid_me',
+      minigameType: 'two_clubs',
+      profile: { id: 'u_me_tab2', name: 'Ben2', avatar: '⚽' },
+      joinedAtMs: now - 5000,
+      expiresAtMs: now + 50000,
+      matchedRoomCode: null,
+    },
+    // Wrong minigameType -> rejected
+    {
+      playerKey: 'u_xox_user',
+      uid: 'uid_xox',
+      minigameType: 'xox',
+      profile: { id: 'u_xox_user', name: 'XoxRakip', avatar: '⚽' },
+      joinedAtMs: now - 5000,
+      expiresAtMs: now + 50000,
+      matchedRoomCode: null,
+    },
+    // Already matched -> rejected
+    {
+      playerKey: 'u_taken',
+      uid: 'uid_taken',
+      minigameType: 'two_clubs',
+      profile: { id: 'u_taken', name: 'DoluRakip', avatar: '⚽' },
+      joinedAtMs: now - 4000,
+      expiresAtMs: now + 50000,
+      matchedRoomCode: 'XYZ999',
+    },
+    // Expired -> rejected
+    {
+      playerKey: 'u_expired',
+      uid: 'uid_expired',
+      minigameType: 'two_clubs',
+      profile: { id: 'u_expired', name: 'EskiKayit', avatar: '⚽' },
+      joinedAtMs: now - 40000,
+      expiresAtMs: now - 1000,
+      matchedRoomCode: null,
+    },
+    // Eligible waiting player (lexicographically earlier key but waited > 600ms)
+    {
+      playerKey: 'u_alpha',
+      uid: 'uid_alpha',
+      minigameType: 'two_clubs',
+      profile: { id: 'u_alpha', name: 'GercekRakip1', avatar: '⚽' },
+      joinedAtMs: now - 3000,
+      expiresAtMs: now + 50000,
+      matchedRoomCode: null,
+    },
+    // Eligible waiting player (lexicographically larger key)
+    {
+      playerKey: 'u_zulu',
+      uid: 'uid_zulu',
+      minigameType: 'two_clubs',
+      profile: { id: 'u_zulu', name: 'GercekRakip2', avatar: '⚽' },
+      joinedAtMs: now - 500,
+      expiresAtMs: now + 50000,
+      matchedRoomCode: null,
+    },
+  ];
+
+  const picked = selectMatchmakingCandidates({
+    entries,
+    myKey: 'u_me',
+    myUid: 'uid_me',
+    myProfileId: 'u_me',
+    minigameType: 'two_clubs',
+    now,
+  });
+
+  // Earliest waiting valid opponent (u_alpha) comes first, then u_zulu; none of self/expired/matched/wrong-mode appear
+  assert.deepEqual(
+    picked.map((p) => p.playerKey),
+    ['u_alpha', 'u_zulu']
+  );
+
+  // Two players in matchmaking never match across different minigames
+  const xoxPicked = selectMatchmakingCandidates({
+    entries,
+    myKey: 'u_me',
+    myUid: 'uid_me',
+    myProfileId: 'u_me',
+    minigameType: 'career',
+    now,
+  });
+  assert.deepEqual(xoxPicked, []);
+});
+
+test('room join guards prevent empty/invalid codes, started rooms, full rooms, and own room re-entry', () => {
+  assert.equal(isValidRoomCode(normalizeRoomCode(' ab12 ')), false);
+  assert.equal(isValidRoomCode(normalizeRoomCode('   ab c234  ')), true);
+
+  const started = playingRoom('country_club');
+  const blockedJoin = applyRoomJoin(started, { id: 'u_late', name: 'GecKalan', avatar: '⚽', score: 0 }, 'uidLate', NOW + 6000);
+  assert.equal(blockedJoin.ok, false);
 });

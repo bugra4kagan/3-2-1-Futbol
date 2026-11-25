@@ -1,11 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  USERNAME_INAPPROPRIATE_ERROR,
   generateRandomUniqueStarterName,
   generateRecoveryCode,
   generateUniqueUsernameSuggestions,
+  isLegacyFlaggedUsername,
   normalizeRecoveryCode,
   normalizeUsernameKey,
+  sanitizePublicDisplayName,
+  validateUsername,
   validateUsernameFormat,
 } from './accountEngine';
 
@@ -28,6 +32,58 @@ test('validateUsernameFormat rejects empty, short, reserved placeholder defaults
   assert.equal(valid.ok, true);
   assert.equal(valid.cleanedDisplay, 'KralForvet_10');
   assert.equal(valid.key, 'kralforvet_10');
+});
+
+test('validateUsername rejects Turkish/English profanity, leetspeak, XSS, and inappropriate 31 combos while allowing innocent names', () => {
+  const blockedSamples = [
+    'amk_krali',
+    'o r o s p u',
+    's1kt1rGit',
+    'y@rr@k10',
+    'f.u.c.k.you',
+    'b1tchPlz',
+    '31ceken',
+    'otuzbirci',
+    'Kral31sj',
+    '<script>alert(1)</script>',
+    '123456',
+  ];
+
+  for (const bad of blockedSamples) {
+    const res = validateUsername(bad);
+    assert.equal(res.ok, false, `Expected "${bad}" to be rejected`);
+    assert.equal(res.error, USERNAME_INAPPROPRIATE_ERROR);
+  }
+
+  // Innocent Turkish names, football clubs, harmless numbers & dates MUST be allowed
+  const allowedSamples = [
+    'Mehmet07',
+    'Beşiktaş1903',
+    'Galata_1905',
+    'Arda_2024',
+    'Ramazan10',
+    'SametYılmaz',
+    'KlasikKaptan',
+    'PassMaster9',
+    'MarioGotze',
+    'Ahmet31Hatay',
+    'Şampiyonİcardi',
+  ];
+
+  for (const good of allowedSamples) {
+    const res = validateUsername(good);
+    assert.equal(res.ok, true, `Expected "${good}" to be allowed, got: ${res.error}`);
+  }
+});
+
+test('sanitizePublicDisplayName dynamically replaces flagged legacy usernames with Oyuncu #XXXX without altering clean names', () => {
+  assert.equal(sanitizePublicDisplayName('Ahmet_10', 'user_1'), 'Ahmet_10');
+  assert.equal(isLegacyFlaggedUsername('Ahmet_10'), false);
+
+  const masked = sanitizePublicDisplayName('amk_kral', 'user_99');
+  assert.match(masked, /^Oyuncu #\d{4}$/);
+  assert.equal(isLegacyFlaggedUsername('amk_kral'), true);
+  assert.equal(sanitizePublicDisplayName('amk_kral', 'user_99'), masked);
 });
 
 test('generateUniqueUsernameSuggestions avoids taken keys and returns 3 distinct options', () => {

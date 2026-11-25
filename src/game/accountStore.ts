@@ -4,8 +4,10 @@ import {
   generateRandomUniqueStarterName,
   generateRecoveryCode,
   generateUniqueUsernameSuggestions,
+  isLegacyFlaggedUsername,
   normalizeRecoveryCode,
   normalizeUsernameKey,
+  sanitizePublicDisplayName,
   validateUsernameFormat,
 } from './accountEngine.js';
 import { MinigameType, PlayerProfile, PublicPlayerProfile, UserProgression } from './types.js';
@@ -23,11 +25,12 @@ export function buildPublicProfileFromRecord(
 ): PublicPlayerProfile {
   const prog = rec.progression || ({} as Partial<UserProgression>);
   const counts = prog.minigameMatchCounts || ({} as Partial<Record<MinigameType, number>>);
+  const rawName = rec.profile?.name || rec.username;
   return {
     id: rec.accountId,
-    usernameKey: rec.usernameKey,
+    usernameKey: isLegacyFlaggedUsername(rawName) ? undefined : rec.usernameKey,
     friendCode: prog.friendCode,
-    name: rec.profile?.name || rec.username,
+    name: sanitizePublicDisplayName(rawName, rec.accountId),
     avatar: rec.profile?.avatar || '⚽',
     favoriteClubId: rec.profile?.favoriteClubId,
     subtitle: prog.equippedTitle,
@@ -159,6 +162,7 @@ export class AccountStore {
   ): UsernameCheckResponse {
     const fmt = validateUsernameFormat(rawName);
     if (!fmt.ok) {
+      const flagged = isLegacyFlaggedUsername(rawName);
       return {
         ok: false,
         available: false,
@@ -166,7 +170,7 @@ export class AccountStore {
         usernameKey: fmt.key,
         reason: fmt.reason,
         suggestions:
-          fmt.cleanedDisplay.length >= 2
+          !flagged && fmt.cleanedDisplay.length >= 2
             ? generateUniqueUsernameSuggestions(fmt.cleanedDisplay, this.getTakenKeysSet(), 3)
             : undefined,
       };

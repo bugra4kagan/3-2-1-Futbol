@@ -3,7 +3,6 @@ import {
   UserCheck,
   Sparkles,
   Check,
-  Lock,
   Search,
   Shield,
   Dices,
@@ -18,22 +17,13 @@ import {
 } from 'lucide-react';
 import { CLUBS } from '../game/database';
 import { PlayerProfile, UserProgression } from '../game/types';
-import {
-  DEFAULT_STARTER_AVATAR,
-  FREE_ICON_AVATARS,
-  FREE_STARTER_PLAYER_AVATARS,
-  STAR_PP_AVATARS,
-  isPhotoAvatar,
-} from '../game/avatarCatalog';
-import { isAnimeAvatar } from '../game/animeAvatarCatalog';
-import { useLanguage } from '../game/LanguageContext';
-import { AnimeAvatarBuilder } from './AnimeAvatarBuilder';
 import { CoinIcon } from './CoinIcon';
 import { formatPoints } from '../game/retentionEngine';
 import {
   generateRandomUniqueStarterName,
   validateUsernameFormat,
 } from '../game/accountEngine';
+import { isLegacyFlaggedUsername } from '../game/usernameFilter';
 import {
   auth,
   checkUsernameAvailabilityInFirestore,
@@ -74,12 +64,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   initialTab = 'profile',
   onSaveProfile,
   onGoogleSignIn,
-  onPurchaseGift,
   onClose,
   isInitialRequired = false,
 }) => {
   const initialIsGeneric =
-    !currentProfile.name || currentProfile.name.trim() === 'Futbol Gurmesi';
+    !currentProfile.name ||
+    currentProfile.name.trim() === 'Futbol Gurmesi' ||
+    isLegacyFlaggedUsername(currentProfile.name);
   const [modalMode, setModalMode] = useState<'profile' | 'email'>(initialTab);
   const [emailAuthAction, setEmailAuthAction] = useState<'login' | 'register'>('login');
   const [emailInput, setEmailInput] = useState('');
@@ -89,28 +80,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     type: 'ok' | 'err' | 'info';
     text: string;
   } | null>(null);
-  const [name, setName] = useState(
-    isInitialRequired && initialIsGeneric ? '' : initialIsGeneric ? '' : currentProfile.name
-  );
-  const [avatar, setAvatar] = useState(
-    currentProfile.avatar || DEFAULT_STARTER_AVATAR
-  );
+  const [name, setName] = useState(initialIsGeneric ? '' : currentProfile.name);
   const [favoriteClubId, setFavoriteClubId] = useState(
     currentProfile.favoriteClubId || 'galatasaray'
   );
   const [clubSearch, setClubSearch] = useState('');
   const [showClubPicker, setShowClubPicker] = useState(false);
-  const { t } = useLanguage();
-  const [avatarTab, setAvatarTab] = useState<'anime' | 'pp' | 'emoji'>(
-    isAnimeAvatar(currentProfile.avatar)
-      ? 'anime'
-      : STAR_PP_AVATARS.some((s) => s.avatarValue === currentProfile.avatar)
-      ? 'pp'
-      : 'anime'
-  );
-  const [ppFeedback, setPpFeedback] = useState<{ type: 'ok' | 'err'; text: string } | null>(
-    null
-  );
 
   // Username uniqueness state
   const [nameCheckState, setNameCheckState] = useState<
@@ -122,10 +97,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
 
-  const unlockedSet = useMemo(
-    () => new Set(progression?.unlockedGiftIds || []),
-    [progression?.unlockedGiftIds]
-  );
   const coins = progression?.coins ?? 0;
 
   const selectedClub = CLUBS[favoriteClubId] || CLUBS.galatasaray;
@@ -232,36 +203,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setName(generateRandomUniqueStarterName(new Set()));
   };
 
-  const handleSelectOrBuyPp = (pp: (typeof STAR_PP_AVATARS)[number]) => {
-    const isUnlocked = unlockedSet.has(pp.giftId);
-    if (isUnlocked) {
-      setAvatar(pp.avatarValue);
-      setPpFeedback({ type: 'ok', text: `${pp.name} seçildi!` });
-      setTimeout(() => setPpFeedback(null), 1800);
-      return;
-    }
-
-    if (!onPurchaseGift) {
-      setPpFeedback({ type: 'err', text: 'Coin ile PP açmak için profil mağazasını kullan.' });
-      setTimeout(() => setPpFeedback(null), 2400);
-      return;
-    }
-
-    const res = onPurchaseGift(pp.giftId);
-    if (res.ok) {
-      sounds.playVictory();
-      setAvatar(pp.avatarValue);
-      setPpFeedback({ type: 'ok', text: `${pp.name} açıldı ve seçildi!` });
-    } else {
-      sounds.playWrong();
-      setPpFeedback({
-        type: 'err',
-        text: res.reason || 'Yetersiz Coin!',
-      });
-    }
-    setTimeout(() => setPpFeedback(null), 2600);
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (savedSuccess || isSubmitting) return;
@@ -294,7 +235,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       const updatedProfile: PlayerProfile = {
         ...currentProfile,
         name: fmt.cleanedDisplay,
-        avatar,
+        avatar: '⚽',
         favoriteClubId,
         accountStats: currentProfile.accountStats || {
           totalMatches: 0,
@@ -486,32 +427,23 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           )}
 
           <div className="mx-auto mb-2 flex items-center justify-center">
-            {isPhotoAvatar(avatar) || isAnimeAvatar(avatar) ? (
-              <PlayerAvatar
-                avatar={avatar}
-                name={name || 'Oyuncu'}
-                size="xl"
-                className="border-2 border-emerald-400 shadow-lg shadow-emerald-500/25"
-              />
-            ) : (
-              <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center text-slate-950 shadow-lg shadow-emerald-500/25 border border-emerald-300">
-                <UserCheck className="w-7 h-7 stroke-[2.2]" />
-              </div>
-            )}
+            <div className="w-14 h-14 rounded-2xl bg-[#123D2B] border border-[#22C55E]/40 flex items-center justify-center text-[#22C55E]">
+              <UserCheck className="w-7 h-7 stroke-[2.2]" />
+            </div>
           </div>
 
-          <span className="text-[11px] font-black tracking-widest text-emerald-400 uppercase px-3 py-0.5 rounded-full bg-emerald-950 border border-emerald-500/40">
-            BENZERSİZ HESAP &amp; PROFİL
+          <span className="text-[11px] font-black tracking-widest text-[#22C55E] uppercase px-3 py-0.5 rounded-full bg-[#123D2B] border border-[#22C55E]/40">
+            OYUNCU PROFİLİ
           </span>
-          <h2 className="text-xl sm:text-2xl font-black text-white mt-1.5 tracking-tight">
+          <h2 className="text-xl sm:text-2xl font-black text-[#F8FAFC] mt-1.5 tracking-tight">
             {modalMode === 'profile'
               ? 'Oyuncu Hesabın'
               : 'Hesap Bağla & Giriş Yap'}
           </h2>
-          <p className="text-xs text-slate-300 mt-0.5">
+          <p className="text-xs text-[#94A3B8] mt-0.5">
             {modalMode === 'profile'
-              ? 'Misafir olarak hemen oyna veya oyuncu adını ve avatarını kaydet.'
-              : 'Google veya E-posta hesabını bağlayarak tüm coin, seri ve avatarlarını buluta yedekle.'}
+              ? 'Kullanıcı adını ve favori kulübünü seç.'
+              : 'Google veya E-posta hesabını bağlayarak coin ve lig puanlarını koru.'}
           </p>
         </div>
 
@@ -724,10 +656,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               <div className="relative flex items-center">
                 <div className="absolute left-2.5 flex items-center justify-center pointer-events-none">
                   <PlayerAvatar
-                    avatar={avatar}
+                    avatar="⚽"
                     name={name || 'Oyuncu'}
                     size="sm"
-                    className="bg-emerald-500/15 border border-emerald-500/40"
                   />
                 </div>
                 <input
@@ -792,204 +723,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               )}
 
               {nameCheckState === 'available' && !nameError && (
-                <p className="mt-1 text-[11px] font-bold text-emerald-400">
+                <p className="mt-1 text-[11px] font-bold text-[#22C55E]">
                   ✓ Bu kullanıcı adı müsait ve sadece sana ayrılacak.
                 </p>
-              )}
-            </div>
-
-            {/* Avatar Tab Switcher: Anime Karakter Oluştur & Giydir vs Hazır Yıldız PP'ler */}
-            <div>
-              <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
-                <label className="text-xs font-black uppercase tracking-wider text-slate-300">
-                  Avatar &amp; PP Seç
-                </label>
-                <div className="flex rounded-xl bg-slate-950 p-0.5 border border-slate-800 gap-0.5">
-                  <button
-                    type="button"
-                    data-testid="auth-tab-anime"
-                    onClick={() => setAvatarTab('anime')}
-                    className={`px-2 py-1 rounded-lg text-[10px] sm:text-[11px] font-black transition cursor-pointer ${
-                      avatarTab === 'anime'
-                        ? 'bg-emerald-500 text-slate-950'
-                        : 'text-slate-400 hover:text-white'
-                    }`}
-                  >
-                    {t('animeTabBuild')}
-                  </button>
-                  <button
-                    type="button"
-                    data-testid="auth-tab-pp"
-                    onClick={() => setAvatarTab('pp')}
-                    className={`px-2 py-1 rounded-lg text-[10px] sm:text-[11px] font-black transition cursor-pointer ${
-                      avatarTab === 'pp'
-                        ? 'bg-amber-400 text-slate-950'
-                        : 'text-slate-400 hover:text-white'
-                    }`}
-                  >
-                    {t('animeTabStars')}
-                  </button>
-                  <button
-                    type="button"
-                    data-testid="auth-tab-emoji"
-                    onClick={() => setAvatarTab('emoji')}
-                    className={`px-2 py-1 rounded-lg text-[10px] sm:text-[11px] font-black transition cursor-pointer ${
-                      avatarTab === 'emoji'
-                        ? 'bg-cyan-400 text-slate-950'
-                        : 'text-slate-400 hover:text-white'
-                    }`}
-                  >
-                    Başlangıç
-                  </button>
-                </div>
-              </div>
-
-              {ppFeedback && (
-                <div
-                  data-testid="auth-pp-feedback"
-                  className={`mb-2 px-3 py-1.5 rounded-xl border text-xs font-bold ${
-                    ppFeedback.type === 'ok'
-                      ? 'bg-emerald-950/70 border-emerald-400/50 text-emerald-300'
-                      : 'bg-rose-950/70 border-rose-500/50 text-rose-300'
-                  }`}
-                >
-                  {ppFeedback.text}
-                </div>
-              )}
-
-              {avatarTab === 'anime' ? (
-                <AnimeAvatarBuilder
-                  currentAvatar={avatar}
-                  userCoins={coins}
-                  unlockedGiftIds={progression?.unlockedGiftIds || []}
-                  onEquipAvatar={(av) => setAvatar(av)}
-                  onPurchaseGear={(giftId) =>
-                    onPurchaseGift
-                      ? onPurchaseGift(giftId)
-                      : { ok: false, reason: 'Satın alma şu anda kullanılamıyor.' }
-                  }
-                />
-              ) : avatarTab === 'pp' ? (
-                <div className="grid grid-cols-4 gap-1.5 p-2 rounded-2xl bg-slate-950/80 border border-slate-800">
-                  {STAR_PP_AVATARS.map((pp) => {
-                    const unlocked = unlockedSet.has(pp.giftId);
-                    const isSelected = avatar === pp.avatarValue;
-                    const canAfford = coins >= pp.costCoins;
-
-                    return (
-                      <button
-                        key={pp.giftId}
-                        type="button"
-                        data-testid={`auth-pp-${pp.playerId}`}
-                        onClick={() => handleSelectOrBuyPp(pp)}
-                        className={`relative flex flex-col items-center p-1.5 rounded-xl border transition active:scale-95 cursor-pointer ${
-                          isSelected
-                            ? 'bg-emerald-500/20 border-emerald-400 ring-1 ring-emerald-400/60'
-                            : unlocked
-                            ? 'bg-slate-900 border-slate-700 hover:border-emerald-400/60'
-                            : canAfford
-                            ? 'bg-slate-900/90 border-amber-500/40 hover:border-amber-400'
-                            : 'bg-slate-900/60 border-slate-800 opacity-85 hover:opacity-100'
-                        }`}
-                      >
-                        <div className="relative">
-                          <PlayerAvatar
-                            avatar={pp.avatarValue}
-                            name={pp.name}
-                            size="sm"
-                            variant="circle"
-                            className={!unlocked ? 'brightness-75' : ''}
-                          />
-                          {!unlocked && (
-                            <span className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-slate-950 border border-amber-400 flex items-center justify-center">
-                              <Lock className="w-2.5 h-2.5 text-amber-400" />
-                            </span>
-                          )}
-                        </div>
-                        <span className="mt-1 text-[9px] font-black text-white leading-tight truncate w-full text-center">
-                          {pp.name.replace(' PP', '').split(' ').slice(-1)[0]}
-                        </span>
-                        <span
-                          className={`mt-0.5 text-[9px] font-black px-1 py-0.5 rounded-md ${
-                            isSelected
-                              ? 'bg-emerald-400 text-slate-950'
-                              : unlocked
-                              ? 'bg-emerald-950 text-emerald-300 border border-emerald-500/30'
-                              : 'bg-amber-400 text-slate-950'
-                          }`}
-                        >
-                          {isSelected ? 'Seçili' : unlocked ? 'Seç' : `${formatPoints(pp.costCoins)}`}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="space-y-2 p-2.5 rounded-2xl bg-slate-950/80 border border-slate-800">
-                  <div className="grid grid-cols-4 gap-1.5">
-                    {FREE_STARTER_PLAYER_AVATARS.map((sp) => {
-                      const isSelected = avatar === sp.avatarValue;
-                      return (
-                        <button
-                          key={sp.playerId}
-                          type="button"
-                          data-testid={`auth-starter-pp-${sp.playerId}`}
-                          onClick={() => setAvatar(sp.avatarValue)}
-                          className={`flex flex-col items-center p-1.5 rounded-xl border transition active:scale-95 cursor-pointer ${
-                            isSelected
-                              ? 'bg-emerald-500/20 border-emerald-400 ring-1 ring-emerald-400/60'
-                              : 'bg-slate-900 border-slate-800 hover:border-emerald-400/50'
-                          }`}
-                        >
-                          <PlayerAvatar
-                            avatar={sp.avatarValue}
-                            name={sp.name}
-                            size="sm"
-                            variant="circle"
-                          />
-                          <span className="mt-1 text-[9px] font-black text-white leading-tight truncate w-full text-center">
-                            {sp.shortName}
-                          </span>
-                          <span
-                            className={`mt-0.5 text-[9px] font-black px-1 py-0.5 rounded-md ${
-                              isSelected
-                                ? 'bg-emerald-400 text-slate-950'
-                                : 'bg-slate-800 text-emerald-300'
-                            }`}
-                          >
-                            {isSelected ? 'Seçili' : 'Ücretsiz'}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  <div className="pt-2 border-t border-slate-800/80">
-                    <span className="block text-[9px] font-black uppercase tracking-wider text-slate-400 mb-1.5">
-                      Futbol İkonları
-                    </span>
-                    <div className="grid grid-cols-6 gap-2">
-                      {FREE_ICON_AVATARS.map((av) => {
-                        const isSelected = avatar === av;
-                        return (
-                          <button
-                            key={av}
-                            type="button"
-                            data-testid={`auth-emoji-${av}`}
-                            onClick={() => setAvatar(av)}
-                            className={`w-full aspect-square max-w-[44px] mx-auto rounded-xl flex items-center justify-center text-xl transition active:scale-95 cursor-pointer ${
-                              isSelected
-                                ? 'bg-gradient-to-br from-emerald-500 to-teal-400 text-slate-950 scale-105 shadow-lg shadow-emerald-500/40 border-2 border-white'
-                                : 'bg-slate-900 text-white hover:bg-slate-800 border border-slate-800/80'
-                            }`}
-                          >
-                            {av}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                </div>
               )}
             </div>
 

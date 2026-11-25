@@ -33,8 +33,8 @@ test('generateSeededRoundIds produces identical non-repeating rounds from same s
   }
 });
 
-test('smart bot matchmaking fallback picks varied realistic opponent within 4s timeout constant', () => {
-  assert.equal(ONLINE_MATCHMAKING_FALLBACK_MS, 4000);
+test('online matchmaking timeout is 12s and manual bot helper picks valid opponent metadata', () => {
+  assert.equal(ONLINE_MATCHMAKING_FALLBACK_MS, 12000);
   const bot = pickSmartBotOpponent(() => 0.4);
   assert.ok(bot.id.length > 0);
   assert.ok(bot.name.length >= 4);

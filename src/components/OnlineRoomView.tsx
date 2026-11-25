@@ -9,18 +9,26 @@ import {
   Wifi,
   Gamepad2,
   UserSearch,
+  Bot,
+  RefreshCw,
+  Home,
 } from 'lucide-react';
 import { MinigameType, PlayerProfile } from '../game/types';
 import { getMinigameMeta } from '../game/minigameEngine';
+import { sanitizePublicDisplayName } from '../game/usernameFilter';
 import { PlayerAvatar } from './PlayerAvatar';
 
 interface OnlineRoomViewProps {
   roomCode?: string;
   minigameType?: MinigameType;
   isMatchmaking?: boolean;
+  matchmakingSecondsLeft?: number;
+  noOpponentFound?: boolean;
   player1: PlayerProfile;
   player2: PlayerProfile | null;
   onInspectPlayer?: (player: PlayerProfile) => void;
+  onRetryMatchmaking?: () => void;
+  onPlayBotInstead?: () => void;
   onCancel: () => void;
 }
 
@@ -28,14 +36,20 @@ export const OnlineRoomView: React.FC<OnlineRoomViewProps> = ({
   roomCode,
   minigameType = 'two_clubs',
   isMatchmaking = false,
+  matchmakingSecondsLeft = 12,
+  noOpponentFound = false,
   player1,
   player2,
   onInspectPlayer,
+  onRetryMatchmaking,
+  onPlayBotInstead,
   onCancel,
 }) => {
   const [copiedCode, setCopiedCode] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
   const minigameMeta = getMinigameMeta(minigameType);
+  const p1Name = sanitizePublicDisplayName(player1.name, player1.id);
+  const p2Name = player2 ? sanitizePublicDisplayName(player2.name, player2.id) : null;
 
   const handleCopyCode = () => {
     if (roomCode) {
@@ -57,77 +71,84 @@ export const OnlineRoomView: React.FC<OnlineRoomViewProps> = ({
   return (
     <div
       data-testid="online-room-view"
-      className="relative min-h-[100dvh] w-full flex flex-col items-center justify-center p-4 bg-slate-950 text-white overflow-x-hidden"
+      className="relative min-h-[100dvh] w-full flex flex-col items-center justify-center p-4 bg-[#080E14] text-[#F8FAFC] overflow-x-hidden"
     >
-      <div className="w-full max-w-md bg-slate-900 border border-emerald-500/30 rounded-3xl p-5 sm:p-8 shadow-2xl text-center">
-        <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
-          <Users className="w-8 h-8" />
+      <div className="w-full max-w-md bg-[#101B24] border border-white/10 rounded-3xl p-5 sm:p-7 text-center">
+        <div className="w-14 h-14 mx-auto mb-3.5 rounded-2xl bg-[#123D2B] border border-[#22C55E]/35 flex items-center justify-center text-[#22C55E]">
+          <Users className="w-7 h-7" />
         </div>
 
-        <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-950 border border-emerald-500/40 text-emerald-400 text-[10px] font-black uppercase tracking-wider mb-2">
+        <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#14232C] border border-[#22C55E]/35 text-[#22C55E] text-[10px] font-black uppercase tracking-wider mb-2">
           <Wifi className="w-3 h-3" />
-          <span>CANLI 1v1 SUNUCU BAĞLANTISI</span>
+          <span>CANLI 1v1 ARENA</span>
         </div>
 
-        <h2 className="text-xl sm:text-2xl font-black text-white">
-          {isMatchmaking ? 'Çevrim İçi Eşleşme' : 'Özel Oyun Odası'}
+        <h2 className="text-xl sm:text-2xl font-black text-[#F8FAFC]">
+          {noOpponentFound
+            ? 'RAKİP BULUNAMADI'
+            : isMatchmaking
+            ? '1v1 Çevrimiçi Maç'
+            : 'Arkadaşla Özel Oda'}
         </h2>
-        <div className="mt-1.5 inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-slate-950 border border-slate-700/80 text-xs font-bold text-amber-300">
-          <Gamepad2 className="w-3.5 h-3.5 text-amber-400" />
+        <div className="mt-1.5 inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-[#14232C] border border-white/10 text-xs font-bold text-[#FBBF24]">
+          <Gamepad2 className="w-3.5 h-3.5 text-[#22C55E]" />
           <span>{minigameMeta.title}</span>
         </div>
-        <p className="text-xs text-slate-400 mt-1.5">
-          {isMatchmaking
-            ? 'Canlı kuyrukta seninle yarışacak gerçek bir rakip aranıyor...'
-            : 'Oda kodunu veya davet linkini arkadaşına gönder, anında 1v1 başlasın!'}
+
+        <p className="text-xs text-[#94A3B8] mt-2 leading-relaxed">
+          {noOpponentFound
+            ? 'Şu anda çevrimiçi rakip bulunamadı. Rekabetçi bir botla oynayabilir veya tekrar rakip arayabilirsin.'
+            : isMatchmaking
+            ? 'Gerçek rakipler eşleşme kuyruğunda aranıyor...'
+            : 'Oda kodunu arkadaşına gönder. İkinci oyuncu katılıp hazır olduğunda maç otomatik başlar.'}
         </p>
 
         {/* Room is being created on Firestore — code not assigned yet */}
         {!roomCode && !isMatchmaking && (
           <div
             data-testid="room-code-loading"
-            className="my-5 p-4 rounded-2xl bg-slate-950 border border-purple-500/40 flex items-center justify-center gap-2 text-xs font-bold text-purple-300"
+            className="my-5 p-4 rounded-2xl bg-[#14232C] border border-white/10 flex items-center justify-center gap-2 text-xs font-bold text-[#94A3B8]"
           >
-            <Loader2 className="w-4 h-4 animate-spin" />
+            <Loader2 className="w-4 h-4 animate-spin text-[#22C55E]" />
             <span>Oda oluşturuluyor...</span>
           </div>
         )}
 
-        {/* Room Code Display if private room */}
+        {/* Room Code Display for Private Room */}
         {roomCode && !isMatchmaking && (
-          <div className="my-5 p-4 rounded-2xl bg-slate-950 border border-purple-500/40">
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">
+          <div className="my-5 p-4 rounded-2xl bg-[#14232C] border border-[#22C55E]/30">
+            <span className="text-[10px] font-bold text-[#94A3B8] uppercase tracking-widest block mb-1">
               ODA KODU
             </span>
             <div className="flex items-center justify-center gap-3">
               <span
                 data-testid="room-code-text"
-                className="font-mono text-3xl sm:text-4xl font-black tracking-widest text-purple-400"
+                className="font-mono text-3xl sm:text-4xl font-black tracking-widest text-[#22C55E]"
               >
                 {roomCode}
               </span>
               <button
                 onClick={handleCopyCode}
-                className="min-w-[40px] min-h-[40px] p-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white transition active:scale-95 flex items-center justify-center"
+                className="min-w-[40px] min-h-[40px] p-2.5 rounded-xl bg-[#22C55E] hover:bg-[#16a34a] text-[#080E14] transition active:scale-95 flex items-center justify-center cursor-pointer"
                 title="Kodu Kopyala"
                 aria-label="Kodu Kopyala"
               >
-                {copiedCode ? <Check className="w-4 h-4 text-emerald-300" /> : <Copy className="w-4 h-4" />}
+                {copiedCode ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
               </button>
             </div>
 
             <button
               onClick={handleCopyInviteLink}
-              className="mt-3 w-full min-h-[40px] px-3 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-purple-500/30 text-xs font-bold text-purple-300 flex items-center justify-center gap-1.5 transition active:scale-95"
+              className="mt-3 w-full min-h-[40px] px-3 py-2 rounded-xl bg-[#101B24] hover:bg-[#080E14] border border-white/10 text-xs font-bold text-[#F8FAFC] flex items-center justify-center gap-1.5 transition active:scale-95 cursor-pointer"
             >
               {copiedLink ? (
                 <>
-                  <Check className="w-3.5 h-3.5 text-emerald-400" />
-                  <span className="text-emerald-300">Davet Linki Kopyalandı!</span>
+                  <Check className="w-3.5 h-3.5 text-[#22C55E]" />
+                  <span className="text-[#22C55E]">Davet Linki Kopyalandı!</span>
                 </>
               ) : (
                 <>
-                  <Link2 className="w-3.5 h-3.5" />
+                  <Link2 className="w-3.5 h-3.5 text-[#22C55E]" />
                   <span>Davet Linkini Kopyala</span>
                 </>
               )}
@@ -135,64 +156,121 @@ export const OnlineRoomView: React.FC<OnlineRoomViewProps> = ({
           </div>
         )}
 
-        {/* Players Slot Cards */}
-        <div className="my-5 space-y-3">
-          {/* Host / Player 1 */}
-          <div className="flex items-center justify-between p-3 rounded-xl bg-slate-800/80 border border-emerald-500/40 text-left">
-            <div className="flex items-center gap-3 min-w-0">
-              <PlayerAvatar avatar={player1.avatar} name={player1.name} size="sm" className="bg-slate-900 border border-slate-700" />
-              <div className="min-w-0">
-                <span className="font-bold text-white text-sm block truncate">{player1.name}</span>
-                <span className="text-[10px] text-emerald-400 font-semibold">Sen (Hazır)</span>
-              </div>
-            </div>
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
-          </div>
+        {/* Matchmaking No Opponent Found View (3 explicit options, zero auto bot fallback) */}
+        {noOpponentFound ? (
+          <div data-testid="no-opponent-panel" className="my-5 space-y-2.5">
+            {onPlayBotInstead && (
+              <button
+                type="button"
+                data-testid="online-switch-bot-btn"
+                onClick={onPlayBotInstead}
+                className="w-full py-3 px-4 rounded-xl bg-[#22C55E] hover:bg-[#16a34a] text-[#080E14] font-black text-sm flex items-center justify-center gap-2 transition active:scale-95 cursor-pointer"
+              >
+                <Bot className="w-4 h-4" />
+                <span>Rekabetçi Botla Oyna</span>
+              </button>
+            )}
 
-          {/* Opponent / Player 2 */}
-          <div className="flex items-center justify-between gap-2 p-3 rounded-xl bg-slate-800/40 border border-slate-700/60 text-left">
-            {player2 ? (
-              <div className="flex items-center gap-3 min-w-0 flex-1">
-                <PlayerAvatar avatar={player2.avatar} name={player2.name} size="sm" className="bg-slate-900 border border-slate-700" />
-                <div className="min-w-0 flex-1">
-                  <span className="font-bold text-white text-sm block truncate">{player2.name}</span>
-                  <span className="text-[10px] text-emerald-400 font-semibold">Katıldı! Maç başlıyor...</span>
+            {onRetryMatchmaking && (
+              <button
+                type="button"
+                data-testid="online-retry-matchmaking-btn"
+                onClick={onRetryMatchmaking}
+                className="w-full py-3 px-4 rounded-xl bg-[#14232C] hover:bg-[#123D2B] border border-[#22C55E]/40 text-[#F8FAFC] font-black text-sm flex items-center justify-center gap-2 transition active:scale-95 cursor-pointer"
+              >
+                <RefreshCw className="w-4 h-4 text-[#22C55E]" />
+                <span>Tekrar Ara</span>
+              </button>
+            )}
+
+            <button
+              type="button"
+              data-testid="online-back-lobby-btn"
+              onClick={onCancel}
+              className="w-full py-3 px-4 rounded-xl bg-[#080E14] hover:bg-[#14232C] border border-white/10 text-[#94A3B8] hover:text-[#F8FAFC] font-bold text-xs flex items-center justify-center gap-2 transition active:scale-95 cursor-pointer"
+            >
+              <Home className="w-4 h-4" />
+              <span>Ana Menüye Dön</span>
+            </button>
+          </div>
+        ) : (
+          <>
+            {/* Players Slot Cards */}
+            <div className="my-5 space-y-2.5">
+              {/* Host / Player 1 */}
+              <div className="flex items-center justify-between p-3 rounded-xl bg-[#14232C] border border-[#22C55E]/35 text-left">
+                <div className="flex items-center gap-3 min-w-0">
+                  <PlayerAvatar avatar="⚽" name={p1Name} size="sm" />
+                  <div className="min-w-0">
+                    <span className="font-bold text-[#F8FAFC] text-sm block truncate">
+                      {p1Name}
+                    </span>
+                    <span className="text-[10px] text-[#22C55E] font-semibold">
+                      Sen · Hazır ✓
+                    </span>
+                  </div>
                 </div>
-                {onInspectPlayer && (
-                  <button
-                    type="button"
-                    data-testid="online-room-inspect-p2"
-                    onClick={() => onInspectPlayer(player2)}
-                    className="px-2.5 py-1.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-400/40 text-emerald-300 font-black text-[11px] flex items-center gap-1 shrink-0 cursor-pointer"
-                  >
-                    <UserSearch className="w-3 h-3" />
-                    <span>İncele</span>
-                  </button>
+                <span className="w-2.5 h-2.5 rounded-full bg-[#22C55E] shrink-0" />
+              </div>
+
+              {/* Opponent / Player 2 */}
+              <div className="flex items-center justify-between gap-2 p-3 rounded-xl bg-[#14232C] border border-white/10 text-left">
+                {player2 && p2Name ? (
+                  <div className="flex items-center gap-3 min-w-0 flex-1">
+                    <PlayerAvatar avatar="⚽" name={p2Name} size="sm" />
+                    <div className="min-w-0 flex-1">
+                      <span className="font-bold text-[#F8FAFC] text-sm block truncate">
+                        {p2Name}
+                      </span>
+                      <span className="text-[10px] text-[#22C55E] font-semibold">
+                        Hazır ✓ · Maç başlıyor...
+                      </span>
+                    </div>
+                    {onInspectPlayer && (
+                      <button
+                        type="button"
+                        data-testid="online-room-inspect-p2"
+                        onClick={() => onInspectPlayer(player2)}
+                        className="px-2.5 py-1.5 rounded-lg bg-[#123D2B] hover:bg-[#123D2B]/80 border border-[#22C55E]/40 text-[#22C55E] font-black text-[11px] flex items-center gap-1 shrink-0 cursor-pointer"
+                      >
+                        <UserSearch className="w-3 h-3" />
+                        <span>İncele</span>
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between gap-3 w-full py-1">
+                    <div className="flex items-center gap-3">
+                      <Loader2 className="w-5 h-5 text-[#FBBF24] animate-spin shrink-0" />
+                      <span className="text-xs font-semibold text-[#94A3B8]">
+                        {isMatchmaking ? 'Rakip aranıyor...' : 'İkinci oyuncu bekleniyor...'}
+                      </span>
+                    </div>
+                    {isMatchmaking && (
+                      <span
+                        data-testid="matchmaking-countdown"
+                        className="font-mono text-xs font-black text-[#FBBF24] px-2 py-0.5 rounded bg-[#080E14] border border-white/10 tabular-nums shrink-0"
+                      >
+                        {Math.max(0, matchmakingSecondsLeft)}s
+                      </span>
+                    )}
+                  </div>
+                )}
+                {!isMatchmaking && !player2 && (
+                  <span className="w-2.5 h-2.5 rounded-full bg-[#FBBF24] animate-ping shrink-0" />
                 )}
               </div>
-            ) : (
-              <div className="flex items-center gap-3 py-1">
-                <Loader2 className="w-5 h-5 text-amber-400 animate-spin shrink-0" />
-                <span className="text-xs font-semibold text-slate-400">
-                  {isMatchmaking ? 'Rakip aranıyor...' : '2. Oyuncu bekleniyor...'}
-                </span>
-              </div>
-            )}
-            <span
-              className={`w-2.5 h-2.5 rounded-full shrink-0 ${
-                player2 ? 'bg-emerald-500' : 'bg-amber-400 animate-ping'
-              }`}
-            />
-          </div>
-        </div>
+            </div>
 
-        <button
-          onClick={onCancel}
-          className="flex items-center justify-center gap-2 mx-auto min-h-[40px] px-6 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs transition active:scale-95 border border-slate-700 cursor-pointer"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          <span>İptal Et ve Geri Dön</span>
-        </button>
+            <button
+              onClick={onCancel}
+              className="flex items-center justify-center gap-2 mx-auto min-h-[40px] px-6 py-2.5 rounded-xl bg-[#14232C] hover:bg-[#080E14] text-[#94A3B8] hover:text-[#F8FAFC] font-bold text-xs transition active:scale-95 border border-white/10 cursor-pointer"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              <span>{isMatchmaking ? 'Aramayı İptal Et' : 'Odayı Kapat ve Dön'}</span>
+            </button>
+          </>
+        )}
       </div>
     </div>
   );

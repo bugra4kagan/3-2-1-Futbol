@@ -25,6 +25,7 @@ import {
   resolveRoundPayloadById,
   sanitizeRtdbKey,
 } from './realtimeSyncHelpers';
+import { sanitizePublicDisplayName } from './usernameFilter';
 import {
   MatchPlayerStats,
   MinigameRoundPayload,
@@ -53,6 +54,7 @@ export interface RoomPlayerRecord {
   name: string;
   avatar: string;
   favoriteClubId?: string;
+  ready?: boolean;
   score: number;
   stats: MatchPlayerStats;
   rematchRequested: boolean;
@@ -62,6 +64,7 @@ export interface RoomRecord {
   code: string;
   source: RoomSource;
   minigameType: MinigameType;
+  protocolVersion?: number;
   questionSeed: number;
   roundIds: string[];
   /** Player keys (sanitized session ids) */
@@ -81,6 +84,8 @@ export interface RoomRecord {
   turnSeq: number;
   /** Bumps on every rematch so a new match is a new phase */
   matchSeq: number;
+  countdownStartedAt?: number | null;
+  countdownEndsAt?: number | null;
   roundStartedAt: number | null;
   roundWinnerId: string | null;
   roundEndReason: RoomEndReason | null;
@@ -171,8 +176,9 @@ function uniqueUids(uids: Array<string | null | undefined>): string[] {
 function toRoomPlayer(profile: PlayerProfile): RoomPlayerRecord {
   const player: RoomPlayerRecord = {
     id: profile.id,
-    name: String(profile.name || 'Oyuncu').slice(0, 32),
+    name: sanitizePublicDisplayName(profile.name, profile.id).slice(0, 32),
     avatar: String(profile.avatar || '⚽'),
+    ready: true,
     score: 0,
     stats: createInitialMatchStats(),
     rematchRequested: false,
@@ -213,6 +219,8 @@ export function normalizeRoomRecord(raw: Record<string, unknown>): RoomRecord {
     currentRoundIndex: room.currentRoundIndex ?? 0,
     turnSeq: room.turnSeq ?? 0,
     matchSeq: room.matchSeq ?? 1,
+    countdownStartedAt: room.countdownStartedAt ?? null,
+    countdownEndsAt: room.countdownEndsAt ?? null,
     roundStartedAt: room.roundStartedAt ?? null,
     roundWinnerId: room.roundWinnerId ?? null,
     roundEndReason: room.roundEndReason ?? null,
@@ -276,6 +284,7 @@ export function createRoomRecord(params: {
     code: params.code,
     source: params.source,
     minigameType: params.minigameType,
+    protocolVersion: 2,
     questionSeed,
     roundIds: generateSeededRoundIds(params.minigameType, ROOM_ROUND_POOL_SIZE, questionSeed),
     hostId,
@@ -289,6 +298,8 @@ export function createRoomRecord(params: {
     currentRoundIndex: 0,
     turnSeq: 0,
     matchSeq: 1,
+    countdownStartedAt: guestId ? params.now : null,
+    countdownEndsAt: guestId ? params.now + ROOM_COUNTDOWN_SECONDS * 1000 : null,
     roundStartedAt: null,
     roundWinnerId: null,
     roundEndReason: null,
@@ -342,18 +353,26 @@ export function applyRoomJoin(
       players: { ...players, [guestKey]: toRoomPlayer(guest) },
       scores: { ...(room.scores || {}), [guestKey]: 0 },
       state: 'countdown',
+      countdownStartedAt: now,
+      countdownEndsAt: now + ROOM_COUNTDOWN_SECONDS * 1000,
       updatedAt: now,
     },
   };
 }
 
-/** countdown -> playing. Any client may call it once its local countdown hits 0. */
+/** countdown -> playing. Any client may call it once shared countdown completes. */
 export function applyRoomBeginRound(room: RoomRecord, phase: RoomPhase, now: number): RoomRecord | null {
   if (room.state !== 'countdown' || !isSamePhase(room, phase, false)) return null;
+  const alignedStart =
+    room.countdownEndsAt && now >= room.countdownEndsAt
+      ? Math.max(room.countdownEndsAt, now)
+      : now;
   return {
     ...room,
     state: 'playing',
-    roundStartedAt: now,
+    countdownStartedAt: null,
+    countdownEndsAt: null,
+    roundStartedAt: alignedStart,
     xoxConsecutiveTimeouts: 0,
     updatedAt: now,
   };
@@ -626,6 +645,8 @@ export function applyRoomAdvance(room: RoomRecord, phase: RoomPhase, now: number
     ...room,
     currentRoundIndex: nextIdx,
     state: 'countdown',
+    countdownStartedAt: now,
+    countdownEndsAt: now + ROOM_COUNTDOWN_SECONDS * 1000,
     roundStartedAt: null,
     roundWinnerId: null,
     roundEndReason: null,
@@ -683,6 +704,8 @@ export function applyRoomRematch(
     currentRoundIndex: 0,
     turnSeq: 0,
     matchSeq: (room.matchSeq || 1) + 1,
+    countdownStartedAt: now,
+    countdownEndsAt: now + ROOM_COUNTDOWN_SECONDS * 1000,
     roundStartedAt: null,
     roundWinnerId: null,
     roundEndReason: null,
@@ -697,4 +720,53 @@ export function applyRoomRematch(
     silhouetteAttempts: {},
     updatedAt: now,
   };
+}
+
+// ── Pure matchmaking queue selection & race prevention ──
+
+export interface MatchmakingQueueCandidate {
+  playerKey: string;
+  uid: string;
+  minigameType: MinigameType;
+  profile: { id: string; name: string; avatar: string; favoriteClubId?: string };
+  joinedAtMs: number;
+  expiresAtMs?: number | null;
+  matchedRoomCode: string | null;
+}
+
+export const MATCHMAKING_QUEUE_STALE_MS = 30000;
+export const MATCHMAKING_BIDIRECTIONAL_GRACE_MS = 600;
+
+/**
+ * Selects eligible opponents from the same minigame queue while preventing self-match,
+ * expired/matched queue records, and multi-claim contention deadlocks.
+ */
+export function selectMatchmakingCandidates(params: {
+  entries: readonly MatchmakingQueueCandidate[];
+  myKey: string;
+  myUid: string;
+  myProfileId: string;
+  minigameType: MinigameType;
+  now: number;
+}): MatchmakingQueueCandidate[] {
+  const mine = params.entries.find((e) => e.playerKey === params.myKey);
+  if (!mine || mine.matchedRoomCode) return [];
+
+  return params.entries
+    .filter((e) => {
+      if (e.playerKey === params.myKey) return false;
+      if (e.uid === params.myUid) return false;
+      if (e.profile?.id === params.myProfileId) return false;
+      if (e.minigameType !== params.minigameType) return false;
+      if (e.matchedRoomCode) return false;
+      if (typeof e.expiresAtMs === 'number' && e.expiresAtMs <= params.now) return false;
+      if (params.now - e.joinedAtMs > MATCHMAKING_QUEUE_STALE_MS) return false;
+
+      // Primary tie-breaker: smaller playerKey claims larger playerKey immediately.
+      // Fallback: if opponent waited >= 600ms longer without being claimed, claim them too.
+      const isPrimaryClaimer = e.playerKey > params.myKey;
+      const oppWaitingLonger = mine.joinedAtMs - e.joinedAtMs >= MATCHMAKING_BIDIRECTIONAL_GRACE_MS;
+      return isPrimaryClaimer || oppWaitingLonger;
+    })
+    .sort((a, b) => a.joinedAtMs - b.joinedAtMs);
 }

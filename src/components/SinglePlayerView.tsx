@@ -7,10 +7,15 @@ import { JokerControlPanel } from './JokerControlPanel';
 import { getClubsForPairing, validateAnswerForPairing, getPlayersForPairing } from '../game/validator';
 import { searchPlayersForAutocomplete } from '../game/silhouetteEngine';
 import { getPlayerAsset } from '../game/playerAssets';
-import { computeHumanizedBotDelayMs, getBotRoundPlan } from '../game/botEngine';
+import {
+  computeHumanizedBotDelayMs,
+  getBotRoundPlan,
+  pickBotValidPlayer,
+  pickBotWrongPlayer,
+} from '../game/botEngine';
 import { sounds } from '../utils/audio';
 import { haptics } from '../utils/haptics';
-import { Send, AlertCircle, Sparkles, Lightbulb, SkipForward, Clock } from 'lucide-react';
+import { Send, AlertCircle, Sparkles } from 'lucide-react';
 
 interface SinglePlayerViewProps {
   pairing: MatchPairing;
@@ -19,6 +24,7 @@ interface SinglePlayerViewProps {
   isBotMatch?: boolean;
   isOnlineMatch?: boolean;
   botDifficulty?: BotDifficulty;
+  timeRemaining?: number;
   energyDrinks?: number;
   extraTimeCards?: number;
   userCoins?: number;
@@ -30,6 +36,8 @@ interface SinglePlayerViewProps {
   onUseExtraTimeCard?: () => boolean;
   onOpenStore?: () => void;
   onAnswerWinner: (winnerPlayerId: string, answer: string, playerName: string) => void;
+  onBotWrongAttempt?: (guessedName: string) => void;
+  onBotStatusChange?: (status: 'idle' | 'thinking' | 'answered') => void;
   onSubmitOnlineAnswer?: (answer: string) => void;
   serverWrongFeedback?: { attempt: string; seq: number } | null;
   opponentMissedPulse?: number;
@@ -45,22 +53,18 @@ export const SinglePlayerView: React.FC<SinglePlayerViewProps> = ({
   isBotMatch = false,
   isOnlineMatch = false,
   botDifficulty = 'medium',
-  energyDrinks = 0,
-  extraTimeCards = 0,
+  timeRemaining = 15,
   userCoins = 0,
   freeJokerTickets = 0,
   roundSeed,
   onSpendCoinsForJoker,
-  onUseEnergyDrinkHint,
-  onUseEnergyDrinkPass,
-  onUseExtraTimeCard,
-  onOpenStore,
   onAnswerWinner,
+  onBotWrongAttempt,
+  onBotStatusChange,
   onSubmitOnlineAnswer,
   serverWrongFeedback = null,
   opponentMissedPulse = 0,
   onWrongAttempt,
-  onTimeExpired,
   disabled = false,
 }) => {
   const { club1, club2 } = getClubsForPairing(pairing);
@@ -69,43 +73,22 @@ export const SinglePlayerView: React.FC<SinglePlayerViewProps> = ({
   const [errorToast, setErrorToast] = useState<string | null>(null);
   const [isShake, setIsShake] = useState(false);
   const [showOpponentMissed, setShowOpponentMissed] = useState(false);
-  const [energyHintText, setEnergyHintText] = useState<string | null>(null);
-  const [extraTimeUsedRound, setExtraTimeUsedRound] = useState(false);
+  const [botFeedbackToast, setBotFeedbackToast] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const botAttemptedRoundRef = useRef<string | null>(null);
 
   // Clear round-scoped errors and focus input whenever new round starts
   useEffect(() => {
     setErrorToast(null);
+    setBotFeedbackToast(null);
     setAnswerInput('');
     setShowAutocomplete(false);
-    setEnergyHintText(null);
-    setExtraTimeUsedRound(false);
     if (!disabled) {
       setTimeout(() => {
         inputRef.current?.focus();
       }, 100);
     }
   }, [pairing.id, disabled]);
-
-  const handleUseHint = () => {
-    if (disabled || energyHintText) return;
-    if (!onUseEnergyDrinkHint || !onUseEnergyDrinkHint()) {
-      onOpenStore?.();
-      return;
-    }
-    const candidates = getPlayersForPairing(pairing);
-    if (candidates.length > 0) {
-      const target = candidates[0];
-      const initials = target.name
-        .split(' ')
-        .map((part) => `${part.charAt(0)}***`)
-        .join(' ');
-      setEnergyHintText(
-        `${target.flag} ${target.nationality} • ${target.position} • İsim: ${initials}`
-      );
-      sounds.playCorrect();
-    }
-  };
 
   // Apply server-sent wrong answer feedback in 1v1 online mode
   useEffect(() => {
@@ -126,30 +109,62 @@ export const SinglePlayerView: React.FC<SinglePlayerViewProps> = ({
     return () => clearTimeout(t);
   }, [isOnlineMatch, opponentMissedPulse]);
 
-  // Bot logic (only in offline bot mode)
+  // Bot logic (only in offline bot mode): active every round, 1 attempt per round, thinking status
   useEffect(() => {
-    if (!isBotMatch || isOnlineMatch || disabled) return;
+    if (!isBotMatch || isOnlineMatch || disabled) {
+      onBotStatusChange?.('idle');
+      return;
+    }
 
     const validPlayers = getPlayersForPairing(pairing);
-    if (validPlayers.length === 0) return;
+    if (validPlayers.length === 0) {
+      onBotStatusChange?.('idle');
+      return;
+    }
 
-    // Competitive bot speed & accuracy from shared botEngine
+    if (botAttemptedRoundRef.current === pairing.id) {
+      onBotStatusChange?.('answered');
+      return;
+    }
+
+    onBotStatusChange?.('thinking');
     const plan = getBotRoundPlan(botDifficulty, 'two_clubs');
-    const delay = computeHumanizedBotDelayMs(plan);
+    const maxRemainingMs = Math.max(900, timeRemaining * 1000);
+    const delay = computeHumanizedBotDelayMs(plan, Math.random, maxRemainingMs);
 
     const botTimer = setTimeout(() => {
-      if (disabled) return;
+      if (disabled || botAttemptedRoundRef.current === pairing.id) return;
+      botAttemptedRoundRef.current = pairing.id;
+      onBotStatusChange?.('answered');
+
       const willKnow = Math.random() < plan.accuracy;
       if (willKnow) {
-        const chosen = validPlayers[Math.floor(Math.random() * validPlayers.length)];
-        sounds.playWrong();
-        haptics.wrong();
-        onAnswerWinner(player2.id, chosen.name, chosen.name);
+        const chosen = pickBotValidPlayer(validPlayers);
+        if (chosen) {
+          onAnswerWinner(player2.id, chosen.name, chosen.name);
+        }
+      } else {
+        const wrongPlayer = pickBotWrongPlayer(pairing.validPlayerIds);
+        const wrongName = wrongPlayer?.name || 'Yanlış Tahmin';
+        onBotWrongAttempt?.(wrongName);
+        setBotFeedbackToast(`${player2.name} yanlış tahmin yaptı!`);
+        setTimeout(() => setBotFeedbackToast(null), 2200);
       }
     }, delay);
 
     return () => clearTimeout(botTimer);
-  }, [pairing.id, disabled, isBotMatch, isOnlineMatch, botDifficulty, player2.id, onAnswerWinner]);
+  }, [
+    pairing.id,
+    disabled,
+    isBotMatch,
+    isOnlineMatch,
+    botDifficulty,
+    player2.id,
+    player2.name,
+    onAnswerWinner,
+    onBotWrongAttempt,
+    onBotStatusChange,
+  ]);
 
   const autocompletePlayers = useMemo(() => {
     if (disabled) return [];
@@ -345,74 +360,14 @@ export const SinglePlayerView: React.FC<SinglePlayerViewProps> = ({
           disabled={disabled}
         />
 
-        {/* Energy Drink Power-Ups (İpucu & Pas Geç) */}
-        {energyHintText && (
+        {botFeedbackToast && (
           <div
-            data-testid="energy-hint-banner"
-            className="mt-2 px-3 py-2 rounded-xl bg-cyan-950/80 border border-cyan-400/50 text-cyan-200 text-xs font-bold text-center animate-in fade-in"
+            data-testid="bot-wrong-toast"
+            className="mt-2 px-3 py-1.5 rounded-xl bg-[#101B24] border border-amber-400/40 text-amber-300 text-xs font-bold text-center"
           >
-            🥤 Enerji İpucu: {energyHintText}
+            {botFeedbackToast}
           </div>
         )}
-
-        <div className="mt-2 flex flex-wrap items-center justify-center gap-2">
-          {!isOnlineMatch && extraTimeCards > 0 && onUseExtraTimeCard && (
-            <button
-              type="button"
-              data-testid="extra-time-card-btn"
-              disabled={disabled || extraTimeUsedRound}
-              onClick={() => {
-                if (onUseExtraTimeCard()) {
-                  setExtraTimeUsedRound(true);
-                  sounds.playCorrect();
-                }
-              }}
-              className="px-3 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 disabled:opacity-45 border border-amber-400/60 text-amber-200 font-black text-[11px] flex items-center gap-1 cursor-pointer transition"
-            >
-              <Clock className="w-3.5 h-3.5 text-amber-300" />
-              <span>
-                {extraTimeUsedRound ? '+10 Sn Eklendi ✓' : `+10 Sn Kartı (⏱️ ${extraTimeCards})`}
-              </span>
-            </button>
-          )}
-          {energyDrinks > 0 ? (
-            <>
-              <button
-                type="button"
-                data-testid="energy-hint-btn"
-                disabled={disabled || Boolean(energyHintText)}
-                onClick={handleUseHint}
-                className="px-3 py-1.5 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 disabled:opacity-40 border border-cyan-400/50 text-cyan-200 font-black text-[11px] flex items-center gap-1 cursor-pointer transition"
-              >
-                <Lightbulb className="w-3.5 h-3.5 text-amber-300" />
-                <span>İpucu (1 🥤 • {energyDrinks})</span>
-              </button>
-              {!isOnlineMatch && onUseEnergyDrinkPass && (
-                <button
-                  type="button"
-                  data-testid="energy-pass-btn"
-                  disabled={disabled}
-                  onClick={() => onUseEnergyDrinkPass()}
-                  className="px-3 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 disabled:opacity-40 border border-amber-400/50 text-amber-200 font-black text-[11px] flex items-center gap-1 cursor-pointer transition"
-                >
-                  <SkipForward className="w-3.5 h-3.5" />
-                  <span>Pas Geç (1 🥤)</span>
-                </button>
-              )}
-            </>
-          ) : (
-            onOpenStore && (
-              <button
-                type="button"
-                data-testid="energy-buy-cta"
-                onClick={onOpenStore}
-                className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-cyan-500/35 text-cyan-300 font-bold text-[11px] cursor-pointer transition"
-              >
-                🥤 Zorlandın mı? Mağazadan Enerji İçeceği Al
-              </button>
-            )
-          )}
-        </div>
       </div>
     </div>
   );

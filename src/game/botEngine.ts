@@ -1,5 +1,6 @@
-import { BotDifficulty, MinigameRoundPayload, MinigameType, XoxCellMark } from './types';
+import { BotDifficulty, MinigameRoundPayload, MinigameType, Player, XoxCellMark } from './types';
 import { getRoundValidPlayerIds } from './minigameEngine';
+import { PLAYERS_LIST } from './database';
 
 export interface BotRoundPlan {
   minDelayMs: number;
@@ -16,30 +17,90 @@ export interface BotTierMetadata {
   accuracyPct: number;
 }
 
-export const BOT_TIER_METADATA: Record<BotDifficulty, BotTierMetadata> = {
+export interface CentralizedBotConfig {
+  id: BotDifficulty;
+  title: string;
+  emoji: string;
+  minDelayMs: number;
+  maxDelayMs: number;
+  accuracy: number;
+  accuracyPct: number;
+  subtitle: string;
+  delayLabel: string;
+  xoxMinDelayMs: number;
+  xoxMaxDelayMs: number;
+  xoxMissRate: number;
+}
+
+export const BOT_CONFIG: Record<BotDifficulty, CentralizedBotConfig> = {
   easy: {
     id: 'easy',
     title: 'Çırak',
     emoji: '🌱',
-    subtitle: '4.5-7.5 sn • %65 isabet',
-    delayLabel: '4.5–7.5 sn',
-    accuracyPct: 65,
+    minDelayMs: 3000,
+    maxDelayMs: 5000,
+    accuracy: 0.70,
+    accuracyPct: 70,
+    subtitle: '3–5 sn • %70 isabet',
+    delayLabel: '3–5 sn',
+    xoxMinDelayMs: 2600,
+    xoxMaxDelayMs: 4200,
+    xoxMissRate: 0.30,
   },
   medium: {
     id: 'medium',
     title: 'Şampiyon',
     emoji: '🏆',
-    subtitle: '2.5-4.5 sn • %82 isabet',
-    delayLabel: '2.5–4.5 sn',
-    accuracyPct: 82,
+    minDelayMs: 2500,
+    maxDelayMs: 4000,
+    accuracy: 0.85,
+    accuracyPct: 85,
+    subtitle: '2,5–4 sn • %85 isabet',
+    delayLabel: '2,5–4 sn',
+    xoxMinDelayMs: 2000,
+    xoxMaxDelayMs: 3400,
+    xoxMissRate: 0.15,
   },
   hard: {
     id: 'hard',
     title: 'Efsane',
     emoji: '👑',
-    subtitle: '1.5-3.0 sn • %94 isabet',
-    delayLabel: '1.5–3.0 sn',
-    accuracyPct: 94,
+    minDelayMs: 2000,
+    maxDelayMs: 3000,
+    accuracy: 0.95,
+    accuracyPct: 95,
+    subtitle: '2–3 sn • %95 isabet',
+    delayLabel: '2–3 sn',
+    xoxMinDelayMs: 1400,
+    xoxMaxDelayMs: 2400,
+    xoxMissRate: 0.05,
+  },
+};
+
+export const BOT_TIER_METADATA: Record<BotDifficulty, BotTierMetadata> = {
+  easy: {
+    id: 'easy',
+    title: BOT_CONFIG.easy.title,
+    emoji: BOT_CONFIG.easy.emoji,
+    subtitle: BOT_CONFIG.easy.subtitle,
+    delayLabel: BOT_CONFIG.easy.delayLabel,
+    accuracyPct: BOT_CONFIG.easy.accuracyPct,
+  },
+  medium: {
+    id: 'medium',
+    title: BOT_CONFIG.medium.title,
+    emoji: BOT_CONFIG.medium.emoji,
+    subtitle: BOT_CONFIG.medium.subtitle,
+    delayLabel: BOT_CONFIG.medium.delayLabel,
+    accuracyPct: BOT_CONFIG.medium.accuracyPct,
+  },
+  hard: {
+    id: 'hard',
+    title: BOT_CONFIG.hard.title,
+    emoji: BOT_CONFIG.hard.emoji,
+    subtitle: BOT_CONFIG.hard.subtitle,
+    delayLabel: BOT_CONFIG.hard.delayLabel,
+    accuracyPct: BOT_CONFIG.hard.accuracyPct,
   },
 };
 
@@ -66,49 +127,92 @@ export function getBotRoundPlan(
   difficulty: BotDifficulty,
   minigameType: MinigameType
 ): BotRoundPlan {
+  const cfg = BOT_CONFIG[difficulty];
   if (minigameType === 'silhouette') {
     if (difficulty === 'easy') {
-      return { minDelayMs: 28000, maxDelayMs: 48000, accuracy: 0.65 };
+      return { minDelayMs: 4200, maxDelayMs: 6500, accuracy: cfg.accuracy };
     }
     if (difficulty === 'hard') {
-      return { minDelayMs: 9000, maxDelayMs: 17000, accuracy: 0.94 };
+      return { minDelayMs: 2000, maxDelayMs: 3200, accuracy: cfg.accuracy };
     }
-    return { minDelayMs: 16000, maxDelayMs: 28000, accuracy: 0.82 };
+    return { minDelayMs: 2800, maxDelayMs: 4600, accuracy: cfg.accuracy };
   }
 
-  if (difficulty === 'easy') {
-    return { minDelayMs: 4500, maxDelayMs: 7500, accuracy: 0.65 };
-  }
-  if (difficulty === 'hard') {
-    return { minDelayMs: 1500, maxDelayMs: 3000, accuracy: 0.94 };
-  }
-  // Şampiyon (Medium - Buffed): 2.5–4.5 sn ve %82 isabet
-  return { minDelayMs: 2500, maxDelayMs: 4500, accuracy: 0.82 };
+  return {
+    minDelayMs: cfg.minDelayMs,
+    maxDelayMs: cfg.maxDelayMs,
+    accuracy: cfg.accuracy,
+  };
 }
 
 /**
- * Üçgensel dağılım + küçük insan mikro-varyansı (±120ms) ile doğal bot cevap gecikmesi üretir.
+ * Doğal ve tahmin edilemez bot cevap gecikmesi üretir; kalan süre verilirse süreyi aşmaz.
  */
 export function computeHumanizedBotDelayMs(
   plan: BotRoundPlan,
-  rng: () => number = Math.random
+  rng: () => number = Math.random,
+  maxAllowedMs?: number
 ): number {
   const r1 = Math.max(0, Math.min(1, rng()));
   const r2 = Math.max(0, Math.min(1, rng()));
   const centeredSample = (r1 + r2) / 2;
-  const jitter = (rng() - 0.5) * 240;
+  const jitter = (rng() - 0.5) * 200;
   const raw = plan.minDelayMs + centeredSample * (plan.maxDelayMs - plan.minDelayMs) + jitter;
-  return Math.round(Math.max(plan.minDelayMs, Math.min(plan.maxDelayMs, raw)));
+  let bounded = Math.round(Math.max(plan.minDelayMs, Math.min(plan.maxDelayMs, raw)));
+  if (typeof maxAllowedMs === 'number' && Number.isFinite(maxAllowedMs) && maxAllowedMs > 400) {
+    bounded = Math.min(bounded, Math.max(400, Math.floor(maxAllowedMs - 350)));
+  }
+  return bounded;
 }
 
-export function getBotXoxTurnConfig(difficulty: BotDifficulty): BotXoxTurnConfig {
-  if (difficulty === 'easy') {
-    return { delayMs: 2400, missRate: 0.25 };
+export function getBotXoxTurnConfig(
+  difficulty: BotDifficulty,
+  rng: () => number = Math.random
+): BotXoxTurnConfig {
+  const cfg = BOT_CONFIG[difficulty];
+  const delayMs = Math.round(
+    cfg.xoxMinDelayMs + rng() * (cfg.xoxMaxDelayMs - cfg.xoxMinDelayMs)
+  );
+  return { delayMs, missRate: cfg.xoxMissRate };
+}
+
+/**
+ * Geçerli havuzdan rastgele bir doğru futbolcu seçer (çoklu doğru cevapları tamamen destekler).
+ */
+export function pickBotValidPlayer(
+  validPlayers: Player[],
+  rng: () => number = Math.random
+): Player | null {
+  if (!validPlayers || validPlayers.length === 0) return null;
+  const idx = Math.floor(Math.max(0, Math.min(0.999999, rng())) * validPlayers.length);
+  return validPlayers[idx] ?? validPlayers[0];
+}
+
+/**
+ * Bot yanlış tahmin yapacağında gerçek ancak bu soru için geçersiz bir futbolcu ismi seçer.
+ */
+export function pickBotWrongPlayer(
+  validPlayerIds: ReadonlySet<string> | readonly string[],
+  allPlayers: readonly Player[] = PLAYERS_LIST,
+  rng: () => number = Math.random
+): Player | null {
+  if (!allPlayers || allPlayers.length === 0) return null;
+  const invalidSet =
+    validPlayerIds instanceof Set ? validPlayerIds : new Set<string>(validPlayerIds);
+
+  // Fast random probing up to 24 tries to avoid filtering 3000+ players every miss
+  for (let i = 0; i < 24; i += 1) {
+    const idx = Math.floor(Math.max(0, Math.min(0.999999, rng())) * allPlayers.length);
+    const candidate = allPlayers[idx];
+    if (candidate && !invalidSet.has(candidate.id)) {
+      return candidate;
+    }
   }
-  if (difficulty === 'hard') {
-    return { delayMs: 900, missRate: 0.03 };
+
+  for (const candidate of allPlayers) {
+    if (!invalidSet.has(candidate.id)) return candidate;
   }
-  return { delayMs: 1450, missRate: 0.1 };
+  return null;
 }
 
 export function findImmediateWinningXoxCell(

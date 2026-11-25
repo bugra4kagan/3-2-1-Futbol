@@ -31,6 +31,8 @@ import {
   computeHumanizedBotDelayMs,
   getBotRoundPlan,
   getBotXoxTurnConfig,
+  pickBotValidPlayer,
+  pickBotWrongPlayer,
 } from '../game/botEngine';
 import {
   BotDifficulty,
@@ -70,6 +72,8 @@ interface MinigameArenaViewProps {
   onOpenStore?: () => void;
   // Standard answer submission
   onAnswerWinner: (winnerPlayerId: string, answer: string, playerName: string) => void;
+  onBotWrongAttempt?: (guessedName: string) => void;
+  onBotStatusChange?: (status: 'idle' | 'thinking' | 'answered') => void;
   onSubmitOnlineAnswer?: (answer: string, cellPos?: { row: number; col: number }) => void;
   serverWrongFeedback?: { attempt: string; seq: number } | null;
   opponentMissedPulse?: number;
@@ -135,18 +139,15 @@ export const MinigameArenaView: React.FC<MinigameArenaViewProps> = ({
   isBotMatch = false,
   isOnlineMatch = false,
   botDifficulty = 'medium',
+  timeRemaining = 15,
   disabled = false,
-  energyDrinks = 0,
-  extraTimeCards = 0,
   userCoins = 0,
   freeJokerTickets = 0,
   roundSeed,
   onSpendCoinsForJoker,
-  onUseEnergyDrinkHint,
-  onUseEnergyDrinkPass,
-  onUseExtraTimeCard,
-  onOpenStore,
   onAnswerWinner,
+  onBotWrongAttempt,
+  onBotStatusChange,
   onSubmitOnlineAnswer,
   serverWrongFeedback = null,
   opponentMissedPulse = 0,
@@ -161,14 +162,14 @@ export const MinigameArenaView: React.FC<MinigameArenaViewProps> = ({
   const [errorToast, setErrorToast] = useState<string | null>(null);
   const [isShake, setIsShake] = useState(false);
   const [showOpponentMissed, setShowOpponentMissed] = useState(false);
+  const [botFeedbackToast, setBotFeedbackToast] = useState<string | null>(null);
   const [selectedCell, setSelectedCell] = useState<{ row: number; col: number } | null>(null);
   const [silhouetteGuesses, setSilhouetteGuesses] = useState<SilhouetteGuessResult[]>([]);
   const [silhouetteRevealed, setSilhouetteRevealed] = useState(false);
   const [showAutocomplete, setShowAutocomplete] = useState(false);
-  const [energyHintText, setEnergyHintText] = useState<string | null>(null);
-  const [extraTimeUsedRound, setExtraTimeUsedRound] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const exhaustTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const botAttemptedRoundKeyRef = useRef<string | null>(null);
 
   const isXox = round.minigameType === 'xox';
   const isSilhouette = round.minigameType === 'silhouette';
@@ -186,13 +187,12 @@ export const MinigameArenaView: React.FC<MinigameArenaViewProps> = ({
       exhaustTimerRef.current = null;
     }
     setErrorToast(null);
+    setBotFeedbackToast(null);
     setAnswerInput('');
     setSelectedCell(null);
     setSilhouetteGuesses([]);
     setSilhouetteRevealed(false);
     setShowAutocomplete(false);
-    setEnergyHintText(null);
-    setExtraTimeUsedRound(false);
   }, [roundKey]);
 
   useEffect(() => {
@@ -243,23 +243,46 @@ export const MinigameArenaView: React.FC<MinigameArenaViewProps> = ({
     return () => clearTimeout(t);
   }, [isOnlineMatch, opponentMissedPulse]);
 
-  // Bot AI for silhouette / career / country_club (first-to-answer)
+  // Bot AI for silhouette / career / country_club (first-to-answer, max 1 attempt per round)
   useEffect(() => {
-    if (!isBotMatch || isOnlineMatch || disabled || isXox) return;
+    if (!isBotMatch || isOnlineMatch || disabled || isXox) {
+      if (!isXox) onBotStatusChange?.('idle');
+      return;
+    }
 
     const validIds = getRoundValidPlayerIds(round);
     const validPlayers = validIds.map((id) => PLAYERS[id]).filter(Boolean);
-    if (validPlayers.length === 0) return;
+    if (validPlayers.length === 0) {
+      onBotStatusChange?.('idle');
+      return;
+    }
 
+    if (botAttemptedRoundKeyRef.current === roundKey) {
+      onBotStatusChange?.('answered');
+      return;
+    }
+
+    onBotStatusChange?.('thinking');
     const plan = getBotRoundPlan(botDifficulty, round.minigameType);
-    const delay = computeHumanizedBotDelayMs(plan);
+    const maxRemainingMs = Math.max(900, timeRemaining * 1000);
+    const delay = computeHumanizedBotDelayMs(plan, Math.random, maxRemainingMs);
+
     const botTimer = setTimeout(() => {
-      if (disabled) return;
+      if (disabled || botAttemptedRoundKeyRef.current === roundKey) return;
+      botAttemptedRoundKeyRef.current = roundKey;
+      onBotStatusChange?.('answered');
+
       if (Math.random() < plan.accuracy) {
-        const chosen = validPlayers[Math.floor(Math.random() * validPlayers.length)];
-        sounds.playWrong();
-        haptics.wrong();
-        onAnswerWinner(player2.id, chosen.name, chosen.name);
+        const chosen = pickBotValidPlayer(validPlayers);
+        if (chosen) {
+          onAnswerWinner(player2.id, chosen.name, chosen.name);
+        }
+      } else {
+        const wrongPlayer = pickBotWrongPlayer(validIds);
+        const wrongName = wrongPlayer?.name || 'Yanlış Tahmin';
+        onBotWrongAttempt?.(wrongName);
+        setBotFeedbackToast(`${player2.name} yanlış tahmin yaptı!`);
+        setTimeout(() => setBotFeedbackToast(null), 2200);
       }
     }, delay);
 
@@ -271,10 +294,12 @@ export const MinigameArenaView: React.FC<MinigameArenaViewProps> = ({
     isBotMatch,
     isOnlineMatch,
     isXox,
-    isSilhouette,
     botDifficulty,
     player2.id,
+    player2.name,
     onAnswerWinner,
+    onBotWrongAttempt,
+    onBotStatusChange,
   ]);
 
   // Bot AI for Solo XOX turn (Tactical win / block / center / corner)
@@ -288,29 +313,20 @@ export const MinigameArenaView: React.FC<MinigameArenaViewProps> = ({
       !round.xoxBoard ||
       !onSoloXoxMove
     ) {
+      if (isXox) onBotStatusChange?.('idle');
       return;
     }
-    if (xoxState.currentTurnPlayerId !== player2.id) return;
+    if (xoxState.currentTurnPlayerId !== player2.id) {
+      onBotStatusChange?.('idle');
+      return;
+    }
 
+    onBotStatusChange?.('thinking');
     const { delayMs, missRate } = getBotXoxTurnConfig(botDifficulty);
 
     const t = setTimeout(() => {
       if (disabled) return;
-
-      if (Math.random() < missRate) {
-        onSoloXoxMove(
-          {
-            ...xoxState,
-            currentTurnPlayerId: player1.id,
-            turnTimeRemaining: 15,
-          },
-          null,
-          false,
-          '',
-          false
-        );
-        return;
-      }
+      onBotStatusChange?.('answered');
 
       const chosenCell = chooseBotXoxCell(
         xoxState.board,
@@ -322,9 +338,27 @@ export const MinigameArenaView: React.FC<MinigameArenaViewProps> = ({
       if (!chosenCell) return;
 
       const validIds = getRoundValidPlayerIds(round, chosenCell);
-      const chosenPid = validIds[Math.floor(Math.random() * validIds.length)];
-      const chosenPlayer = PLAYERS[chosenPid];
-      const playerName = chosenPlayer?.name || 'Bilinmeyen';
+
+      if (Math.random() < missRate) {
+        const wrongPlayer = pickBotWrongPlayer(validIds);
+        onBotWrongAttempt?.(wrongPlayer?.name || '');
+        onSoloXoxMove(
+          {
+            ...xoxState,
+            currentTurnPlayerId: player1.id,
+            turnTimeRemaining: 15,
+          },
+          null,
+          false,
+          wrongPlayer?.name || '',
+          false
+        );
+        return;
+      }
+
+      const validPlayers = validIds.map((id) => PLAYERS[id]).filter(Boolean);
+      const chosenPlayer = pickBotValidPlayer(validPlayers);
+      const playerName = chosenPlayer?.name || PLAYERS[validIds[0]]?.name || 'Bilinmeyen';
 
       const nextBoard = xoxState.board.map((row) => [...row]);
       nextBoard[chosenCell.row][chosenCell.col] = {
@@ -1216,92 +1250,14 @@ export const MinigameArenaView: React.FC<MinigameArenaViewProps> = ({
           disabled={inputDisabled || (isXox && !selectedCell)}
         />
 
-        {/* Energy Drink Power-Up Controls */}
-        {energyHintText && (
+        {botFeedbackToast && (
           <div
-            data-testid="energy-hint-banner"
-            className="mt-2 px-3 py-2 rounded-xl bg-cyan-950/80 border border-cyan-400/50 text-cyan-200 text-xs font-bold text-center animate-in fade-in"
+            data-testid="bot-wrong-toast"
+            className="mt-2 px-3 py-1.5 rounded-xl bg-[#101B24] border border-amber-400/40 text-amber-300 text-xs font-bold text-center"
           >
-            🥤 Enerji İpucu: {energyHintText}
+            {botFeedbackToast}
           </div>
         )}
-
-        <div className="mt-2 flex flex-wrap items-center justify-center gap-2">
-          {!isOnlineMatch && extraTimeCards > 0 && onUseExtraTimeCard && (
-            <button
-              type="button"
-              data-testid="extra-time-card-btn"
-              disabled={disabled || extraTimeUsedRound}
-              onClick={() => {
-                if (onUseExtraTimeCard()) {
-                  setExtraTimeUsedRound(true);
-                  sounds.playCorrect();
-                }
-              }}
-              className="px-3 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 disabled:opacity-45 border border-amber-400/60 text-amber-200 font-black text-[11px] flex items-center gap-1 cursor-pointer transition"
-            >
-              <Clock className="w-3.5 h-3.5 text-amber-300" />
-              <span>
-                {extraTimeUsedRound ? '+10 Sn Eklendi ✓' : `+10 Sn Kartı (⏱️ ${extraTimeCards})`}
-              </span>
-            </button>
-          )}
-          {energyDrinks > 0 ? (
-            <>
-              <button
-                type="button"
-                data-testid="energy-hint-btn"
-                disabled={inputDisabled || Boolean(energyHintText) || (isXox && !selectedCell)}
-                onClick={() => {
-                  if (!onUseEnergyDrinkHint || !onUseEnergyDrinkHint()) {
-                    onOpenStore?.();
-                    return;
-                  }
-                  const ids = getRoundValidPlayerIds(round, selectedCell || undefined);
-                  const target = ids.length > 0 ? PLAYERS[ids[0]] : null;
-                  if (target) {
-                    const asset = getPlayerAsset(target.id);
-                    const initials = target.name
-                      .split(' ')
-                      .map((part) => `${part.charAt(0)}***`)
-                      .join(' ');
-                    setEnergyHintText(
-                      `${target.flag} ${target.nationality} • ${target.position} • ${asset.clubName} • İsim: ${initials}`
-                    );
-                    sounds.playCorrect();
-                  }
-                }}
-                className="px-3 py-1.5 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 disabled:opacity-40 border border-cyan-400/50 text-cyan-200 font-black text-[11px] flex items-center gap-1 cursor-pointer transition"
-              >
-                <Lightbulb className="w-3.5 h-3.5 text-amber-300" />
-                <span>İpucu (1 🥤 • {energyDrinks})</span>
-              </button>
-              {!isOnlineMatch && onUseEnergyDrinkPass && (
-                <button
-                  type="button"
-                  data-testid="energy-pass-btn"
-                  disabled={disabled}
-                  onClick={() => onUseEnergyDrinkPass()}
-                  className="px-3 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 disabled:opacity-40 border border-amber-400/50 text-amber-200 font-black text-[11px] flex items-center gap-1 cursor-pointer transition"
-                >
-                  <SkipForward className="w-3.5 h-3.5" />
-                  <span>Pas Geç (1 🥤)</span>
-                </button>
-              )}
-            </>
-          ) : (
-            onOpenStore && (
-              <button
-                type="button"
-                data-testid="energy-buy-cta"
-                onClick={onOpenStore}
-                className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-cyan-500/35 text-cyan-300 font-bold text-[11px] cursor-pointer transition"
-              >
-                🥤 Zorlandın mı? Mağazadan Enerji İçeceği Al
-              </button>
-            )
-          )}
-        </div>
       </div>
 
       {/* WHO ARE YA GUESS COMPARISON ROWS */}

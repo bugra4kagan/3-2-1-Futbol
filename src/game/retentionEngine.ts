@@ -20,6 +20,7 @@ import {
   WeeklyLeagueTierInfo,
 } from './types';
 import { STORE_ITEMS } from './storeCatalog';
+import { sanitizePublicDisplayName } from './usernameFilter';
 
 export interface DailyRewardTier {
   day: number;
@@ -761,6 +762,15 @@ export interface MatchOutcomeInput {
   now?: Date;
 }
 
+export interface MatchOutcomeInput {
+  won: boolean;
+  isDraw?: boolean;
+  isBotMatch?: boolean;
+  minigameType: MinigameType;
+  stats: MatchPlayerStats;
+  now?: Date;
+}
+
 export const MATCH_LOSS_LP_PENALTY = 30;
 
 export function recordMatchOutcome(
@@ -776,23 +786,36 @@ export function recordMatchOutcome(
   const synced = syncProgressionForToday(prog, input.now);
   const isWin = input.won && !input.isDraw;
   const isLoss = !input.won && !input.isDraw;
+  const isBotMatch = Boolean(input.isBotMatch);
 
   const newWinStreak = isWin ? synced.winStreak + 1 : isLoss ? 0 : synced.winStreak;
   const bestWinStreak = Math.max(synced.bestWinStreak, newWinStreak);
 
-  // Reward formula: +100 standard Coins per match win; League Shield prevents LP drop on defeat
+  // Bot matches award Coins & match practice without unfairly inflating PvP League rankings
   const streakBonusPts = isWin && newWinStreak >= 2 ? Math.min(80, newWinStreak * 20) : 0;
   const currentShields = Math.max(0, Math.round(synced.leagueShields ?? 0));
-  const shieldProtected = isLoss && currentShields > 0;
+  const shieldProtected = !isBotMatch && isLoss && currentShields > 0;
   const nextLeagueShields = shieldProtected ? currentShields - 1 : currentShields;
 
-  const basePoints = isLoss
+  const basePoints = isBotMatch
+    ? 0
+    : isLoss
     ? shieldProtected
       ? 0
       : -MATCH_LOSS_LP_PENALTY
     : 45 + input.stats.totalCorrect * 18 + (isWin ? 130 : 0) + streakBonusPts;
 
-  const baseCoins = isWin ? 100 : input.isDraw ? 40 : 15;
+  const baseCoins = isBotMatch
+    ? isWin
+      ? 60
+      : input.isDraw
+      ? 25
+      : 10
+    : isWin
+    ? 100
+    : input.isDraw
+    ? 40
+    : 15;
 
   const hasPerm2x = Boolean(synced.permanentMultiplier2x);
   const remaining2xMatches = Math.max(0, synced.multiplier2xMatches ?? 0);
@@ -1914,7 +1937,7 @@ export function buildLeagueStandings(
   const selfEntry: LeaguePlayerEntry = {
     id: userProfile.id,
     friendCode: prog.friendCode,
-    name: userProfile.name,
+    name: sanitizePublicDisplayName(userProfile.name, userProfile.id),
     avatar: userProfile.avatar,
     weeklyPoints: prog.weeklyPoints,
     totalPoints: prog.totalPoints,
@@ -1952,7 +1975,7 @@ export function buildLeagueStandings(
           ...(fresh || {}),
           id: f.id,
           friendCode: fresh?.friendCode || f.friendCode,
-          name: fresh ? fresh.name : f.name,
+          name: sanitizePublicDisplayName(fresh ? fresh.name : f.name, f.id),
           avatar: fresh ? fresh.avatar : f.avatar,
           weeklyPoints: fresh ? fresh.weeklyPoints : f.weeklyPoints,
           totalPoints: fresh ? fresh.totalPoints : f.totalPoints,
@@ -1969,7 +1992,10 @@ export function buildLeagueStandings(
     for (const srv of liveServerPlayers) {
       if (!seen.has(srv.id)) {
         seen.add(srv.id);
-        pool.push(srv);
+        pool.push({
+          ...srv,
+          name: sanitizePublicDisplayName(srv.name, srv.id),
+        });
       }
     }
   }

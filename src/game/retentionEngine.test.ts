@@ -819,6 +819,53 @@ test('5-tier weekly league standings, Sunday 23:59 countdown, automatic promotio
   assert.equal(metrics.movesLabel, '6 Hamle');
 });
 
+test('bot matches award coins without inflating or penalizing weekly league points', () => {
+  const now = new Date(2026, 10, 15, 14, 0, 0);
+  const start = { ...createInitialProgression('bot_tester', now), weeklyPoints: 240, totalPoints: 500 };
+
+  const botWin = recordMatchOutcome(start, {
+    won: true,
+    isBotMatch: true,
+    minigameType: 'two_clubs',
+    stats: {
+      fastestAnswerSec: 2.5,
+      totalCorrect: 3,
+      totalWrongAttempts: 0,
+      currentStreak: 3,
+      maxStreak: 3,
+      clutchAnswers: 0,
+      trailedThenWon: false,
+    },
+    now,
+  });
+
+  assert.equal(botWin.earnedPoints, 0);
+  assert.ok(botWin.earnedCoins > 0);
+  assert.equal(botWin.progression.weeklyPoints, 240);
+  assert.equal(botWin.progression.totalPoints, 500);
+
+  const botLoss = recordMatchOutcome(botWin.progression, {
+    won: false,
+    isBotMatch: true,
+    minigameType: 'xox',
+    stats: {
+      fastestAnswerSec: 4.1,
+      totalCorrect: 1,
+      totalWrongAttempts: 2,
+      currentStreak: 0,
+      maxStreak: 1,
+      clutchAnswers: 0,
+      trailedThenWon: false,
+    },
+    now,
+  });
+
+  assert.equal(botLoss.earnedPoints, 0);
+  assert.equal(botLoss.progression.weeklyPoints, 240);
+  assert.equal(botLoss.progression.totalPoints, 500);
+});
+
+
 
 
 

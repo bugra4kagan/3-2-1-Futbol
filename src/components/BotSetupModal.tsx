@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Bot, X, Play, Sparkles } from 'lucide-react';
 import { BotDifficulty, MinigameType } from '../game/types';
+import { BOT_TIER_METADATA } from '../game/botEngine';
 import { MINIGAME_OPTIONS } from '../game/minigameEngine';
 
 interface BotSetupModalProps {
@@ -10,29 +11,18 @@ interface BotSetupModalProps {
   onStart: (difficulty: BotDifficulty, minigameType: MinigameType) => void;
 }
 
-const BOT_TIERS: {
-  id: BotDifficulty;
-  title: string;
-  subtitle: string;
-  emoji: string;
-}[] = [
+const BOT_TIERS = [
   {
-    id: 'easy',
-    title: 'Çırak',
-    subtitle: 'Isınma temposu (4.5-7.5 sn • %65 isabet)',
-    emoji: '🌱',
+    ...BOT_TIER_METADATA.easy,
+    tag: 'Kolay',
   },
   {
-    id: 'medium',
-    title: 'Şampiyon',
-    subtitle: 'Güçlü & seri rakip (2.5-4.5 sn • %82 isabet)',
-    emoji: '🏆',
+    ...BOT_TIER_METADATA.medium,
+    tag: 'Orta',
   },
   {
-    id: 'hard',
-    title: 'Efsane',
-    subtitle: 'Futbol ansiklopedisi (1.5-3.0 sn • %94 isabet)',
-    emoji: '👑',
+    ...BOT_TIER_METADATA.hard,
+    tag: 'Zor',
   },
 ];
 

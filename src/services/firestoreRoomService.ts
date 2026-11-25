@@ -28,12 +28,14 @@ import {
 } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import {
-  ONLINE_MATCHMAKING_FALLBACK_MS,
+  ONLINE_MATCHMAKING_TIMEOUT_MS,
   SmartBotOpponent,
   generateSixCharRoomCode,
-  pickSmartBotOpponent,
 } from '../game/realtimeSyncHelpers';
+import { getAuthoritativeServerNowMs } from '../game/serverTime';
+import { sanitizePublicDisplayName } from '../game/usernameFilter';
 import {
+  MatchmakingQueueCandidate,
   RoomAnswerOutcome,
   RoomJoinResult,
   RoomPhase,
@@ -50,18 +52,32 @@ import {
   isValidRoomCode,
   normalizeRoomCode,
   normalizeRoomRecord,
+  selectMatchmakingCandidates,
 } from '../game/roomEngine';
 import { MinigameType, PlayerProfile } from '../game/types';
 
 const ROOMS_COLLECTION = 'rooms';
 /** Optional Firestore TTL policy on `expiresAt` deletes abandoned rooms automatically. */
 const ROOM_TTL_MS = 6 * 60 * 60 * 1000;
-const QUEUE_TTL_MS = 10 * 60 * 1000;
+const QUEUE_TTL_MS = 60 * 1000;
 const PRESENCE_HEARTBEAT_MS = 5000;
 /** Generous so a short app switch (WhatsApp, a call) doesn't end the match. */
 const PRESENCE_STALE_MS = 60000;
-const MATCHMAKING_FRESH_WINDOW_MS = 10000;
 const MATCHMAKING_QUERY_LIMIT = 20;
+
+let activeQueueCleanup: (() => void) | null = null;
+
+/** Cancels any active matchmaking queue search cleanly so a player is never in two queues at once. */
+export function cleanupActiveMatchmakingQueue(): void {
+  if (activeQueueCleanup) {
+    try {
+      activeQueueCleanup();
+    } catch {
+      // ignore
+    }
+    activeQueueCleanup = null;
+  }
+}
 
 export class RoomServiceError extends Error {
   constructor(
@@ -169,7 +185,7 @@ export async function createRoom(
 
   for (let attempt = 0; attempt < 5; attempt++) {
     const code = generateSixCharRoomCode();
-    const now = Date.now();
+    const now = getAuthoritativeServerNowMs();
     const room: RoomRecord = {
       ...createRoomRecord({
         code,
@@ -210,7 +226,7 @@ export async function joinRoom(
   return mutateRoom<RoomJoinResult>(
     code,
     (room) => {
-      const res = applyRoomJoin(room, guestProfile, user.uid, Date.now());
+      const res = applyRoomJoin(room, guestProfile, user.uid, getAuthoritativeServerNowMs());
       if (!res.ok) return { next: null, result: res };
       // Re-join of an existing member writes nothing
       const changed = res.room !== room;
@@ -228,8 +244,9 @@ export function subscribeRoom(
   code: string,
   onChange: (room: RoomRecord | null) => void
 ): () => void {
+  const cleanCode = normalizeRoomCode(code);
   return onSnapshot(
-    roomRef(code),
+    roomRef(cleanCode),
     (snap) => {
       if (!snap.exists()) {
         // A cache-only "missing" snapshot can precede the server copy of a just-created room
@@ -247,7 +264,11 @@ export function subscribeRoom(
 }
 
 export function beginRoomRound(code: string, phase: RoomPhase): Promise<void> {
-  return mutateRoom(code, (room) => ({ next: applyRoomBeginRound(room, phase, Date.now()), result: undefined }), undefined);
+  return mutateRoom(
+    code,
+    (room) => ({ next: applyRoomBeginRound(room, phase, getAuthoritativeServerNowMs()), result: undefined }),
+    undefined
+  );
 }
 
 export function submitRoomAnswer(
@@ -259,7 +280,13 @@ export function submitRoomAnswer(
   return mutateRoom(
     code,
     (room) => {
-      const { next, outcome } = applyRoomAnswer(room, rawPlayerId, answer, options, Date.now());
+      const { next, outcome } = applyRoomAnswer(
+        room,
+        rawPlayerId,
+        answer,
+        options,
+        getAuthoritativeServerNowMs()
+      );
       return { next, result: outcome };
     },
     { accepted: false, reason: 'not_playing' } as RoomAnswerOutcome
@@ -267,17 +294,25 @@ export function submitRoomAnswer(
 }
 
 export function expireRoomRound(code: string, phase: RoomPhase): Promise<void> {
-  return mutateRoom(code, (room) => ({ next: applyRoomExpire(room, phase, Date.now()), result: undefined }), undefined);
+  return mutateRoom(
+    code,
+    (room) => ({ next: applyRoomExpire(room, phase, getAuthoritativeServerNowMs()), result: undefined }),
+    undefined
+  );
 }
 
 export function advanceRoomRound(code: string, phase: RoomPhase): Promise<void> {
-  return mutateRoom(code, (room) => ({ next: applyRoomAdvance(room, phase, Date.now()), result: undefined }), undefined);
+  return mutateRoom(
+    code,
+    (room) => ({ next: applyRoomAdvance(room, phase, getAuthoritativeServerNowMs()), result: undefined }),
+    undefined
+  );
 }
 
 export function requestRoomRematch(code: string, rawPlayerId: string): Promise<void> {
   return mutateRoom(
     code,
-    (room) => ({ next: applyRoomRematch(room, rawPlayerId, Date.now()), result: undefined }),
+    (room) => ({ next: applyRoomRematch(room, rawPlayerId, getAuthoritativeServerNowMs()), result: undefined }),
     undefined
   );
 }
@@ -365,28 +400,25 @@ export function startRoomPresence(params: {
   };
 }
 
-// ── Quick match (online 1v1 queue with smart-bot fallback) ──
+// ── Quick match (12s real online 1v1 queue; zero secret bot fallback) ──
 
-interface QueueEntry {
-  playerKey: string;
-  uid: string;
-  minigameType: MinigameType;
-  profile: { id: string; name: string; avatar: string; favoriteClubId?: string };
-  joinedAtMs: number;
-  matchedRoomCode: string | null;
-}
-
-function readQueueEntry(raw: Record<string, unknown>): QueueEntry | null {
+function readQueueEntry(raw: Record<string, unknown>): MatchmakingQueueCandidate | null {
   if (typeof raw.playerKey !== 'string' || typeof raw.uid !== 'string') return null;
-  const profile = raw.profile as QueueEntry['profile'] | undefined;
+  const profile = raw.profile as MatchmakingQueueCandidate['profile'] | undefined;
   if (!profile || typeof profile.id !== 'string') return null;
   const joinedAt = raw.joinedAt as Timestamp | null | undefined;
+  const expiresAt = raw.expiresAt as Timestamp | null | undefined;
   return {
     playerKey: raw.playerKey,
     uid: raw.uid,
     minigameType: raw.minigameType as MinigameType,
     profile,
-    joinedAtMs: joinedAt && typeof joinedAt.toMillis === 'function' ? joinedAt.toMillis() : Date.now(),
+    joinedAtMs:
+      joinedAt && typeof joinedAt.toMillis === 'function'
+        ? joinedAt.toMillis()
+        : getAuthoritativeServerNowMs(),
+    expiresAtMs:
+      expiresAt && typeof expiresAt.toMillis === 'function' ? expiresAt.toMillis() : null,
     matchedRoomCode: typeof raw.matchedRoomCode === 'string' ? raw.matchedRoomCode : null,
   };
 }
@@ -395,8 +427,13 @@ export function startRoomMatchmaking(params: {
   profile: PlayerProfile;
   minigameType: MinigameType;
   onRoomMatched: (code: string) => void;
-  onFallbackToBot: (bot: SmartBotOpponent) => void;
+  onNoOpponentTimeout?: () => void;
+  onMatchmakingError?: (message: string) => void;
+  onFallbackToBot?: (bot: SmartBotOpponent) => void;
 }): () => void {
+  // Always clean up any existing matchmaking search first so the user is never in 2 queues
+  cleanupActiveMatchmakingQueue();
+
   const myKey = getRoomPlayerKey(params.profile.id);
   const queueCol = collection(db, 'matchmaking', params.minigameType, 'queue');
   const myRef = doc(queueCol, myKey);
@@ -408,12 +445,12 @@ export function startRoomMatchmaking(params: {
   let myUid: string | null = null;
   let unsubQueue: (() => void) | null = null;
   let unsubMine: (() => void) | null = null;
-  let fallbackTimer: ReturnType<typeof setTimeout> | null = null;
+  let timeoutTimer: ReturnType<typeof setTimeout> | null = null;
 
   const stopListening = () => {
-    if (fallbackTimer) {
-      clearTimeout(fallbackTimer);
-      fallbackTimer = null;
+    if (timeoutTimer) {
+      clearTimeout(timeoutTimer);
+      timeoutTimer = null;
     }
     unsubQueue?.();
     unsubQueue = null;
@@ -423,28 +460,42 @@ export function startRoomMatchmaking(params: {
   const removeMyEntry = () => {
     void deleteDoc(myRef).catch(() => {});
   };
+  const cancelFn = () => {
+    if (settled) return;
+    settled = true;
+    if (activeQueueCleanup === cancelFn) activeQueueCleanup = null;
+    stopListening();
+    removeMyEntry();
+  };
+  activeQueueCleanup = cancelFn;
+
   const finishWithRoom = (code: string) => {
     if (settled) return;
     settled = true;
     settledRoomCode = code;
+    if (activeQueueCleanup === cancelFn) activeQueueCleanup = null;
     stopListening();
     removeMyEntry();
     params.onRoomMatched(code);
   };
-  const finishWithBot = () => {
+  const finishNoOpponent = () => {
     if (settled) return;
     settled = true;
+    if (activeQueueCleanup === cancelFn) activeQueueCleanup = null;
     stopListening();
     removeMyEntry();
-    params.onFallbackToBot(pickSmartBotOpponent());
+    params.onNoOpponentTimeout?.();
   };
 
-  const claimOpponent = async (opp: QueueEntry) => {
-    if (!myUid || settled) return;
+  const claimOpponent = async (opp: MatchmakingQueueCandidate): Promise<boolean> => {
+    if (!myUid || settled) return false;
+    if (opp.uid === myUid || opp.playerKey === myKey || opp.profile.id === params.profile.id) {
+      return false;
+    }
     const oppRef = doc(queueCol, opp.playerKey);
     const code = generateSixCharRoomCode();
     const rRef = roomRef(code);
-    const now = Date.now();
+    const now = getAuthoritativeServerNowMs();
     const room: RoomRecord = {
       ...createRoomRecord({
         code,
@@ -472,14 +523,39 @@ export function startRoomMatchmaking(params: {
       return true;
     }).catch(() => false);
 
-    if (!claimed) return;
+    if (!claimed) return false;
     if (settled && settledRoomCode !== code) {
-      // Cancelled (or fell back to a bot) while the claim was in flight:
-      // remove the room so the claimed opponent is sent back instead of waiting alone
+      // Cancelled or timed out while the claim was in flight:
+      // delete the room immediately so the opponent is not stranded alone
       void deleteRoom(code);
-      return;
+      return true;
     }
     finishWithRoom(code);
+    return true;
+  };
+
+  const tryClaimFromEntries = async (entries: MatchmakingQueueCandidate[]) => {
+    if (!myUid || settled || claiming) return;
+    const candidates = selectMatchmakingCandidates({
+      entries,
+      myKey,
+      myUid,
+      myProfileId: params.profile.id,
+      minigameType: params.minigameType,
+      now: getAuthoritativeServerNowMs(),
+    });
+    if (candidates.length === 0) return;
+
+    claiming = true;
+    try {
+      for (const candidate of candidates) {
+        if (settled) break;
+        const ok = await claimOpponent(candidate);
+        if (ok) break;
+      }
+    } finally {
+      claiming = false;
+    }
   };
 
   void (async () => {
@@ -487,9 +563,10 @@ export function startRoomMatchmaking(params: {
       const user = await ensureRoomAuthUser();
       if (settled) return;
       myUid = user.uid;
-      const profile: QueueEntry['profile'] = {
+      const cleanName = sanitizePublicDisplayName(params.profile.name, params.profile.id).slice(0, 32);
+      const profile: MatchmakingQueueCandidate['profile'] = {
         id: params.profile.id,
-        name: String(params.profile.name || 'Oyuncu').slice(0, 32),
+        name: cleanName,
         avatar: String(params.profile.avatar || '⚽'),
       };
       if (params.profile.favoriteClubId) profile.favoriteClubId = params.profile.favoriteClubId;
@@ -501,7 +578,7 @@ export function startRoomMatchmaking(params: {
         profile,
         joinedAt: serverTimestamp(),
         matchedRoomCode: null,
-        expiresAt: Timestamp.fromMillis(Date.now() + QUEUE_TTL_MS),
+        expiresAt: Timestamp.fromMillis(getAuthoritativeServerNowMs() + QUEUE_TTL_MS),
       });
       if (settled) {
         removeMyEntry();
@@ -519,42 +596,35 @@ export function startRoomMatchmaking(params: {
         () => {}
       );
 
-      // We claim opponents whose key sorts after ours (deterministic, avoids double rooms)
+      // Watch waiting queue for compatible opponents
       unsubQueue = onSnapshot(
         query(queueCol, orderBy('joinedAt', 'desc'), limit(MATCHMAKING_QUERY_LIMIT)),
         (snap) => {
           if (settled || claiming) return;
           const entries = snap.docs
             .map((d) => readQueueEntry(d.data({ serverTimestamps: 'estimate' })))
-            .filter((e): e is QueueEntry => Boolean(e));
-          const mine = entries.find((e) => e.playerKey === myKey);
-          if (!mine || mine.matchedRoomCode) return;
-          const candidate = entries
-            .filter(
-              (e) =>
-                e.playerKey !== myKey &&
-                e.playerKey > myKey &&
-                !e.matchedRoomCode &&
-                e.joinedAtMs >= mine.joinedAtMs - MATCHMAKING_FRESH_WINDOW_MS
-            )
-            .sort((a, b) => a.joinedAtMs - b.joinedAtMs)[0];
-          if (!candidate) return;
-          claiming = true;
-          void claimOpponent(candidate).finally(() => {
-            claiming = false;
-          });
+            .filter((e): e is MatchmakingQueueCandidate => Boolean(e));
+          void tryClaimFromEntries(entries);
         },
         () => {}
       );
     } catch (err) {
-      console.warn('[rooms] matchmaking unavailable, falling back to bot', err);
-      finishWithBot();
+      console.warn('[rooms] matchmaking unavailable', err);
+      if (params.onMatchmakingError) {
+        settled = true;
+        if (activeQueueCleanup === cancelFn) activeQueueCleanup = null;
+        stopListening();
+        removeMyEntry();
+        params.onMatchmakingError(describeRoomError(err));
+      } else {
+        finishNoOpponent();
+      }
     }
   })();
 
-  // After the wait window: if nobody claimed us, atomically leave the queue and play a bot
-  fallbackTimer = setTimeout(() => {
-    fallbackTimer = null;
+  // Strictly 12 seconds real-player search; never start a bot automatically
+  timeoutTimer = setTimeout(() => {
+    timeoutTimer = null;
     if (settled) return;
     void runTransaction(db, async (tx) => {
       const snap = await tx.get(myRef);
@@ -566,14 +636,10 @@ export function startRoomMatchmaking(params: {
     })
       .then((matchedCode) => {
         if (matchedCode) finishWithRoom(matchedCode);
-        else finishWithBot();
+        else finishNoOpponent();
       })
-      .catch(() => finishWithBot());
-  }, ONLINE_MATCHMAKING_FALLBACK_MS);
+      .catch(() => finishNoOpponent());
+  }, ONLINE_MATCHMAKING_TIMEOUT_MS);
 
-  return () => {
-    settled = true;
-    stopListening();
-    removeMyEntry();
-  };
+  return cancelFn;
 }
