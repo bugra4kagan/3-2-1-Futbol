@@ -6,8 +6,7 @@
       ".read": "auth != null",
       "$playerKey": {
         ".read": "auth != null",
-        ".write": "auth != null && ((!data.exists() && newData.exists() && newData.child('ownerUid').val() == auth.uid) || (data.exists() && data.child('ownerUid').val() == auth.uid && (!newData.exists() || newData.child('ownerUid').val() == auth.uid)))",
-        ".validate": "newData.hasChildren(['id', 'name', 'ownerUid', 'weeklyPoints', 'totalPoints', 'updatedAt']) && newData.child('id').isString() && newData.child('id').val().length >= 1 && newData.child('id').val().length <= 64 && newData.child('name').isString() && newData.child('name').val().length >= 1 && newData.child('name').val().length <= 32 && newData.child('ownerUid').isString() && newData.child('ownerUid').val() == auth.uid && newData.child('weeklyPoints').isNumber() && newData.child('weeklyPoints').val() >= 0 && newData.child('weeklyPoints').val() <= 5000000 && newData.child('totalPoints').isNumber() && newData.child('totalPoints').val() >= 0 && newData.child('totalPoints').val() <= 50000000 && newData.child('updatedAt').isNumber() && ((!data.exists() && newData.child('weeklyPoints').val() <= 25000 && newData.child('totalPoints').val() <= 250000) || (data.exists() && newData.child('weeklyPoints').val() <= data.child('weeklyPoints').val() + 10000 && newData.child('totalPoints').val() >= data.child('totalPoints').val() && newData.child('totalPoints').val() <= data.child('totalPoints').val() + 10000))"
+        ".write": false
       }
     }
   }

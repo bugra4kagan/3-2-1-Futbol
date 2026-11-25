@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - 'security/**'
   workflow_dispatch:
 
 jobs:
@@ -30,6 +31,11 @@ jobs:
 
       - name: Install Firebase CLI
         run: npm install -g firebase-tools
+
+      - name: Run TypeScript & Unit Tests
+        run: |
+          npx tsc --noEmit
+          node --import tsx --test src/game/*.test.ts src/services/*.test.ts src/utils/*.test.ts
 
       - name: Run Firestore & RTDB Rules Tests on Firebase Emulator Suite
         run: firebase emulators:exec --project demo-futbol321 --only auth,firestore,database "node --import tsx --test tests/firebase-emulator.rules.test.ts"

@@ -13,7 +13,20 @@
           "package_name": "com.futbol321.challenge"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "895309340693-u0umv8kqf3b6hvjmk3kvs5p9butif2p7.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.futbol321.challenge",
+            "certificate_hash": "9826bc9f07aee94f659011e73c3aaa9587ac02c1"
+          }
+        },
+        {
+          "client_id": "895309340693-66pejel7tsshmdj40vuedkfm1066keis.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyCNjT36dfe4gNxjTIVdxpsbDJDfqh3wtp4"
@@ -21,7 +34,12 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "895309340693-66pejel7tsshmdj40vuedkfm1066keis.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
         }
       }
     }

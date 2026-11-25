@@ -61,26 +61,26 @@ test.after(async () => {
   await testEnv?.cleanup();
 });
 
-function validUserPayload(uid: string, overrides: Record<string, unknown> = {}) {
+function validStarterUserPayload(uid: string, overrides: Record<string, unknown> = {}) {
   return {
     userId: uid,
     displayName: 'TestOyuncu',
     usernameKey: 'testoyuncu',
     email: 'oyuncu@example.com',
     avatar: '⚽',
-    coins: 500,
-    weeklyPoints: 100,
-    totalPoints: 200,
+    coins: 250,
+    weeklyPoints: 0,
+    totalPoints: 0,
     unlockedGiftIds: ['avatar_classic'],
     adFree: false,
     permanentMultiplier2x: false,
-    progressionJson: '{"coins":500}',
+    progressionJson: '{"coins":250}',
     updatedAt: serverTimestamp(),
     ...overrides,
   };
 }
 
-test('Firestore Dirty Dozen & Ownership Rules', async () => {
+test('Firestore Zero-Trust Economy, AdFree Entitlements, Guest Linking & Dirty Dozen Rules', async () => {
   const verifiedCtx = testEnv.authenticatedContext('uid_alice', {
     email: 'oyuncu@example.com',
     email_verified: true,
@@ -99,57 +99,118 @@ test('Firestore Dirty Dozen & Ownership Rules', async () => {
   await assertFails(
     setDoc(
       doc(unverifiedCtx.firestore(), 'users', 'uid_unverified'),
-      validUserPayload('uid_unverified', { email: 'unverified@example.com' })
+      validStarterUserPayload('uid_unverified', { email: 'unverified@example.com' })
     )
   );
 
-  // 2. Owner with verified email succeeds on /users
+  // 2. Owner with starter-only bounds succeeds on /users create
   await assertSucceeds(
-    setDoc(doc(verifiedCtx.firestore(), 'users', 'uid_alice'), validUserPayload('uid_alice'))
+    setDoc(doc(verifiedCtx.firestore(), 'users', 'uid_alice'), validStarterUserPayload('uid_alice'))
   );
 
-  // 3. UID spoofing & cross-user read blocked
+  // 3. NEGATIVE: Client creating /users with forged coins, weeklyPoints, adFree, multiplier2x, or store_ad_free MUST FAIL
+  await assertFails(
+    setDoc(
+      doc(bobCtx.firestore(), 'users', 'uid_bob'),
+      validStarterUserPayload('uid_bob', { email: 'bob@example.com', coins: 500 })
+    )
+  );
+  await assertFails(
+    setDoc(
+      doc(bobCtx.firestore(), 'users', 'uid_bob'),
+      validStarterUserPayload('uid_bob', { email: 'bob@example.com', weeklyPoints: 100 })
+    )
+  );
+  await assertFails(
+    setDoc(
+      doc(bobCtx.firestore(), 'users', 'uid_bob'),
+      validStarterUserPayload('uid_bob', { email: 'bob@example.com', adFree: true })
+    )
+  );
+  await assertFails(
+    setDoc(
+      doc(bobCtx.firestore(), 'users', 'uid_bob'),
+      validStarterUserPayload('uid_bob', { email: 'bob@example.com', permanentMultiplier2x: true })
+    )
+  );
+  await assertFails(
+    setDoc(
+      doc(bobCtx.firestore(), 'users', 'uid_bob'),
+      validStarterUserPayload('uid_bob', {
+        email: 'bob@example.com',
+        unlockedGiftIds: ['avatar_classic', 'store_ad_free'],
+      })
+    )
+  );
+
+  // 4. NEGATIVE: Client updating /users to inflate coins, weeklyPoints, totalPoints, adFree, multiplier2x or unlockedGiftIds MUST FAIL
+  await assertFails(
+    updateDoc(doc(verifiedCtx.firestore(), 'users', 'uid_alice'), {
+      coins: 260,
+      updatedAt: serverTimestamp(),
+    })
+  );
+  await assertFails(
+    updateDoc(doc(verifiedCtx.firestore(), 'users', 'uid_alice'), {
+      weeklyPoints: 10,
+      updatedAt: serverTimestamp(),
+    })
+  );
+  await assertFails(
+    updateDoc(doc(verifiedCtx.firestore(), 'users', 'uid_alice'), {
+      totalPoints: 10,
+      updatedAt: serverTimestamp(),
+    })
+  );
+  await assertFails(
+    updateDoc(doc(verifiedCtx.firestore(), 'users', 'uid_alice'), {
+      adFree: true,
+      updatedAt: serverTimestamp(),
+    })
+  );
+  await assertFails(
+    updateDoc(doc(verifiedCtx.firestore(), 'users', 'uid_alice'), {
+      permanentMultiplier2x: true,
+      updatedAt: serverTimestamp(),
+    })
+  );
+  await assertFails(
+    updateDoc(doc(verifiedCtx.firestore(), 'users', 'uid_alice'), {
+      unlockedGiftIds: ['avatar_classic', 'store_ad_free'],
+      updatedAt: serverTimestamp(),
+    })
+  );
+
+  // 5. NEGATIVE: UID spoofing, email spoofing, shadow admin field & forged updatedAt
   await assertFails(getDoc(doc(bobCtx.firestore(), 'users', 'uid_alice')));
   await assertFails(
-    setDoc(doc(bobCtx.firestore(), 'users', 'uid_alice'), validUserPayload('uid_alice'))
+    setDoc(doc(bobCtx.firestore(), 'users', 'uid_alice'), validStarterUserPayload('uid_alice'))
   );
-
-  // 4. Email spoofing blocked
   await assertFails(
     setDoc(
       doc(bobCtx.firestore(), 'users', 'uid_bob'),
-      validUserPayload('uid_bob', { email: 'oyuncu@example.com' })
-    )
-  );
-
-  // 5. Shadow admin field & client-forged timestamp blocked
-  await assertFails(
-    setDoc(
-      doc(bobCtx.firestore(), 'users', 'uid_bob'),
-      validUserPayload('uid_bob', { email: 'bob@example.com', isAdmin: true })
+      validStarterUserPayload('uid_bob', { email: 'oyuncu@example.com' })
     )
   );
   await assertFails(
     setDoc(
       doc(bobCtx.firestore(), 'users', 'uid_bob'),
-      validUserPayload('uid_bob', { email: 'bob@example.com', updatedAt: new Date() })
+      validStarterUserPayload('uid_bob', { email: 'bob@example.com', isAdmin: true })
     )
   );
-
-  // 6. Extreme coin/score injection blocked
   await assertFails(
     setDoc(
       doc(bobCtx.firestore(), 'users', 'uid_bob'),
-      validUserPayload('uid_bob', { email: 'bob@example.com', coins: 9999999 })
+      validStarterUserPayload('uid_bob', { email: 'bob@example.com', updatedAt: new Date() })
     )
   );
 
-  // 7. Listing /users, /usernames, /publicProfiles blocked
+  // 6. Listing /users, /usernames, /publicProfiles blocked
   await assertFails(getDocs(query(collection(verifiedCtx.firestore(), 'users'), limit(10))));
   await assertFails(getDocs(query(collection(anonCtx.firestore(), 'usernames'), limit(10))));
   await assertFails(getDocs(query(collection(anonCtx.firestore(), 'publicProfiles'), limit(10))));
 
-  // 8. Username reservation hijack & deletion guard
+  // 7. Username reservation hijack & unauthorized deletion blocked
   await assertSucceeds(
     setDoc(doc(verifiedCtx.firestore(), 'usernames', 'testoyuncu'), {
       usernameKey: 'testoyuncu',
@@ -166,7 +227,54 @@ test('Firestore Dirty Dozen & Ownership Rules', async () => {
   );
   await assertFails(deleteDoc(doc(bobCtx.firestore(), 'usernames', 'testoyuncu')));
 
-  // 9. Public profile PII injection blocked
+  // 8. Admin-seeded existing account balance & adFree preserved when guest links email; client cannot revoke or boost
+  await testEnv.withSecurityRulesDisabled(async (adminCtx) => {
+    await setDoc(
+      doc(adminCtx.firestore(), 'users', 'uid_guest_link'),
+      validStarterUserPayload('uid_guest_link', {
+        email: '',
+        coins: 4500,
+        weeklyPoints: 900,
+        totalPoints: 3200,
+        adFree: true,
+        unlockedGiftIds: ['avatar_classic', 'store_ad_free'],
+      })
+    );
+  });
+  const linkedCtx = testEnv.authenticatedContext('uid_guest_link', {
+    email: 'linked@example.com',
+    email_verified: true,
+  });
+  // Linking verified email while preserving existing server coins/adFree succeeds cleanly
+  await assertSucceeds(
+    setDoc(
+      doc(linkedCtx.firestore(), 'users', 'uid_guest_link'),
+      validStarterUserPayload('uid_guest_link', {
+        email: 'linked@example.com',
+        avatar: '🥅',
+        coins: 4500,
+        weeklyPoints: 900,
+        totalPoints: 3200,
+        adFree: true,
+        unlockedGiftIds: ['avatar_classic', 'store_ad_free'],
+      })
+    )
+  );
+  // Attempting to alter balance or revoke adFree after linking fails
+  await assertFails(
+    updateDoc(doc(linkedCtx.firestore(), 'users', 'uid_guest_link'), {
+      coins: 5000,
+      updatedAt: serverTimestamp(),
+    })
+  );
+  await assertFails(
+    updateDoc(doc(linkedCtx.firestore(), 'users', 'uid_guest_link'), {
+      adFree: false,
+      updatedAt: serverTimestamp(),
+    })
+  );
+
+  // 9. PublicProfile: client cannot mint non-zero points, crown, or inject PII
   await assertFails(
     setDoc(doc(bobCtx.firestore(), 'publicProfiles', 'bob_pro'), {
       usernameKey: 'bob_pro',
@@ -174,10 +282,41 @@ test('Firestore Dirty Dozen & Ownership Rules', async () => {
       displayName: 'BobPro',
       avatar: '⚽',
       hasCrown: false,
-      weeklyPoints: 100,
-      totalPoints: 100,
+      weeklyPoints: 500,
+      totalPoints: 500,
       statsJson: '{}',
-      email: 'bob@example.com',
+      updatedAt: serverTimestamp(),
+    })
+  );
+  await assertFails(
+    setDoc(doc(bobCtx.firestore(), 'publicProfiles', 'bob_pro'), {
+      usernameKey: 'bob_pro',
+      ownerUid: 'uid_bob',
+      displayName: 'BobPro',
+      avatar: '⚽',
+      hasCrown: true,
+      weeklyPoints: 0,
+      totalPoints: 0,
+      statsJson: '{}',
+      updatedAt: serverTimestamp(),
+    })
+  );
+  await assertSucceeds(
+    setDoc(doc(bobCtx.firestore(), 'publicProfiles', 'bob_pro'), {
+      usernameKey: 'bob_pro',
+      ownerUid: 'uid_bob',
+      displayName: 'BobPro',
+      avatar: '⚽',
+      hasCrown: false,
+      weeklyPoints: 0,
+      totalPoints: 0,
+      statsJson: '{}',
+      updatedAt: serverTimestamp(),
+    })
+  );
+  await assertFails(
+    updateDoc(doc(bobCtx.firestore(), 'publicProfiles', 'bob_pro'), {
+      weeklyPoints: 250,
       updatedAt: serverTimestamp(),
     })
   );
@@ -188,7 +327,6 @@ test('Firestore Private Room, Matchmaking Queue & UGC User Report Rules', async 
   const guestCtx = testEnv.authenticatedContext('uid_guest');
   const intruderCtx = testEnv.authenticatedContext('uid_intruder');
 
-  // Create private room with host only
   await assertSucceeds(
     setDoc(doc(hostCtx.firestore(), 'rooms', 'AB12CD'), {
       code: 'AB12CD',
@@ -234,16 +372,39 @@ test('Firestore Private Room, Matchmaking Queue & UGC User Report Rules', async 
     })
   );
 
+  // First scoring jump straight to 10 rejected; +1 increment allowed
+  await assertFails(
+    updateDoc(doc(hostCtx.firestore(), 'rooms', 'AB12CD'), {
+      scores: { p_host: 10 },
+      updatedAt: serverTimestamp(),
+    })
+  );
+  await assertSucceeds(
+    updateDoc(doc(hostCtx.firestore(), 'rooms', 'AB12CD'), {
+      scores: { p_host: 1 },
+      updatedAt: serverTimestamp(),
+    })
+  );
+
   // Intruder cannot mutate or delete active 2-player room
   await assertFails(
     updateDoc(doc(intruderCtx.firestore(), 'rooms', 'AB12CD'), {
-      scores: { p_host: 10 },
+      scores: { p_host: 1, p_guest: 5 },
       updatedAt: serverTimestamp(),
     })
   );
   await assertFails(deleteDoc(doc(intruderCtx.firestore(), 'rooms', 'AB12CD')));
 
-  // UGC Report: signed-in user can create, nobody can read/delete
+  // UGC Report: signed-in user can create only as self; reading, updating, deleting or spoofing reporterUid rejected
+  await assertFails(
+    setDoc(doc(guestCtx.firestore(), 'userReports', 'rep_spoof'), {
+      reporterUid: 'uid_host',
+      targetId: 'bad_user',
+      targetName: 'BadUser',
+      reason: 'inappropriate_name',
+      createdAt: serverTimestamp(),
+    })
+  );
   await assertSucceeds(
     setDoc(doc(guestCtx.firestore(), 'userReports', 'rep_123'), {
       reporterUid: 'uid_guest',
@@ -258,86 +419,88 @@ test('Firestore Private Room, Matchmaking Queue & UGC User Report Rules', async 
   await assertFails(deleteDoc(doc(guestCtx.firestore(), 'userReports', 'rep_123')));
 });
 
-test('RTDB Leaderboard Rules enforce Auth, Owner UID & Monotonic Delta Bounds', async () => {
+test('RTDB Leaderboard Rules block ALL client writes & unauthorized legacy claiming while permitting auth reads', async () => {
   const anonCtx = testEnv.unauthenticatedContext();
   const aliceCtx = testEnv.authenticatedContext('uid_alice');
   const malloryCtx = testEnv.authenticatedContext('uid_mallory');
 
+  // Seed existing server/legacy entries via Admin (rules bypassed)
+  await testEnv.withSecurityRulesDisabled(async (adminCtx) => {
+    await set(ref(adminCtx.database(), 'leaderboard/alice_key'), {
+      id: 'alice_key',
+      name: 'Alice',
+      ownerUid: 'uid_alice',
+      weeklyPoints: 450,
+      totalPoints: 1200,
+      updatedAt: Date.now(),
+    });
+    await set(ref(adminCtx.database(), 'leaderboard/legacy_ali'), {
+      id: 'legacy_ali',
+      name: 'Ali10x',
+      weeklyPoints: 1200,
+      totalPoints: 3400,
+      updatedAt: Date.now() - 10000,
+    });
+  });
+
   // Unauthenticated read & write blocked
   await assertFails(get(ref(anonCtx.database(), 'leaderboard')));
   await assertFails(
-    set(ref(anonCtx.database(), 'leaderboard/alice_key'), {
-      id: 'alice_key',
-      name: 'Alice',
+    set(ref(anonCtx.database(), 'leaderboard/anon_fake'), {
+      id: 'anon_fake',
+      name: 'Anon',
+      ownerUid: 'anon',
+      weeklyPoints: 9999,
+      totalPoints: 9999,
+      updatedAt: Date.now(),
+    })
+  );
+
+  // Authenticated player can READ leaderboard
+  await assertSucceeds(get(ref(malloryCtx.database(), 'leaderboard')));
+
+  // NEGATIVE: Even owner client cannot directly create, inflate or delete RTDB leaderboard (only Firebase Admin SDK backend writes)
+  await assertFails(
+    set(ref(aliceCtx.database(), 'leaderboard/alice_new'), {
+      id: 'alice_new',
+      name: 'AliceNew',
       ownerUid: 'uid_alice',
       weeklyPoints: 100,
       totalPoints: 100,
       updatedAt: Date.now(),
     })
   );
-
-  // Arbitrary points jump (> 25000 on create) rejected
   await assertFails(
     set(ref(aliceCtx.database(), 'leaderboard/alice_key'), {
       id: 'alice_key',
       name: 'Alice',
       ownerUid: 'uid_alice',
-      weeklyPoints: 999999,
-      totalPoints: 999999,
+      weeklyPoints: 9999,
+      totalPoints: 9999,
       updatedAt: Date.now(),
     })
   );
+  await assertFails(remove(ref(aliceCtx.database(), 'leaderboard/alice_key')));
 
-  // Valid owner write succeeds
-  await assertSucceeds(
-    set(ref(aliceCtx.database(), 'leaderboard/alice_key'), {
-      id: 'alice_key',
-      name: 'Alice',
-      ownerUid: 'uid_alice',
-      weeklyPoints: 250,
-      totalPoints: 400,
-      updatedAt: Date.now(),
-    })
-  );
-
-  // Authenticated player can read leaderboard
-  await assertSucceeds(get(ref(malloryCtx.database(), 'leaderboard')));
-
-  // Mallory cannot overwrite or delete Alice's leaderboard entry
+  // NEGATIVE: Mallory cannot hijack/claim legacy 1.0.x record without ownerUid directly from client
   await assertFails(
-    set(ref(malloryCtx.database(), 'leaderboard/alice_key'), {
-      id: 'alice_key',
-      name: 'Mallory',
+    set(ref(malloryCtx.database(), 'leaderboard/legacy_ali'), {
+      id: 'legacy_ali',
+      name: 'MalloryHijack',
       ownerUid: 'uid_mallory',
-      weeklyPoints: 500,
-      totalPoints: 500,
+      weeklyPoints: 9999,
+      totalPoints: 9999,
       updatedAt: Date.now(),
     })
   );
-  await assertFails(remove(ref(malloryCtx.database(), 'leaderboard/alice_key')));
-
-  // Alice cannot jump > 10000 in a single sync
   await assertFails(
-    set(ref(aliceCtx.database(), 'leaderboard/alice_key'), {
-      id: 'alice_key',
-      name: 'Alice',
+    set(ref(aliceCtx.database(), 'leaderboard/legacy_ali'), {
+      id: 'legacy_ali',
+      name: 'Ali10x',
       ownerUid: 'uid_alice',
-      weeklyPoints: 25000,
-      totalPoints: 400,
+      weeklyPoints: 1200,
+      totalPoints: 3400,
       updatedAt: Date.now(),
     })
   );
-
-  // Alice can validly update within bounds & delete on account deletion
-  await assertSucceeds(
-    set(ref(aliceCtx.database(), 'leaderboard/alice_key'), {
-      id: 'alice_key',
-      name: 'Alice',
-      ownerUid: 'uid_alice',
-      weeklyPoints: 550,
-      totalPoints: 700,
-      updatedAt: Date.now(),
-    })
-  );
-  await assertSucceeds(remove(ref(aliceCtx.database(), 'leaderboard/alice_key')));
 });

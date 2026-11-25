@@ -112,20 +112,33 @@ service cloud.firestore {
     }
 
     function isValidUserCreateBounds(data) {
-      return data.coins <= 50000
-        && data.weeklyPoints <= 25000
-        && data.totalPoints <= 250000
+      return data.coins <= 250
+        && data.weeklyPoints == 0
+        && data.totalPoints == 0
+        && (!('adFree' in data) || data.adFree == false)
+        && (!('permanentMultiplier2x' in data) || data.permanentMultiplier2x == false)
+        && data.unlockedGiftIds.size() <= 5
+        && !('store_ad_free' in data.unlockedGiftIds)
+        && !('bundle_vip_adfree_frame' in data.unlockedGiftIds)
         && (!('wheelLastSpinServerAt' in data) || data.wheelLastSpinServerAt == request.time)
         && (!('dailyChallengeLastServerAt' in data) || data.dailyChallengeLastServerAt == request.time);
     }
 
     function isValidUserUpdateBounds() {
-      return (!('coins' in existing()) || incoming().coins - existing().coins <= 25000)
-        && (!('weeklyPoints' in existing()) || incoming().weeklyPoints - existing().weeklyPoints <= 10000)
-        && (!('totalPoints' in existing()) || (
-          incoming().totalPoints >= existing().totalPoints
-          && incoming().totalPoints - existing().totalPoints <= 10000
-        ))
+      return incoming().coins == existing().coins
+        && incoming().weeklyPoints == existing().weeklyPoints
+        && incoming().totalPoints == existing().totalPoints
+        && incoming().unlockedGiftIds == existing().unlockedGiftIds
+        && (
+          !('adFree' in existing())
+            ? (!('adFree' in incoming()) || incoming().adFree == false)
+            : incoming().adFree == existing().adFree
+        )
+        && (
+          !('permanentMultiplier2x' in existing())
+            ? (!('permanentMultiplier2x' in incoming()) || incoming().permanentMultiplier2x == false)
+            : incoming().permanentMultiplier2x == existing().permanentMultiplier2x
+        )
         // 24 saatlik Şans Çarkı sunucu zaman damgası koruması (cihaz saati değiştirilse bile aşılamaz)
         && (
           !('wheelLastSpinServerAt' in incoming())
@@ -254,7 +267,6 @@ service cloud.firestore {
         && isValidUserBackup(incoming(), userId)
         && isValidUserUpdateBounds()
         && incoming().userId == existing().userId
-        && (!('adFree' in existing()) || existing().adFree == false || incoming().adFree == true)
         && (!('email' in existing()) || !('email' in incoming()) || incoming().email == existing().email || existing().email == '')
         && incoming().diff(existing()).affectedKeys().hasOnly([
           'displayName',
@@ -262,12 +274,6 @@ service cloud.firestore {
           'email',
           'avatar',
           'favoriteClubId',
-          'coins',
-          'weeklyPoints',
-          'totalPoints',
-          'unlockedGiftIds',
-          'adFree',
-          'permanentMultiplier2x',
           'wheelLastSpinServerAt',
           'dailyChallengeLastServerAt',
           'serverClockPingAt',
@@ -312,8 +318,10 @@ service cloud.firestore {
         && isSignedIn()
         && isEmailVerifiedIfPresent()
         && isValidPublicProfile(incoming(), usernameKey)
-        && incoming().weeklyPoints <= 25000
-        && incoming().totalPoints <= 250000;
+        && incoming().weeklyPoints == 0
+        && incoming().totalPoints == 0
+        && incoming().hasCrown == false
+        && (!('lastActivityScore' in incoming()) || incoming().lastActivityScore == 0);
 
       allow update: if isValidUsernameKey(usernameKey)
         && isSignedIn()
@@ -322,9 +330,10 @@ service cloud.firestore {
         && existing().ownerUid == request.auth.uid
         && incoming().ownerUid == existing().ownerUid
         && incoming().usernameKey == existing().usernameKey
-        && incoming().weeklyPoints - existing().weeklyPoints <= 10000
-        && incoming().totalPoints >= existing().totalPoints
-        && incoming().totalPoints - existing().totalPoints <= 10000
+        && incoming().weeklyPoints == existing().weeklyPoints
+        && incoming().totalPoints == existing().totalPoints
+        && incoming().hasCrown == existing().hasCrown
+        && (!('lastActivityScore' in incoming()) || incoming().lastActivityScore <= existing().totalPoints)
         && incoming().diff(existing()).affectedKeys().hasOnly([
           'displayName',
           'friendCode',
@@ -334,9 +343,6 @@ service cloud.firestore {
           'equippedCrest',
           'equippedFrame',
           'equippedBadge',
-          'hasCrown',
-          'weeklyPoints',
-          'totalPoints',
           'statsJson',
           'lastActivityId',
           'lastActivityType',
@@ -424,14 +430,26 @@ service cloud.firestore {
           (incoming().matchSeq == existing().matchSeq
             && incoming().questionSeed == existing().questionSeed
             && incoming().roundIds == existing().roundIds
-            && (!(existing().hostId in existing().scores)
-              || (incoming().scores[existing().hostId] is int
+            && (
+              (!(existing().hostId in existing().scores)
+                && (!(existing().hostId in incoming().scores)
+                  || (incoming().scores[existing().hostId] is int
+                    && incoming().scores[existing().hostId] >= 0
+                    && incoming().scores[existing().hostId] <= 1)))
+              || ((existing().hostId in existing().scores)
+                && incoming().scores[existing().hostId] is int
                 && incoming().scores[existing().hostId] >= existing().scores[existing().hostId]
                 && incoming().scores[existing().hostId] <= existing().scores[existing().hostId] + 1
-                && incoming().scores[existing().hostId] <= 10))
+                && incoming().scores[existing().hostId] <= 10)
+            )
             && (existing().guestId == null
-              || !(existing().guestId in existing().scores)
-              || (incoming().scores[existing().guestId] is int
+              || (!(existing().guestId in existing().scores)
+                && (!(existing().guestId in incoming().scores)
+                  || (incoming().scores[existing().guestId] is int
+                    && incoming().scores[existing().guestId] >= 0
+                    && incoming().scores[existing().guestId] <= 1)))
+              || ((existing().guestId in existing().scores)
+                && incoming().scores[existing().guestId] is int
                 && incoming().scores[existing().guestId] >= existing().scores[existing().guestId]
                 && incoming().scores[existing().guestId] <= existing().scores[existing().guestId] + 1
                 && incoming().scores[existing().guestId] <= 10)))

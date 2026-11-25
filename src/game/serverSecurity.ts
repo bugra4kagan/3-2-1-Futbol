@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import type { Request, Response, NextFunction } from 'express';
-import type { UserProgression } from './types';
+import { generateMinigameRounds, validateMinigameAnswer } from './minigameEngine.js';
+import type { MinigameRoundPayload, MinigameType, UserProgression } from './types';
 
 export const MAX_COINS = 20_000_000;
 export const MAX_COIN_GAIN_PER_SYNC = 25_000;
@@ -33,11 +34,22 @@ export interface SanitizeProgressionOptions {
 export interface ServerMatchSession {
   sessionId: string;
   accountId: string;
-  minigameType: string;
+  minigameType: MinigameType;
   mode: string;
   startedAt: number;
+  rounds: MinigameRoundPayload[];
+  scoredRounds: Set<number>;
+  verifiedPlayerScore: number;
+  verifiedCorrectAnswers: number;
   completed: boolean;
 }
+
+const SUPPORTED_MATCH_TYPES = new Set<MinigameType>([
+  'two_clubs',
+  'xox',
+  'career',
+  'country_club',
+]);
 
 export class ServerMatchLedger {
   private readonly sessions = new Map<string, ServerMatchSession>();
@@ -46,16 +58,26 @@ export class ServerMatchLedger {
     accountId: string;
     minigameType: string;
     mode: string;
+    rounds?: MinigameRoundPayload[];
     now?: number;
   }): ServerMatchSession {
     const now = params.now ?? Date.now();
+    const cleanType = SUPPORTED_MATCH_TYPES.has(params.minigameType as MinigameType)
+      ? (params.minigameType as MinigameType)
+      : 'two_clubs';
     const sessionId = `match_${crypto.randomBytes(16).toString('hex')}`;
+    const rounds = params.rounds ?? generateMinigameRounds(cleanType, 10, []);
+
     const session: ServerMatchSession = {
       sessionId,
       accountId: String(params.accountId || '').trim().slice(0, 64),
-      minigameType: String(params.minigameType || 'two_clubs').slice(0, 32),
+      minigameType: cleanType,
       mode: String(params.mode || 'solo').slice(0, 32),
       startedAt: now,
+      rounds,
+      scoredRounds: new Set<number>(),
+      verifiedPlayerScore: 0,
+      verifiedCorrectAnswers: 0,
       completed: false,
     };
     this.sessions.set(sessionId, session);
@@ -70,16 +92,66 @@ export class ServerMatchLedger {
     return session;
   }
 
+  public submitVerifiedAnswer(params: {
+    sessionId: string;
+    accountId: string;
+    roundIndex: number;
+    answer: string;
+    cellPos?: { row: number; col: number };
+  }):
+    | { ok: true; valid: boolean; verifiedPlayerScore: number; matchedName?: string }
+    | { ok: false; reason: string } {
+    const cleanSid = String(params.sessionId || '').trim();
+    const cleanId = String(params.accountId || '').trim().slice(0, 64);
+    const session = this.sessions.get(cleanSid);
+    if (!session || session.accountId !== cleanId) {
+      return { ok: false, reason: 'Geçersiz veya eşleşmeyen sunucu maç oturumu.' };
+    }
+    if (session.completed) {
+      return { ok: false, reason: 'Tamamlanmış maç oturumuna yanıt gönderilemez.' };
+    }
+    const rIdx = Math.round(Number(params.roundIndex));
+    if (!Number.isFinite(rIdx) || rIdx < 0 || rIdx >= session.rounds.length) {
+      return { ok: false, reason: 'Geçersiz tur indeksi.' };
+    }
+    if (session.scoredRounds.has(rIdx)) {
+      return {
+        ok: true,
+        valid: false,
+        verifiedPlayerScore: session.verifiedPlayerScore,
+      };
+    }
+
+    const round = session.rounds[rIdx]!;
+    const validation = validateMinigameAnswer(
+      round,
+      String(params.answer || '').slice(0, 120),
+      params.cellPos
+    );
+
+    if (validation.isValid) {
+      session.scoredRounds.add(rIdx);
+      session.verifiedPlayerScore += 1;
+      session.verifiedCorrectAnswers += 1;
+    }
+
+    return {
+      ok: true,
+      valid: validation.isValid,
+      verifiedPlayerScore: session.verifiedPlayerScore,
+      matchedName: validation.player?.name,
+    };
+  }
+
   public consumeVerifiedMatchSession(params: {
     sessionId: string;
     accountId: string;
-    playerScore: number;
-    opponentScore: number;
     hasMultiplier2x: boolean;
+    roomVerifiedScores?: { playerScore: number; opponentScore: number };
     now?: number;
     minDurationMs?: number;
   }):
-    | { ok: true; coinsAwarded: number; pointsAwarded: number; won: boolean }
+    | { ok: true; coinsAwarded: number; pointsAwarded: number; won: boolean; verifiedScore: number }
     | { ok: false; reason: string } {
     const cleanSid = String(params.sessionId || '').trim();
     const cleanId = String(params.accountId || '').trim().slice(0, 64);
@@ -101,18 +173,41 @@ export class ServerMatchLedger {
     }
 
     session.completed = true;
-    const safeP1 = Math.max(0, Math.min(20, Math.round(Number(params.playerScore) || 0)));
-    const safeP2 = Math.max(0, Math.min(20, Math.round(Number(params.opponentScore) || 0)));
-    const won = safeP1 > safeP2;
-    const drew = safeP1 === safeP2;
 
-    const baseCoins = won ? 180 + safeP1 * 35 : drew ? 90 + safeP1 * 20 : 40 + safeP1 * 15;
-    const basePoints = won ? 120 + safeP1 * 20 : drew ? 50 : 15;
+    // İstemcinin beyan ettiği sahte skor ASLA kullanılmaz:
+    // Online modda yalnızca Firestore `rooms` sunucu sonucu, offline/solo modda yalnızca sunucu doğrulamalı yanıt sayısı geçerlidir.
+    const verifiedScore = params.roomVerifiedScores
+      ? Math.max(0, Math.min(20, Math.round(params.roomVerifiedScores.playerScore)))
+      : session.verifiedPlayerScore;
+    const oppScore = params.roomVerifiedScores
+      ? Math.max(0, Math.min(20, Math.round(params.roomVerifiedScores.opponentScore)))
+      : verifiedScore >= 3
+      ? Math.max(0, verifiedScore - 1)
+      : 3;
+
+    const won = verifiedScore > oppScore;
+    const drew = verifiedScore === oppScore;
+
+    const baseCoins = won
+      ? 180 + verifiedScore * 35
+      : drew
+      ? 90 + verifiedScore * 20
+      : verifiedScore > 0
+      ? 40 + verifiedScore * 15
+      : 15;
+    const basePoints = won
+      ? 120 + verifiedScore * 20
+      : drew
+      ? 50
+      : verifiedScore > 0
+      ? 15
+      : 0;
     const mult = params.hasMultiplier2x ? 2 : 1;
 
     return {
       ok: true,
       won,
+      verifiedScore,
       coinsAwarded: Math.min(MAX_SERVER_MATCH_COINS * mult, baseCoins * mult),
       pointsAwarded: Math.min(MAX_SERVER_MATCH_POINTS * mult, basePoints * mult),
     };

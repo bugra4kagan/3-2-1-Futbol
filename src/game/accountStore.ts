@@ -11,7 +11,9 @@ import {
   validateUsernameFormat,
 } from './accountEngine.js';
 import { MinigameType, PlayerProfile, PublicPlayerProfile, UserProgression } from './types.js';
+import { purchaseStoreItem } from './retentionEngine.js';
 import {
+  IAP_ONLY_ITEM_IDS,
   createAccountSessionToken,
   generateAccountAuthSecret,
   sanitizeProgressionUpdate,
@@ -526,6 +528,39 @@ export class AccountStore {
     const updated: PersistentAccountRecord = {
       ...existing,
       progression: nextProg,
+      updatedAt: Date.now(),
+    };
+    this.indexRecord(updated);
+    this.saveToDisk();
+    return { ok: true, account: updated };
+  }
+
+  /**
+   * Coin karşılığı mağaza harcamalarını sunucu bakiyesinden düşer.
+   * IAP-özel ürünler (store_ad_free vb.) coin ile alınamaz.
+   */
+  public spendCoinsForItem(params: {
+    accountId: string;
+    itemId: string;
+  }): { ok: boolean; reason?: string; account?: PersistentAccountRecord } {
+    const cleanId = String(params.accountId || '').trim().slice(0, 64);
+    const cleanItemId = String(params.itemId || '').trim();
+    const existing = this.byId.get(cleanId);
+    if (!existing) return { ok: false, reason: 'Hesap kaydı bulunamadı.' };
+    if (IAP_ONLY_ITEM_IDS.has(cleanItemId)) {
+      return { ok: false, reason: 'Bu ürün yalnızca doğrulanmış mağaza ödemesi ile açılabilir.' };
+    }
+
+    const res = purchaseStoreItem(existing.progression, cleanItemId, 'coins');
+    if (!res.ok) {
+      return { ok: false, reason: res.reason };
+    }
+
+    const updated: PersistentAccountRecord = {
+      ...existing,
+      progression: sanitizeProgressionUpdate(existing.progression, res.progression, {
+        strictActionVerification: true,
+      }),
       updatedAt: Date.now(),
     };
     this.indexRecord(updated);

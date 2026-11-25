@@ -30,6 +30,13 @@ import {
   findRestorableGooglePlaySkuByProductId,
 } from './src/game/billingCatalog.js';
 import { verifyGooglePlayProductReceipt } from './src/game/googlePlayVerifier.js';
+import {
+  claimLegacyRtdbLeaderboardAdmin,
+  deleteUserFirebaseRecordsAdmin,
+  syncAuthoritativeUserStateAdmin,
+  verifyFirebaseBearerToken,
+  verifyOnlineRoomOutcomeAdmin,
+} from './src/game/firebaseAdminService.js';
 
 const VALID_MINIGAMES: MinigameType[] = ['two_clubs', 'xox', 'career', 'country_club'];
 
@@ -558,12 +565,45 @@ app.post('/api/matches/start', (req, res) => {
     minigameType: String(minigameType || 'two_clubs'),
     mode: String(mode || 'solo'),
   });
-  res.json({ ok: true, matchSessionId: session.sessionId, startedAt: session.startedAt });
+  res.json({
+    ok: true,
+    matchSessionId: session.sessionId,
+    startedAt: session.startedAt,
+    roundsCount: session.rounds.length,
+  });
 });
 
-app.post('/api/matches/complete', (req, res) => {
+app.post('/api/matches/answer', (req, res) => {
   if (!enforceRateLimit(accountWriteLimiter, req, res)) return;
-  const { accountId, matchSessionId, playerScore, opponentScore } = req.body || {};
+  const { accountId, matchSessionId, roundIndex, answer, cellPos } = req.body || {};
+  const cleanId = String(accountId || '').trim().slice(0, 64);
+  const existing = accountStore.getByAccountId(cleanId);
+  if (existing && !accountStore.verifyAccountSession(cleanId, readAccountToken(req))) {
+    return res.status(401).json({ ok: false, error: 'Hesap oturumu doğrulanamadı.' });
+  }
+  const ansRes = serverMatchLedger.submitVerifiedAnswer({
+    sessionId: String(matchSessionId || ''),
+    accountId: cleanId,
+    roundIndex: Number(roundIndex),
+    answer: String(answer || ''),
+    cellPos:
+      cellPos && typeof cellPos.row === 'number' && typeof cellPos.col === 'number'
+        ? { row: cellPos.row, col: cellPos.col }
+        : undefined,
+  });
+  if (!ansRes.ok) {
+    return res.status(400).json({ ok: false, error: ansRes.reason });
+  }
+  res.json({
+    ok: true,
+    valid: ansRes.valid,
+    verifiedPlayerScore: ansRes.verifiedPlayerScore,
+  });
+});
+
+app.post('/api/matches/complete', async (req, res) => {
+  if (!enforceRateLimit(accountWriteLimiter, req, res)) return;
+  const { accountId, matchSessionId, roomCode } = req.body || {};
   const cleanId = String(accountId || '').trim().slice(0, 64);
   const existing = accountStore.getByAccountId(cleanId);
   if (!existing) {
@@ -573,15 +613,39 @@ app.post('/api/matches/complete', (req, res) => {
     return res.status(401).json({ ok: false, error: 'Hesap oturumu doğrulanamadı.' });
   }
 
+  let roomVerifiedScores: { playerScore: number; opponentScore: number } | undefined;
+  const firebaseAuthToken = req.header('x-firebase-id-token');
+  const verifiedUser = await verifyFirebaseBearerToken(firebaseAuthToken);
+
+  if (roomCode) {
+    if (!verifiedUser) {
+      return res.status(401).json({
+        ok: false,
+        error: 'Çevrimiçi maç sonucu doğrulaması için geçerli Firebase kimlik doğrulaması gerekir.',
+      });
+    }
+    const roomCheck = await verifyOnlineRoomOutcomeAdmin({
+      roomCode: String(roomCode),
+      uid: verifiedUser.uid,
+      playerId: cleanId,
+    });
+    if (!roomCheck.ok) {
+      return res.status(403).json({ ok: false, error: roomCheck.error });
+    }
+    roomVerifiedScores = {
+      playerScore: roomCheck.playerScore,
+      opponentScore: roomCheck.opponentScore,
+    };
+  }
+
   const hasMult = Boolean(
     existing.progression.permanentMultiplier2x || (existing.progression.multiplier2xMatches ?? 0) > 0
   );
   const outcome = serverMatchLedger.consumeVerifiedMatchSession({
     sessionId: String(matchSessionId || ''),
     accountId: cleanId,
-    playerScore: Number(playerScore) || 0,
-    opponentScore: Number(opponentScore) || 0,
     hasMultiplier2x: hasMult,
+    roomVerifiedScores,
   });
 
   if (!outcome.ok) {
@@ -599,11 +663,78 @@ app.post('/api/matches/complete', (req, res) => {
   }
 
   liveLeaderboard.set(applied.account.accountId, buildPublicProfileFromRecord(applied.account));
+  const cloudSync = await syncAuthoritativeUserStateAdmin({
+    uid: verifiedUser?.uid || applied.account.googleUid,
+    accountId: applied.account.accountId,
+    profile: applied.account.profile,
+    progression: applied.account.progression,
+    email: verifiedUser?.email,
+  });
+
   res.json({
     ok: true,
+    verifiedScore: outcome.verifiedScore,
     coinsAwarded: outcome.coinsAwarded,
     pointsAwarded: outcome.pointsAwarded,
     progression: applied.account.progression,
+    cloudSync,
+  });
+});
+
+app.post('/api/store/spend-coins', async (req, res) => {
+  if (!enforceRateLimit(accountWriteLimiter, req, res)) return;
+  const { accountId, itemId } = req.body || {};
+  const cleanId = String(accountId || '').trim().slice(0, 64);
+  if (!accountStore.verifyAccountSession(cleanId, readAccountToken(req))) {
+    return res.status(401).json({ ok: false, error: 'Hesap oturumu doğrulanamadı.' });
+  }
+  const spendRes = accountStore.spendCoinsForItem({
+    accountId: cleanId,
+    itemId: String(itemId || ''),
+  });
+  if (!spendRes.ok || !spendRes.account) {
+    return res.status(400).json({ ok: false, error: spendRes.reason || 'Harcama başarısız.' });
+  }
+  const verifiedUser = await verifyFirebaseBearerToken(req.header('x-firebase-id-token'));
+  await syncAuthoritativeUserStateAdmin({
+    uid: verifiedUser?.uid || spendRes.account.googleUid,
+    accountId: spendRes.account.accountId,
+    profile: spendRes.account.profile,
+    progression: spendRes.account.progression,
+    email: verifiedUser?.email,
+  });
+  res.json({ ok: true, progression: spendRes.account.progression });
+});
+
+app.post('/api/migration/claim-legacy-rtdb', async (req, res) => {
+  if (!enforceRateLimit(accountWriteLimiter, req, res)) return;
+  const { accountId, playerKey } = req.body || {};
+  const cleanId = String(accountId || '').trim().slice(0, 64);
+  if (!cleanId || !playerKey) {
+    return res.status(400).json({ ok: false, error: 'Eksik geçiş parametresi.' });
+  }
+  if (!accountStore.verifyAccountSession(cleanId, readAccountToken(req))) {
+    return res.status(401).json({ ok: false, error: 'Hesap oturumu doğrulanamadı.' });
+  }
+  const verifiedUser = await verifyFirebaseBearerToken(req.header('x-firebase-id-token'));
+  if (!verifiedUser) {
+    return res.status(401).json({
+      ok: false,
+      error: 'Eski RTDB kaydı devralma işlemi için geçerli Firebase Auth tokenı zorunludur.',
+    });
+  }
+  const claim = await claimLegacyRtdbLeaderboardAdmin({
+    verifiedUid: verifiedUser.uid,
+    playerKey: String(playerKey),
+    expectedAccountId: cleanId,
+  });
+  if (!claim.ok) {
+    return res.status(claim.statusCode).json({ ok: false, error: claim.error });
+  }
+  res.json({
+    ok: true,
+    weeklyPoints: claim.weeklyPoints,
+    totalPoints: claim.totalPoints,
   });
 });
 
@@ -671,6 +802,16 @@ app.post('/api/billing/verify-google-play', async (req, res) => {
         ok: false,
         verified: false,
         error: 'Bu satın alma jetonu başka bir hesapta zaten kullanılmış.',
+      });
+    }
+    const verifiedUser = await verifyFirebaseBearerToken(req.header('x-firebase-id-token'));
+    if (applied.account) {
+      await syncAuthoritativeUserStateAdmin({
+        uid: verifiedUser?.uid || applied.account.googleUid,
+        accountId: applied.account.accountId,
+        profile: applied.account.profile,
+        progression: applied.account.progression,
+        email: verifiedUser?.email,
       });
     }
     return res.json({

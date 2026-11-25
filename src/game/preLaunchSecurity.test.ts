@@ -50,7 +50,7 @@ test('strictActionVerification rejects client-fabricated matchesPlayed/coin/poin
   assert.ok(afterSync.unlockedGiftIds.includes('store_ad_free'));
 });
 
-test('ServerMatchLedger & AccountStore credit coins/points only from verified one-time server sessions', () => {
+test('ServerMatchLedger & AccountStore credit coins/points only from verified match answers and one-time sessions', () => {
   const store = new AccountStore(null);
   const ledger = new ServerMatchLedger();
   const initProg = createInitialProgression('srv_p1');
@@ -61,35 +61,80 @@ test('ServerMatchLedger & AccountStore credit coins/points only from verified on
   });
   assert.equal(reg.ok, true);
 
+  const round1 = {
+    minigameType: 'two_clubs' as const,
+    pairing: {
+      id: 'gs_psg',
+      club1Id: 'galatasaray',
+      club2Id: 'psg',
+      validPlayerIds: ['mauro_icardi', 'lionel_messi'],
+    },
+  };
   const session = ledger.issueSession({
     accountId: 'srv_p1',
     minigameType: 'two_clubs',
     mode: 'solo',
+    rounds: [round1],
     now: 1_700_000_000_000,
   });
+
+  // Wrong answer is rejected and does NOT raise verifiedPlayerScore
+  const wrongAns = ledger.submitVerifiedAnswer({
+    sessionId: session.sessionId,
+    accountId: 'srv_p1',
+    roundIndex: 0,
+    answer: 'Unknown Fake Player',
+  });
+  assert.equal(wrongAns.ok, true);
+  if (wrongAns.ok) {
+    assert.equal(wrongAns.valid, false);
+    assert.equal(wrongAns.verifiedPlayerScore, 0);
+  }
+
+  // Valid answer verified by server increments score once; duplicate submission on same round doesn't double score
+  const correctAns = ledger.submitVerifiedAnswer({
+    sessionId: session.sessionId,
+    accountId: 'srv_p1',
+    roundIndex: 0,
+    answer: 'Mauro Icardi',
+  });
+  assert.equal(correctAns.ok, true);
+  if (correctAns.ok) {
+    assert.equal(correctAns.valid, true);
+    assert.equal(correctAns.verifiedPlayerScore, 1);
+  }
+
+  const duplicateAns = ledger.submitVerifiedAnswer({
+    sessionId: session.sessionId,
+    accountId: 'srv_p1',
+    roundIndex: 0,
+    answer: 'Mauro Icardi',
+  });
+  assert.equal(duplicateAns.ok, true);
+  if (duplicateAns.ok) {
+    assert.equal(duplicateAns.verifiedPlayerScore, 1);
+  }
 
   // Too fast (< 3000ms) is rejected
   const tooFast = ledger.consumeVerifiedMatchSession({
     sessionId: session.sessionId,
     accountId: 'srv_p1',
-    playerScore: 3,
-    opponentScore: 0,
     hasMultiplier2x: false,
     now: 1_700_000_000_500,
   });
   assert.equal(tooFast.ok, false);
 
-  // Valid elapsed duration computes authoritative server reward
+  // Valid completion computes reward strictly from server-verified outcome (score=1 vs 3 -> participation/loss reward, cannot spoof win!)
   const valid = ledger.consumeVerifiedMatchSession({
     sessionId: session.sessionId,
     accountId: 'srv_p1',
-    playerScore: 3,
-    opponentScore: 1,
     hasMultiplier2x: false,
     now: 1_700_000_045_000,
   });
   assert.equal(valid.ok, true);
   if (!valid.ok) return;
+  assert.equal(valid.verifiedScore, 1);
+  assert.equal(valid.won, false);
 
   const credited = store.recordVerifiedMatchReward({
     accountId: 'srv_p1',
@@ -101,12 +146,17 @@ test('ServerMatchLedger & AccountStore credit coins/points only from verified on
   assert.equal(credited.account?.progression.coins, initProg.coins + valid.coinsAwarded);
   assert.equal(credited.account?.progression.weeklyPoints, initProg.weeklyPoints + valid.pointsAwarded);
 
+  // Server coin spend deducts cleanly and blocks IAP-only items
+  const blockedAdFreeCoin = store.spendCoinsForItem({
+    accountId: 'srv_p1',
+    itemId: 'store_ad_free',
+  });
+  assert.equal(blockedAdFreeCoin.ok, false);
+
   // Replaying same matchSessionId fails
   const replay = ledger.consumeVerifiedMatchSession({
     sessionId: session.sessionId,
     accountId: 'srv_p1',
-    playerScore: 3,
-    opponentScore: 1,
     hasMultiplier2x: false,
     now: 1_700_000_050_000,
   });
@@ -190,7 +240,7 @@ test('verifyGooglePlayProductReceipt rejects discontinued SKUs and unconfigured 
   assert.equal(missingCreds.statusCode, 503);
 });
 
-test('firebase.json and hardened database.rules.json enforce RTDB auth, ownership, and delta guards', () => {
+test('firebase.json and hardened database.rules.json / firestore.rules lock economy & RTDB writes to server Admin SDK', () => {
   const fbJson = JSON.parse(fs.readFileSync(path.resolve(process.cwd(), 'firebase.json'), 'utf8'));
   assert.equal(fbJson.firestore.rules, 'firestore.rules');
   assert.equal(fbJson.database.rules, 'database.rules.json');
@@ -204,6 +254,26 @@ test('firebase.json and hardened database.rules.json enforce RTDB auth, ownershi
   assert.equal(dbRules.rules['.write'], false);
   const lbRule = dbRules.rules.leaderboard['$playerKey'];
   assert.equal(lbRule['.read'], 'auth != null');
-  assert.ok(String(lbRule['.write']).includes('auth.uid'));
-  assert.ok(String(lbRule['.validate']).includes('weeklyPoints'));
+  assert.equal(lbRule['.write'], false);
+
+  const fsRules = fs.readFileSync(path.resolve(process.cwd(), 'firestore.rules'), 'utf8');
+  assert.ok(fsRules.includes('incoming().coins == existing().coins'));
+  assert.ok(fsRules.includes('incoming().adFree == existing().adFree'));
+});
+
+test('Android Gradle files and google-services.json match futbol-9013e and com.futbol321.challenge', () => {
+  const rootGradle = fs.readFileSync(path.resolve(process.cwd(), 'android/build.gradle'), 'utf8');
+  const appGradle = fs.readFileSync(path.resolve(process.cwd(), 'android/app/build.gradle'), 'utf8');
+  const googleServices = JSON.parse(
+    fs.readFileSync(path.resolve(process.cwd(), 'android/app/google-services.json'), 'utf8')
+  );
+
+  assert.ok(rootGradle.includes("com.google.gms:google-services:"));
+  assert.ok(appGradle.includes("apply plugin: 'com.google.gms.google-services'"));
+  assert.ok(appGradle.includes('firebase-bom:'));
+  assert.ok(appGradle.includes('firebase-appcheck-playintegrity'));
+  assert.equal(googleServices.project_info?.project_id, 'futbol-9013e');
+  assert.equal(googleServices.project_info?.project_number, '895309340693');
+  const androidClient = googleServices.client?.[0]?.client_info?.android_client_info;
+  assert.equal(androidClient?.package_name, 'com.futbol321.challenge');
 });

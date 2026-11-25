@@ -22,6 +22,24 @@ public class PlayIntegrityPlugin extends Plugin {
 
     private static volatile boolean providerInstalled = false;
 
+    @Override
+    public void load() {
+        try {
+            if (!FirebaseApp.getApps(getContext()).isEmpty()) {
+                synchronized (PlayIntegrityPlugin.class) {
+                    if (!providerInstalled) {
+                        FirebaseAppCheck.getInstance().installAppCheckProviderFactory(
+                            PlayIntegrityAppCheckProviderFactory.getInstance()
+                        );
+                        providerInstalled = true;
+                    }
+                }
+            }
+        } catch (Throwable ignored) {
+            // App Check enforcement kapalı olduğu için başlatma hatası akışı durdurmaz
+        }
+    }
+
     private boolean ensureFirebaseApp(String projectId, String apiKey, String androidAppId) {
         if (!FirebaseApp.getApps(getContext()).isEmpty()) {
             return true;
