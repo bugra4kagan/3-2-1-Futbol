@@ -65,22 +65,22 @@ export const ScoreBoard: React.FC<ScoreBoardProps> = ({
   const gameMeta = getMinigameMeta(minigameType);
 
   return (
-    <header className="shrink-0 z-30 w-full max-w-4xl mx-auto px-2.5 sm:px-4 pt-[max(0.65rem,calc(env(safe-area-inset-top)+0.4rem))] pb-1 sm:pb-1.5 bg-[#080E14] border-b border-white/10">
+    <header className="shrink-0 z-30 w-full max-w-4xl mx-auto px-2.5 sm:px-4 pt-[max(0.65rem,calc(env(safe-area-inset-top)+0.4rem))] pb-1 sm:pb-1.5 bg-[#101C16] border-b border-[#D9B76B]/25">
       {/* Top utility bar */}
-      <div className="flex items-center justify-between gap-1.5 sm:gap-2 text-xs text-[#F8FAFC] font-semibold mb-2 sm:mb-2.5">
+      <div className="flex items-center justify-between gap-1.5 sm:gap-2 text-xs text-[#F2ECD9] font-semibold mb-2 sm:mb-2.5">
         <button
           type="button"
           onClick={onExit}
-          className="flex items-center gap-1.5 min-h-[42px] px-2.5 sm:px-3 py-1.5 rounded-xl bg-[#101B24] hover:bg-[#14232C] border border-white/10 transition active:scale-95 text-[#F8FAFC] whitespace-nowrap shrink-0 cursor-pointer touch-manipulation"
+          className="flex items-center gap-1.5 min-h-[42px] px-2.5 sm:px-3 py-1.5 rounded-xl bg-[#244632] hover:bg-[#2a523b] border border-[#F2ECD9]/15 transition active:scale-95 text-[#F2ECD9] whitespace-nowrap shrink-0 cursor-pointer touch-manipulation"
           title="Maçtan Çık"
           aria-label="Maçtan Çık"
         >
-          <LogOut className="w-4 h-4 shrink-0 text-[#94A3B8]" />
+          <LogOut className="w-4 h-4 shrink-0 text-[#A8B6A5]" />
           <span className="font-bold">{t('menu')}</span>
         </button>
 
         <div className="flex items-center justify-center gap-1.5 sm:gap-2 min-w-0">
-          <div className="min-w-0 truncate px-2.5 sm:px-3.5 py-1.5 rounded-full bg-[#123D2B] border border-[#22C55E]/40 text-[#22C55E] font-black tracking-wide uppercase text-[11px] sm:text-xs whitespace-nowrap">
+          <div className="min-w-0 truncate px-2.5 sm:px-3.5 py-1.5 rounded-full bg-[#244632] border border-[#3C8052] text-[#D9B76B] font-black tracking-wide uppercase text-[11px] sm:text-xs whitespace-nowrap">
             <span className="md:hidden">TUR {roundNumber} · {gameMeta.shortTitle}</span>
             <span className="hidden md:inline">İLK 3 KAZANIR • TUR {roundNumber} • {gameMeta.shortTitle}</span>
           </div>
@@ -88,8 +88,8 @@ export const ScoreBoard: React.FC<ScoreBoardProps> = ({
             data-testid="round-timer-badge"
             className={`px-2.5 sm:px-3.5 py-1.5 rounded-full border font-black tracking-wider text-[11px] sm:text-xs transition-colors whitespace-nowrap shrink-0 tabular-nums ${
               isLowTime
-                ? 'bg-red-950/95 border-[#EF4444] text-[#EF4444] animate-pulse'
-                : 'bg-[#101B24] border-white/15 text-[#F8FAFC]'
+                ? 'bg-red-950/95 border-[#EF4444] text-[#FCA5A5] animate-pulse'
+                : 'bg-[#183022] border-[#D9B76B]/45 text-[#F2ECD9]'
             }`}
           >
             ⏱ {formattedTime}
@@ -100,16 +100,16 @@ export const ScoreBoard: React.FC<ScoreBoardProps> = ({
           type="button"
           data-testid="header-settings-btn"
           onClick={onOpenSettings}
-          className="min-w-[42px] min-h-[42px] p-2 rounded-xl bg-[#101B24] hover:bg-[#14232C] border border-white/10 transition active:scale-95 text-[#F8FAFC] flex items-center justify-center shrink-0 cursor-pointer touch-manipulation"
+          className="min-w-[42px] min-h-[42px] p-2 rounded-xl bg-[#244632] hover:bg-[#2a523b] border border-[#F2ECD9]/15 transition active:scale-95 text-[#D9B76B] flex items-center justify-center shrink-0 cursor-pointer touch-manipulation"
           title={t('settings')}
           aria-label={t('settings')}
         >
-          <Settings className="w-4 h-4 text-[#22C55E]" />
+          <Settings className="w-4 h-4" />
         </button>
       </div>
 
       {/* Main Scoreboard Banner */}
-      <div className="relative overflow-hidden rounded-2xl sm:rounded-3xl bg-[#101B24] border border-white/10 p-2.5 sm:p-4">
+      <div className="relative overflow-hidden rounded-2xl sm:rounded-3xl bg-[#244632] border border-[#D9B76B]/35 p-2.5 sm:p-4">
         {/* MOBILE LAYOUT (< 640px) */}
         <div className="relative z-10 grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-1.5 sm:hidden">
           {/* Mobile Player 1 Card */}

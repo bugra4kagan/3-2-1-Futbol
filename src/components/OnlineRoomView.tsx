@@ -200,7 +200,7 @@ export const OnlineRoomView: React.FC<OnlineRoomViewProps> = ({
               {/* Host / Player 1 */}
               <div className="flex items-center justify-between p-3 rounded-xl bg-[#14232C] border border-[#22C55E]/35 text-left">
                 <div className="flex items-center gap-3 min-w-0">
-                  <PlayerAvatar avatar="⚽" name={p1Name} size="sm" />
+                  <PlayerAvatar avatar={player1.avatar} name={p1Name} size="sm" />
                   <div className="min-w-0">
                     <span className="font-bold text-[#F8FAFC] text-sm block truncate">
                       {p1Name}
@@ -217,7 +217,7 @@ export const OnlineRoomView: React.FC<OnlineRoomViewProps> = ({
               <div className="flex items-center justify-between gap-2 p-3 rounded-xl bg-[#14232C] border border-white/10 text-left">
                 {player2 && p2Name ? (
                   <div className="flex items-center gap-3 min-w-0 flex-1">
-                    <PlayerAvatar avatar="⚽" name={p2Name} size="sm" />
+                    <PlayerAvatar avatar={player2.avatar} name={p2Name} size="sm" />
                     <div className="min-w-0 flex-1">
                       <span className="font-bold text-[#F8FAFC] text-sm block truncate">
                         {p2Name}

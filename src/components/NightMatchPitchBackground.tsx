@@ -18,18 +18,18 @@ interface PitchPalette {
 }
 
 function resolvePitchPalette(_theme?: string): PitchPalette {
-  // Unified dark football stadium night pitch (#080E14, #101B24, #123D2B, #22C55E)
+  // Classic-modern dark stadium pitch (#101C16, #244632, #3C8052, #D9B76B)
   return {
-    skyTop: '#080E14',
-    turfDark: '#0C1720',
-    turfMid: '#123D2B',
-    stripeA: 'rgba(34, 197, 94, 0.08)',
-    stripeB: 'rgba(16, 27, 36, 0.25)',
-    glowPrimary: 'rgba(34, 197, 94, 0.16)',
-    glowSecondary: 'rgba(18, 61, 43, 0.24)',
-    lineColor: 'rgba(248, 250, 252, 0.42)',
-    lineGlow: 'rgba(34, 197, 94, 0.38)',
-    floodlightColor: 'rgba(248, 250, 252, 0.10)',
+    skyTop: '#101C16',
+    turfDark: '#162920',
+    turfMid: '#244632',
+    stripeA: 'rgba(60, 128, 82, 0.14)',
+    stripeB: 'rgba(16, 28, 22, 0.25)',
+    glowPrimary: 'rgba(60, 128, 82, 0.18)',
+    glowSecondary: 'rgba(217, 183, 107, 0.08)',
+    lineColor: 'rgba(242, 236, 217, 0.36)',
+    lineGlow: 'rgba(217, 183, 107, 0.25)',
+    floodlightColor: 'rgba(242, 236, 217, 0.08)',
   };
 }
 

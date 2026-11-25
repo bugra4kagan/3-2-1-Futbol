@@ -247,6 +247,7 @@ import {
 } from './game/challengeCodeEngine';
 import { useLanguage } from './game/LanguageContext';
 import { DEFAULT_STARTER_AVATAR } from './game/avatarCatalog';
+import { DEFAULT_PROFILE_ICON_ID, normalizeProfileIconId } from './game/profileIcons';
 import { canPlayDailyChallengeNow } from './game/dailyChallengeEngine';
 import {
   computeProgressionDigest,
@@ -573,7 +574,7 @@ export default function App() {
   const [player1, setPlayer1] = useState<PlayerProfile>({
     id: sessionPlayerIdRef.current,
     name: 'Futbol Gurmesi',
-    avatar: DEFAULT_STARTER_AVATAR,
+    avatar: DEFAULT_PROFILE_ICON_ID,
     score: 0,
     favoriteClubId: 'galatasaray',
     accountStats: {
@@ -933,7 +934,7 @@ export default function App() {
             ...prev,
             id: sessionPlayerIdRef.current,
             name: parsed.name || prev.name,
-            avatar: parsed.avatar || prev.avatar,
+            avatar: normalizeProfileIconId(parsed.avatar),
             favoriteClubId: parsed.favoriteClubId || prev.favoriteClubId,
             accountStats: parsed.accountStats || prev.accountStats,
           }));
@@ -1292,7 +1293,7 @@ export default function App() {
             nextProfile = {
               ...nextProfile,
               name: remote.displayName,
-              avatar: remote.avatar || nextProfile.avatar,
+              avatar: normalizeProfileIconId(remote.avatar || nextProfile.avatar),
               favoriteClubId: remote.favoriteClubId || nextProfile.favoriteClubId,
             };
             setPlayer1(nextProfile);
@@ -1368,6 +1369,7 @@ export default function App() {
           const restoredProfile: PlayerProfile = {
             ...player1Ref.current,
             ...acc.profile,
+            avatar: normalizeProfileIconId(acc.profile?.avatar || player1Ref.current.avatar),
             id: acc.accountId,
           };
           setPlayer1(restoredProfile);
@@ -1818,7 +1820,11 @@ trackGameEvent('match_complete', {
   };
 
   const handleSaveProfile = (newProfile: PlayerProfile) => {
-    const withSessionId = { ...newProfile, id: sessionPlayerIdRef.current };
+    const withSessionId: PlayerProfile = {
+      ...newProfile,
+      id: sessionPlayerIdRef.current,
+      avatar: normalizeProfileIconId(newProfile.avatar),
+    };
     setPlayer1(withSessionId);
     try {
       localStorage.setItem('football_account_id', sessionPlayerIdRef.current);
@@ -1829,6 +1835,19 @@ trackGameEvent('match_complete', {
     setShowAuthModal(false);
     setScreen('lobby');
     syncServerLeaderboard(progressionRef.current, withSessionId);
+    if (firebaseUser && !firebaseUser.isAnonymous) {
+      saveUserBackupToFirestore({
+        user: firebaseUser,
+        profile: withSessionId,
+        progression: progressionRef.current,
+        favoriteClubId: withSessionId.favoriteClubId,
+      }).catch(() => {});
+      savePublicProfileToFirestore({
+        user: firebaseUser,
+        profile: withSessionId,
+        progression: progressionRef.current,
+      }).catch(() => {});
+    }
   };
 
   const handlePromptExitMatch = () => {
@@ -2047,7 +2066,11 @@ trackGameEvent('match_complete', {
 
   const handleUpdateProfile = (partial: Partial<PlayerProfile>) => {
     setPlayer1((prev) => {
-      const updated = { ...prev, ...partial };
+      const updated = {
+        ...prev,
+        ...partial,
+        avatar: partial.avatar ? normalizeProfileIconId(partial.avatar) : normalizeProfileIconId(prev.avatar),
+      };
       try {
         localStorage.setItem('football_user_profile', JSON.stringify(updated));
       } catch {
@@ -3614,7 +3637,7 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
           nextProfile = {
             ...nextProfile,
             name: remote.displayName,
-            avatar: remote.avatar || nextProfile.avatar,
+            avatar: normalizeProfileIconId(remote.avatar || nextProfile.avatar),
             favoriteClubId: remote.favoriteClubId || nextProfile.favoriteClubId,
           };
           setPlayer1(nextProfile);
@@ -3807,7 +3830,7 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
     const freshProfile: PlayerProfile = {
       id: freshId,
       name: 'Futbol Gurmesi',
-      avatar: DEFAULT_STARTER_AVATAR,
+      avatar: DEFAULT_PROFILE_ICON_ID,
       score: 0,
       favoriteClubId: 'galatasaray',
     };
@@ -4365,7 +4388,7 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
     <main
       data-testid="app-container"
       data-state={screen}
-      className="relative min-h-[100dvh] w-full flex flex-col bg-[#080E14] font-sans selection:bg-[#22C55E] selection:text-[#080E14] overflow-x-clip text-[#F8FAFC]"
+      className="relative min-h-[100dvh] w-full flex flex-col bg-[#101C16] font-sans selection:bg-[#3C8052] selection:text-[#F2ECD9] overflow-x-clip text-[#F2ECD9]"
     >
       {/* Screen 0: Animated Intro / Splash Screen */}
       {screen === 'intro' && (
@@ -4395,7 +4418,6 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
                   }
                 }}
                 onOpenSettings={() => setShowSettingsModal(true)}
-                onOpenStore={handleOpenStore}
                 onToggleMute={toggleSoundMute}
                 isMuted={isMuted}
                 pendingFriendRequestsCount={pendingFriendRequestsCount}
@@ -4405,46 +4427,27 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
                 onClearOnlineError={() => setOnlineError(null)}
               />
             ) : (
-              <div className="relative min-h-[100dvh] w-full flex flex-col bg-[#080E14] text-[#F8FAFC] overflow-x-clip">
-                {/* Shared Hub Top Header for Secondary Tabs */}
-                <header className="sticky top-0 z-40 isolate w-full bg-[#101B24]/95 border-b border-white/10 pt-[max(0.75rem,calc(env(safe-area-inset-top)+0.45rem))] pb-2">
+              <div className="relative min-h-[100dvh] w-full flex flex-col bg-[#101C16] pitch-turf-backdrop text-[#F2ECD9] overflow-x-clip">
+                {/* Shared Hub Top Header for Secondary Tabs (No Store Button — Store is exclusively in Profile) */}
+                <header className="sticky top-0 z-40 isolate w-full bg-[#183022] border-b border-[#D9B76B]/25 pt-[max(0.75rem,calc(env(safe-area-inset-top)+0.45rem))] pb-2">
                   <div className="w-full max-w-xl mx-auto px-3 sm:px-4 flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2 min-w-0">
-                      {!headerLogoError ? (
-                        <img
-                          src={`${import.meta.env.BASE_URL}logo.png`}
-                          alt="3-2-1 Futbol Logosu"
-                          onError={() => setHeaderLogoError(true)}
-                          className="w-8 h-8 rounded-xl object-cover border border-[#22C55E]/40 shrink-0"
-                        />
-                      ) : (
-                        <div className="w-8 h-8 rounded-xl bg-[#123D2B] text-[#22C55E] font-black text-[11px] flex items-center justify-center border border-[#22C55E]/50 shrink-0">
-                          321
-                        </div>
-                      )}
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <img
+                        src={`${import.meta.env.BASE_URL}logo.png`}
+                        alt="3-2-1 Futbol Orijinal Logosu"
+                        className="w-8 h-8 rounded-xl object-cover border border-[#D9B76B]/60 shrink-0 bg-[#101C16]"
+                      />
                       <span
                         data-testid="tab-header-title"
-                        className="font-black tracking-tight text-[#F8FAFC] text-sm sm:text-base whitespace-nowrap shrink-0"
+                        className="font-display font-extrabold tracking-wide text-[#F2ECD9] text-lg sm:text-xl whitespace-nowrap shrink-0 uppercase leading-none"
                       >
                         {tabHeaderTitle[activeTab]}
                       </span>
                     </div>
 
                     <div className="flex items-center gap-1.5 shrink-0">
-                      <button
-                        type="button"
-                        data-testid="header-store-btn"
-                        onClick={() => handleOpenStore('featured')}
-                        className="min-w-[36px] min-h-[38px] px-2.5 py-1.5 rounded-xl bg-[#14232C] hover:bg-[#123D2B] border border-white/10 text-[#F8FAFC] text-xs font-black flex items-center justify-center gap-1 cursor-pointer touch-manipulation shrink-0"
-                        aria-label={t('store')}
-                        title={t('store')}
-                      >
-                        <ShoppingBag className="w-4 h-4 text-[#22C55E] shrink-0" />
-                        <span className="hidden sm:inline">{t('store')}</span>
-                      </button>
-
                       <div
-                        className="flex items-center gap-1 min-h-[38px] px-2.5 py-1.5 rounded-xl bg-[#14232C] border border-white/10 text-xs font-black text-[#FBBF24] font-mono whitespace-nowrap shrink-0"
+                        className="flex items-center gap-1 min-h-[38px] px-2.5 py-1.5 rounded-xl bg-[#101C16] border border-[#D9B76B]/45 text-xs font-black text-[#D9B76B] font-mono whitespace-nowrap shrink-0"
                         title="Coin Bakiyesi"
                       >
                         <CoinIcon size="xs" />
@@ -4455,7 +4458,7 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
                         type="button"
                         data-testid="header-settings-btn"
                         onClick={() => setShowSettingsModal(true)}
-                        className="min-w-[38px] min-h-[38px] p-2 rounded-xl bg-[#14232C] hover:bg-[#101B24] border border-white/10 text-[#94A3B8] hover:text-[#F8FAFC] flex items-center justify-center cursor-pointer touch-manipulation"
+                        className="min-w-[38px] min-h-[38px] p-2 rounded-xl bg-[#101C16] hover:bg-[#244632] border border-[#F2ECD9]/15 text-[#D9B76B] flex items-center justify-center cursor-pointer touch-manipulation"
                         title={t('settings')}
                         aria-label={t('settings')}
                       >
@@ -4466,7 +4469,7 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
                         type="button"
                         data-testid="header-exit-btn"
                         onClick={handlePromptExitApp}
-                        className="flex min-w-[38px] min-h-[38px] p-2 rounded-xl bg-[#14232C] hover:bg-red-950/60 border border-white/10 hover:border-[#EF4444] text-[#94A3B8] hover:text-[#EF4444] items-center justify-center cursor-pointer touch-manipulation"
+                        className="flex min-w-[38px] min-h-[38px] p-2 rounded-xl bg-[#101C16] hover:bg-red-950/60 border border-[#F2ECD9]/15 hover:border-[#EF4444] text-[#A8B6A5] hover:text-[#FCA5A5] items-center justify-center cursor-pointer touch-manipulation"
                         title="Oyundan Çıkış"
                         aria-label="Oyundan Çıkış"
                       >
@@ -4534,23 +4537,19 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
                           : null
                       }
                       onGoogleSignIn={handleGoogleSignIn}
+                      onSignOut={handleGoogleSignOut}
                       onOpenAuth={(tab) => {
                         setAuthModalTab(tab || 'profile');
                         setShowAuthModal(true);
                       }}
+                      onOpenSettings={() => setShowSettingsModal(true)}
                       onSelectAvatar={(av) => {
                         handleUpdateProfile({ avatar: av });
                         syncServerLeaderboard(progression, { ...player1, avatar: av });
                       }}
-                      onClaimDailyReward={handleClaimDailyRewardAction}
-                      onClaimDailyQuest={handleClaimDailyQuestAction}
-                      onClaimAchievementReward={handleClaimAchievementReward}
-                      onPurchaseGift={handlePurchaseGiftAction}
-                      onPurchaseStoreItem={handlePurchaseStoreItemAction}
                       onOpenStore={handleOpenStore}
-                      onEquipItem={handleEquipStoreItemAction}
-                      onSelectDefaultPitchTheme={handleSelectDefaultPitchTheme}
                       onDeleteAccount={handleDeleteAccount}
+                      onExitApp={handlePromptExitApp}
                     />
                   )}
                 </div>
@@ -4644,7 +4643,6 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
                 freeJokerTickets={progression.freeJokerTickets ?? 0}
                 roundSeed={`${matchInstanceIdRef.current}-${currentRoundIndex}-${currentRound.pairing.id}`}
                 onSpendCoinsForJoker={handleSpendCoinsForJoker}
-                onOpenStore={() => handleOpenStore('featured')}
                 onAnswerWinner={handleAnswerWinner}
                 onBotWrongAttempt={() =>
                   setPlayer2Stats((prev) => ({
@@ -4676,7 +4674,6 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
                 freeJokerTickets={progression.freeJokerTickets ?? 0}
                 roundSeed={`${matchInstanceIdRef.current}-${currentRoundIndex}-${currentRound.minigameType}-${currentRound.silhouette?.id || currentRound.career?.id || currentRound.countryClub?.id || currentRound.xoxBoard?.id || 'r'}`}
                 onSpendCoinsForJoker={handleSpendCoinsForJoker}
-                onOpenStore={() => handleOpenStore('featured')}
                 onAnswerWinner={handleAnswerWinner}
                 onBotWrongAttempt={() =>
                   setPlayer2Stats((prev) => ({

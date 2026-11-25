@@ -131,7 +131,7 @@ export const PublicProfileModal: React.FC<PublicProfileModalProps> = ({
         <div className="mt-4 p-3.5 sm:p-4 rounded-2xl bg-slate-950/80 border border-slate-800 flex items-center gap-3.5 shadow-inner">
           <div className="relative shrink-0">
             <PlayerAvatar
-              avatar={profile.isBot ? '🤖' : '⚽'}
+              avatar={profile.isBot ? '🤖' : profile.avatar}
               name={safeProfileName}
               size="lg"
               variant="circle"

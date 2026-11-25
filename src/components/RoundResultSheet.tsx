@@ -40,8 +40,8 @@ const PlayerFaceAvatar: React.FC<{ playerId: string; name: string; highlight?: b
       variant="circle"
       className={
         highlight
-          ? 'border-2 border-emerald-400 shadow-lg'
-          : 'border border-white/25'
+          ? 'border-2 border-[#D9B76B] shadow-lg'
+          : 'border border-[#F2ECD9]/30'
       }
     />
   );
@@ -99,36 +99,36 @@ export const RoundResultSheet: React.FC<RoundResultSheetProps> = ({
   return (
     <div
       data-testid="round-result-sheet"
-      className="fixed inset-0 z-40 flex items-center justify-center p-3 sm:p-4 bg-slate-950/90 overflow-y-auto animate-in fade-in duration-150"
+      className="fixed inset-0 z-40 flex items-center justify-center p-3 sm:p-4 bg-[#101C16]/90 overflow-y-auto animate-in fade-in duration-150"
     >
-      <div className="relative w-full max-w-lg bg-gradient-to-b from-slate-900 to-slate-950 border border-emerald-500/40 rounded-3xl p-4 sm:p-6 shadow-2xl text-center max-h-[92dvh] overflow-y-auto my-auto">
+      <div className="relative w-full max-w-lg bg-[#244632] border-2 border-[#D9B76B]/60 rounded-3xl p-4 sm:p-6 shadow-2xl text-center max-h-[92dvh] overflow-y-auto my-auto text-[#F2ECD9]">
         {/* Banner based on outcome */}
         {winnerPlayer ? (
           <div className="flex flex-col items-center">
-            <div className="w-14 h-14 rounded-2xl bg-emerald-500/20 border border-emerald-500 text-emerald-400 flex items-center justify-center text-3xl mb-2 shadow-lg shadow-emerald-500/30">
+            <div className="w-14 h-14 rounded-2xl bg-[#3C8052] border border-[#D9B76B] text-[#F2ECD9] flex items-center justify-center text-3xl mb-2 shadow-lg">
               <CheckCircle2 className="w-8 h-8" />
             </div>
-            <span className="text-xs font-black tracking-widest text-emerald-400 uppercase px-3 py-0.5 rounded-full bg-emerald-950 border border-emerald-500/40">
+            <span className="text-xs font-black tracking-widest text-[#D9B76B] uppercase px-3 py-0.5 rounded-full bg-[#183022] border border-[#D9B76B]/50">
               TUR KAZANILDI (+1 GALİBİYET)
             </span>
-            <h3 className="text-xl sm:text-2xl font-black text-white mt-1.5 flex items-center justify-center gap-2">
+            <h3 className="font-display font-extrabold text-2xl sm:text-3xl text-[#F2ECD9] mt-1.5 flex items-center justify-center gap-2 uppercase tracking-wide">
               <PlayerAvatar
                 avatar={winnerPlayer.avatar}
                 name={safeWinnerName}
                 size="sm"
                 variant="circle"
-                className="bg-slate-800 border border-emerald-400/50"
+                className="border border-[#D9B76B]"
               />
               <span>{safeWinnerName} Kazandı!</span>
             </h3>
             {acceptedAnswer && (
-              <p className="text-sm font-semibold text-emerald-300 mt-1">
-                Cevap: <span className="text-white underline font-bold">{acceptedAnswer}</span>
+              <p className="text-sm font-semibold text-[#A8B6A5] mt-1">
+                Cevap: <span className="text-[#F2ECD9] underline font-bold">{acceptedAnswer}</span>
               </p>
             )}
             {didUserWinRound && roundReward && (
               <div className="mt-2.5 flex flex-wrap items-center justify-center gap-2">
-                <span className="px-2.5 py-1 rounded-xl bg-amber-500/15 border border-amber-400/40 text-amber-300 text-xs font-black">
+                <span className="px-3 py-1 rounded-xl bg-[#183022] border border-[#D9B76B]/55 text-[#D9B76B] text-xs font-black">
                   🪙 +{roundDoubled ? roundReward.coins * 2 : roundReward.coins} Coin
                   {roundReward.points > 0
                     ? ` • 🏆 +${roundDoubled ? roundReward.points * 2 : roundReward.points} Puan`
@@ -142,8 +142,8 @@ export const RoundResultSheet: React.FC<RoundResultSheetProps> = ({
                     onClick={onRequestDoubleRound}
                     className={`px-3 py-1 rounded-xl font-black text-xs flex items-center gap-1 transition cursor-pointer ${
                       roundDoubled
-                        ? 'bg-emerald-500/20 border border-emerald-400/50 text-emerald-300 cursor-default'
-                        : 'bg-gradient-to-r from-amber-400 to-orange-400 hover:from-amber-300 hover:to-orange-300 text-slate-950 shadow'
+                        ? 'bg-[#3C8052] border border-[#D9B76B]/50 text-[#F2ECD9] cursor-default'
+                        : 'bg-[#D9B76B] hover:bg-[#e5c784] text-[#101C16] shadow'
                     }`}
                   >
                     {roundDoubled ? (
@@ -164,17 +164,17 @@ export const RoundResultSheet: React.FC<RoundResultSheetProps> = ({
           </div>
         ) : (
           <div className="flex flex-col items-center">
-            <div className="w-14 h-14 rounded-2xl bg-amber-500/20 border border-amber-500 text-amber-400 flex items-center justify-center text-3xl mb-2 shadow-lg shadow-amber-500/30">
+            <div className="w-14 h-14 rounded-2xl bg-[#183022] border border-[#D9B76B] text-[#D9B76B] flex items-center justify-center text-3xl mb-2 shadow-lg">
               <Clock className="w-8 h-8" />
             </div>
-            <span className="text-xs font-black tracking-widest text-amber-400 uppercase px-3 py-0.5 rounded-full bg-amber-950 border border-amber-500/40">
+            <span className="text-xs font-black tracking-widest text-[#D9B76B] uppercase px-3 py-0.5 rounded-full bg-[#183022] border border-[#D9B76B]/45">
               {resolvedReason === 'attempts_exhausted'
                 ? 'DENEME HAKKI DOLDU'
                 : resolvedReason === 'timeout'
                 ? 'SÜRE DOLDU'
                 : 'TUR BERABERE'}
             </span>
-            <h3 className="text-xl sm:text-2xl font-black text-white mt-1.5">
+            <h3 className="font-display font-extrabold text-2xl sm:text-3xl text-[#F2ECD9] mt-1.5 uppercase">
               {resolvedReason === 'attempts_exhausted'
                 ? '8/8 Deneme Hakkı Bitti — 0 Puan!'
                 : 'İki Oyuncu da Puan Alamadı'}
@@ -184,8 +184,8 @@ export const RoundResultSheet: React.FC<RoundResultSheetProps> = ({
 
         {/* Fun Fact / Trivia Pill */}
         {funFact && (
-          <div className="my-3 p-3 rounded-xl bg-slate-900 border border-slate-800 text-xs text-slate-300 flex items-start gap-2.5 text-left">
-            <Info className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+          <div className="my-3 p-3 rounded-xl bg-[#183022] border border-[#3C8052]/60 text-xs text-[#F2ECD9] flex items-start gap-2.5 text-left">
+            <Info className="w-4 h-4 text-[#D9B76B] shrink-0 mt-0.5" />
             <span>{funFact}</span>
           </div>
         )}
@@ -193,9 +193,9 @@ export const RoundResultSheet: React.FC<RoundResultSheetProps> = ({
         {/* All Eligible Players List */}
         {validPlayers.length > 0 && (
           <div className="mt-3 text-left">
-            <div className="flex items-center justify-between text-xs font-bold text-slate-400 mb-2">
+            <div className="flex items-center justify-between text-xs font-bold text-[#A8B6A5] mb-2">
               <span>{listHeading}</span>
-              <span className="text-emerald-400">{validPlayers.length} Oyuncu</span>
+              <span className="text-[#D9B76B]">{validPlayers.length} Oyuncu</span>
             </div>
 
             {isSingleFeaturedReveal ? (
@@ -204,11 +204,11 @@ export const RoundResultSheet: React.FC<RoundResultSheetProps> = ({
                 const asset = getPlayerAsset(player.id);
                 const clubObj = asset.clubId ? CLUBS[asset.clubId] : null;
                 return (
-                  <div className="flex items-center gap-3 p-3 rounded-2xl bg-slate-800/90 border border-emerald-500/40">
+                  <div className="flex items-center gap-3 p-3 rounded-2xl bg-[#183022] border border-[#D9B76B]/50">
                     <PlayerFaceAvatar playerId={player.id} name={player.name} highlight />
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
-                        <span className="font-black text-sm sm:text-base text-white truncate">
+                        <span className="font-black text-sm sm:text-base text-[#F2ECD9] truncate">
                           {player.name}
                         </span>
                         <CountryFlag
@@ -218,7 +218,7 @@ export const RoundResultSheet: React.FC<RoundResultSheetProps> = ({
                           variant="circle"
                         />
                       </div>
-                      <div className="flex items-center gap-2 mt-1 text-xs text-slate-300 font-semibold">
+                      <div className="flex items-center gap-2 mt-1 text-xs text-[#A8B6A5] font-semibold">
                         <ClubBadge
                           club={clubObj}
                           clubId={asset.clubId}
@@ -226,13 +226,13 @@ export const RoundResultSheet: React.FC<RoundResultSheetProps> = ({
                           size="xs"
                         />
                         <span className="truncate">{asset.clubName}</span>
-                        <span className="text-slate-500">•</span>
+                        <span>•</span>
                         <span>#{asset.shirtNumber}</span>
-                        <span className="text-slate-500">•</span>
+                        <span>•</span>
                         <span>{asset.age} Yaş</span>
                       </div>
                     </div>
-                    <span className="text-xs font-black text-emerald-300 bg-slate-900 px-2 py-1 rounded-lg border border-slate-700 shrink-0">
+                    <span className="text-xs font-black text-[#D9B76B] bg-[#101C16] px-2 py-1 rounded-lg border border-[#D9B76B]/40 shrink-0">
                       {player.position}
                     </span>
                   </div>
@@ -247,7 +247,7 @@ export const RoundResultSheet: React.FC<RoundResultSheetProps> = ({
                 {validPlayers.map((player) => (
                   <div
                     key={player.id}
-                    className="flex items-center gap-2 p-2 rounded-xl bg-slate-800/80 border border-slate-700/60 text-xs font-semibold text-white min-w-0"
+                    className="flex items-center gap-2 p-2 rounded-xl bg-[#183022] border border-[#3C8052]/55 text-xs font-semibold text-[#F2ECD9] min-w-0"
                   >
                     <PlayerFaceAvatar playerId={player.id} name={player.name} />
                     <CountryFlag
@@ -257,7 +257,7 @@ export const RoundResultSheet: React.FC<RoundResultSheetProps> = ({
                       variant="circle"
                     />
                     <span className="truncate flex-1">{player.name}</span>
-                    <span className="text-[10px] text-slate-400 bg-slate-900 px-1.5 py-0.5 rounded shrink-0">
+                    <span className="text-[10px] text-[#D9B76B] bg-[#101C16] px-1.5 py-0.5 rounded shrink-0">
                       {player.position}
                     </span>
                   </div>
@@ -268,9 +268,11 @@ export const RoundResultSheet: React.FC<RoundResultSheetProps> = ({
         )}
 
         {/* Next round progress indicator */}
-        <div className="mt-4 pt-3 border-t border-slate-800/80 flex items-center justify-between text-xs font-bold text-slate-400">
+        <div className="mt-4 pt-3 border-t border-[#F2ECD9]/15 flex items-center justify-between text-xs font-bold text-[#A8B6A5]">
           <span>Tur {roundIndex} • İlk 3 Olan Kazanır</span>
-          <span className="text-emerald-400 animate-pulse">Sonraki tur hazırlanıyor...</span>
+          <span className="text-[#D9B76B] animate-pulse">
+            Sonraki tur hazırlanıyor...
+          </span>
         </div>
       </div>
     </div>

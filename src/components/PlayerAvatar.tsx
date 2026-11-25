@@ -4,9 +4,11 @@ import { PLAYERS } from '../game/database';
 import { getFrameClasses } from '../game/storeCatalog';
 import { Player, PlayerAppearance } from '../game/types';
 import { DEFAULT_STARTER_AVATAR } from '../game/avatarCatalog';
+import { normalizeProfileIconId } from '../game/profileIcons';
 import { parseAnimeAvatar } from '../game/animeAvatarCatalog';
 import { AnimeFootballerSvg } from './AnimeFootballerSvg';
 import { CountryFlag } from './CountryFlag';
+import { ProfileIconSvg } from './ProfileIconSvg';
 
 export interface PlayerAvatarProps {
   player?: Player | null;
@@ -119,19 +121,30 @@ export const PlayerAvatar: React.FC<PlayerAvatarProps> = ({
   const frameClasses = getFrameClasses(frame);
 
   // For user profile badges (whenever no explicit `player` or `appearance` prop is passed),
-  // render a unified, streamlined football/bot badge instead of star portraits or custom anime builders.
+  // render one of the 10 uniform vector football profile icons (falling back to 'ball').
   if (!player && !appearance) {
     const isBotBadge = avatar === '🤖' || avatar === 'bot';
+    const iconSvgSizeMap = {
+      xs: 'w-4 h-4',
+      sm: 'w-5 h-5',
+      md: 'w-6 h-6',
+      lg: 'w-8 h-8',
+      xl: 'w-9 h-9',
+      card: 'w-20 h-20',
+    };
     return (
       <div
         data-testid={isCardMode ? 'player-avatar-card' : 'player-avatar'}
+        data-avatar-id={isBotBadge ? 'bot' : normalizeProfileIconId(avatar)}
         role="img"
         aria-label={`${displayName} profil simgesi`}
-        className={`relative overflow-hidden shrink-0 select-none bg-[#101B24] border border-[#22C55E]/35 flex items-center justify-center ${boxSizeMap[size]} ${radiusClass} ${frameClasses} ${className}`}
+        className={`relative overflow-hidden shrink-0 select-none bg-[#183022] border border-[#D9B76B]/45 flex items-center justify-center ${boxSizeMap[size]} ${radiusClass} ${frameClasses} ${className}`}
       >
-        <span className={`relative z-10 leading-none ${iconFontSizeMap[size]}`}>
-          {isBotBadge ? '🤖' : '⚽'}
-        </span>
+        <ProfileIconSvg
+          iconId={isBotBadge ? 'bot' : avatar}
+          isBot={isBotBadge}
+          className={`relative z-10 ${iconSvgSizeMap[size]}`}
+        />
       </div>
     );
   }

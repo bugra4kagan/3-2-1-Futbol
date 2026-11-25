@@ -4,14 +4,12 @@ import {
   Users,
   Globe,
   Bot,
-  Trophy,
   Sparkles,
   Settings,
   KeyRound,
   LogOut,
   AlertCircle,
   X,
-  ShoppingBag,
   WifiOff,
   ChevronRight,
 } from 'lucide-react';
@@ -20,15 +18,16 @@ import {
   BotDifficulty,
   MinigameType,
   PlayerProfile,
-  StoreCategory,
   UserProgression,
 } from '../game/types';
 import { MINIGAME_OPTIONS } from '../game/minigameEngine';
 import { formatPoints, getLeagueTierInfo } from '../game/retentionEngine';
 import { sanitizePublicDisplayName } from '../game/usernameFilter';
+import { normalizeProfileIconId } from '../game/profileIcons';
 import { useLanguage } from '../game/LanguageContext';
 import { BrandTitle } from './BrandTitle';
 import { CoinIcon } from './CoinIcon';
+import { PlayerAvatar } from './PlayerAvatar';
 import { MinigameSelectorModal } from './MinigameSelectorModal';
 import { BotSetupModal } from './BotSetupModal';
 
@@ -44,7 +43,6 @@ interface LobbyScreenProps {
     }
   ) => void;
   onOpenSettings?: () => void;
-  onOpenStore?: (category?: StoreCategory) => void;
   onToggleMute?: () => void;
   isMuted?: boolean;
   pendingFriendRequestsCount?: number;
@@ -59,7 +57,6 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
   progression,
   onSelectMode,
   onOpenSettings,
-  onOpenStore,
   onToggleMute,
   isMuted = false,
   onExitApp,
@@ -68,7 +65,6 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
   onClearOnlineError,
 }) => {
   const { t } = useLanguage();
-  const [logoError, setLogoError] = useState(false);
   const [showRoomModal, setShowRoomModal] = useState(false);
   const [roomAction, setRoomAction] = useState<'create' | 'join'>('create');
   const [roomMinigame, setRoomMinigame] = useState<MinigameType>('two_clubs');
@@ -80,44 +76,37 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
 
   const safePlayerName = sanitizePublicDisplayName(playerProfile.name, playerProfile.id);
   const leagueTier = progression ? getLeagueTierInfo(progression.leagueTierId) : null;
+  const userAvatar = normalizeProfileIconId(playerProfile.avatar);
 
   return (
     <div
       data-testid="lobby-screen"
-      className="relative min-h-[100dvh] w-full flex flex-col items-center px-4 pb-[calc(6.5rem+env(safe-area-inset-bottom))] bg-slate-950 text-white overflow-x-clip"
+      className="relative min-h-[100dvh] w-full flex flex-col items-center px-4 pb-[calc(6.5rem+env(safe-area-inset-bottom))] bg-[#101C16] pitch-turf-backdrop text-[#F2ECD9] overflow-x-clip"
     >
-      {/* Stadium Glow Accents matching original visual identity */}
-      <div className="absolute inset-x-0 top-0 h-72 bg-[radial-gradient(ellipse_at_top,_rgba(16,185,129,0.16),transparent_65%)] pointer-events-none" />
-      <div className="absolute inset-x-0 top-16 h-64 bg-[radial-gradient(circle_at_top,_rgba(245,158,11,0.10),transparent_60%)] pointer-events-none" />
+      {/* Subtle Classic Floodlight Horizon */}
+      <div className="absolute inset-x-0 top-0 h-56 bg-[radial-gradient(ellipse_at_top,_rgba(60,128,82,0.22),transparent_70%)] pointer-events-none" />
 
-      {/* Compact Top Header */}
+      {/* Compact Top Header (Store removed from top bar — accessible only from Profile) */}
       <header
         data-testid="lobby-top-header"
-        className="sticky top-0 z-40 isolate w-[calc(100%+2rem)] -mx-4 bg-slate-950/95 border-b border-slate-800/80 pt-[max(0.75rem,calc(env(safe-area-inset-top)+0.45rem))] pb-2"
+        className="sticky top-0 z-40 isolate w-[calc(100%+2rem)] -mx-4 bg-[#183022] border-b border-[#D9B76B]/25 pt-[max(0.75rem,calc(env(safe-area-inset-top)+0.45rem))] pb-2.5"
       >
         <div className="w-full max-w-xl mx-auto px-3 sm:px-4 flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2 min-w-0">
-            {!logoError ? (
-              <img
-                src={`${import.meta.env.BASE_URL}logo.png`}
-                alt="3-2-1 Futbol Logosu"
-                onError={() => setLogoError(true)}
-                className="w-8 h-8 rounded-xl object-cover border border-amber-400/50 shrink-0"
-              />
-            ) : (
-              <div className="w-8 h-8 rounded-xl bg-emerald-950 border border-emerald-400/50 flex items-center justify-center shrink-0">
-                <span className="text-sm leading-none">⚽</span>
-              </div>
-            )}
+          <div className="flex items-center gap-2.5 min-w-0">
+            <img
+              src={`${import.meta.env.BASE_URL}logo.png`}
+              alt="3-2-1 Futbol Orijinal Logosu"
+              className="w-9 h-9 rounded-xl object-cover border border-[#D9B76B]/60 shrink-0 bg-[#101C16]"
+            />
             <div className="min-w-0">
               <BrandTitle size="sm" />
-              <div className="flex items-center gap-1.5 text-[11px] text-slate-300 font-semibold truncate">
-                <span aria-hidden="true">⚽</span>
-                <span data-testid="lobby-username" className="truncate text-white">
+              <div className="flex items-center gap-1.5 text-[11px] text-[#A8B6A5] font-semibold truncate mt-0.5">
+                <PlayerAvatar avatar={userAvatar} name={safePlayerName} size="xs" variant="circle" className="!w-4 !h-4 border-none bg-transparent" />
+                <span data-testid="lobby-username" className="truncate text-[#F2ECD9]">
                   {safePlayerName}
                 </span>
                 {leagueTier && (
-                  <span className="hidden sm:inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded bg-slate-900 border border-emerald-500/35 text-[10px] text-emerald-300 shrink-0">
+                  <span className="hidden sm:inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded bg-[#101C16] border border-[#3C8052] text-[10px] text-[#D9B76B] shrink-0">
                     {leagueTier.icon} {leagueTier.name}
                   </span>
                 )}
@@ -129,7 +118,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
             {progression && (
               <div
                 data-testid="lobby-coins"
-                className="flex items-center gap-1 min-h-[38px] px-2.5 py-1.5 rounded-xl bg-slate-900 border border-amber-500/40 text-xs font-black font-mono text-amber-300 whitespace-nowrap shrink-0"
+                className="flex items-center gap-1 min-h-[38px] px-2.5 py-1.5 rounded-xl bg-[#101C16] border border-[#D9B76B]/45 text-xs font-black font-mono text-[#D9B76B] whitespace-nowrap shrink-0"
                 title="Coin Bakiyesi"
               >
                 <CoinIcon size="xs" />
@@ -137,26 +126,12 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
               </div>
             )}
 
-            {onOpenStore && (
-              <button
-                type="button"
-                data-testid="header-store-btn"
-                onClick={() => onOpenStore('featured')}
-                className="flex items-center justify-center gap-1 min-w-[38px] min-h-[38px] px-2 sm:px-2.5 py-1.5 rounded-xl bg-amber-400/20 hover:bg-amber-400/30 border border-amber-400/60 text-amber-300 text-xs font-black transition active:scale-95 cursor-pointer touch-manipulation shrink-0"
-                title={t('store')}
-                aria-label={t('store')}
-              >
-                <ShoppingBag className="w-4 h-4 shrink-0" />
-                <span className="hidden sm:inline">{t('store')}</span>
-              </button>
-            )}
-
             {onToggleMute && (
               <button
                 type="button"
                 data-testid="header-sound-toggle-btn"
                 onClick={onToggleMute}
-                className="min-w-[38px] min-h-[38px] p-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-white transition active:scale-95 flex items-center justify-center cursor-pointer touch-manipulation text-sm leading-none shrink-0"
+                className="min-w-[38px] min-h-[38px] p-2 rounded-xl bg-[#101C16] hover:bg-[#244632] border border-[#F2ECD9]/15 text-[#F2ECD9] transition active:scale-95 flex items-center justify-center cursor-pointer touch-manipulation text-sm leading-none shrink-0"
                 title={isMuted ? 'Sesi Aç' : 'Sesi Kapat'}
                 aria-label={isMuted ? 'Sesi Aç' : 'Sesi Kapat'}
               >
@@ -169,11 +144,11 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                 type="button"
                 data-testid="header-settings-btn"
                 onClick={onOpenSettings}
-                className="min-w-[38px] min-h-[38px] p-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-white transition active:scale-95 flex items-center justify-center cursor-pointer touch-manipulation shrink-0"
+                className="min-w-[38px] min-h-[38px] p-2 rounded-xl bg-[#101C16] hover:bg-[#244632] border border-[#F2ECD9]/15 text-[#D9B76B] transition active:scale-95 flex items-center justify-center cursor-pointer touch-manipulation shrink-0"
                 title={t('settings')}
                 aria-label={t('settings')}
               >
-                <Settings className="w-4 h-4 text-emerald-400" />
+                <Settings className="w-4 h-4" />
               </button>
             )}
 
@@ -182,7 +157,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                 type="button"
                 data-testid="header-exit-btn"
                 onClick={onExitApp}
-                className="min-w-[38px] min-h-[38px] p-2 rounded-xl bg-slate-900 hover:bg-rose-950/60 border border-slate-700 hover:border-rose-500 text-slate-300 hover:text-rose-400 transition active:scale-95 flex items-center justify-center cursor-pointer touch-manipulation shrink-0"
+                className="min-w-[38px] min-h-[38px] p-2 rounded-xl bg-[#101C16] hover:bg-red-950/70 border border-[#F2ECD9]/15 hover:border-[#EF4444] text-[#A8B6A5] hover:text-[#FCA5A5] transition active:scale-95 flex items-center justify-center cursor-pointer touch-manipulation shrink-0"
                 title="Oyundan Çıkış"
                 aria-label="Oyundan Çıkış"
               >
@@ -193,37 +168,29 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
         </div>
       </header>
 
-      {/* Rich Original Stadium Hero + 3 Core Modes */}
+      {/* Main Matchday Arena Hero + 3 Core Modes */}
       <main className="relative z-10 w-full max-w-xl flex flex-col items-center text-center my-auto pt-4 pb-2 space-y-4">
-        {/* Hero Shield Lockup */}
+        {/* Original Shield Logo Lockup */}
         <div className="flex flex-col items-center">
           <div className="relative mb-2.5">
-            <div className="relative w-24 h-24 sm:w-32 sm:h-32 rounded-3xl overflow-hidden shadow-[0_0_28px_rgba(245,158,11,0.22)] border-2 border-amber-400/50 bg-slate-900 mx-auto transition-transform duration-200 hover:scale-[1.03] flex items-center justify-center">
-              {!logoError ? (
-                <img
-                  src={`${import.meta.env.BASE_URL}logo.png`}
-                  alt="3-2-1 Futbol Logosu"
-                  onError={() => setLogoError(true)}
-                  className="w-full h-full object-cover select-none"
-                />
-              ) : (
-                <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-emerald-900 via-slate-900 to-amber-900/60 p-3">
-                  <Trophy className="w-10 h-10 text-amber-400 mb-1" />
-                  <span className="text-lg font-black text-white">3-2-1</span>
-                </div>
-              )}
+            <div className="relative w-28 h-28 sm:w-32 sm:h-32 rounded-3xl overflow-hidden shadow-xl border-2 border-[#D9B76B] bg-[#183022] mx-auto transition-transform duration-200 hover:scale-[1.03] flex items-center justify-center">
+              <img
+                src={`${import.meta.env.BASE_URL}logo.png`}
+                alt="3-2-1 Futbol Orijinal Logosu"
+                className="w-full h-full object-cover select-none"
+              />
             </div>
           </div>
 
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-black tracking-widest uppercase mb-2">
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#244632] border border-[#D9B76B]/50 text-[#D9B76B] text-[11px] font-black tracking-widest uppercase mb-2">
             <Sparkles className="w-3.5 h-3.5" />
-            CANLI BİLGİ YARIŞMASI
+            <span>CANLI BİLGİ YARIŞMASI</span>
           </div>
 
-          <h1 className="flex justify-center drop-shadow-xl select-none leading-none">
+          <h1 className="flex justify-center select-none leading-none">
             <BrandTitle size="lg" />
           </h1>
-          <p className="mt-1.5 text-xs sm:text-sm text-slate-400 max-w-md font-medium">
+          <p className="mt-1.5 text-xs sm:text-sm text-[#A8B6A5] max-w-md font-medium">
             {t('lobbyTagline')} 🏆
           </p>
         </div>
@@ -232,12 +199,11 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
         {!isNetworkOnline && (
           <div
             data-testid="offline-status-banner"
-            className="w-full p-3 rounded-2xl bg-amber-950/70 border border-amber-400/50 text-amber-200 text-xs font-semibold flex items-center gap-2.5 text-left shadow-lg"
+            className="w-full p-3 rounded-2xl bg-[#244632] border border-[#D9B76B]/60 text-[#F2ECD9] text-xs font-semibold flex items-center gap-2.5 text-left"
           >
-            <WifiOff className="w-4 h-4 text-amber-400 shrink-0" />
-            <span className="leading-snug">
-              <strong>Çevrimdışı Mod:</strong> Bot Antrenmanı internet olmadan sorunsuz çalışır.
-              Online 1v1 için internet bağlantısı gerekir.
+            <WifiOff className="w-4 h-4 text-[#D9B76B] shrink-0" />
+            <span className="leading-snug text-[#A8B6A5]">
+              <strong className="text-[#F2ECD9]">Çevrimdışı Mod:</strong> Botla Maç internet olmadan sorunsuz çalışır. Online 1v1 için internet bağlantısı gerekir.
             </span>
           </div>
         )}
@@ -246,16 +212,16 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
         {onlineError && (
           <div
             data-testid="online-error-banner"
-            className="w-full p-3 rounded-2xl bg-rose-950/90 border border-rose-500/60 text-rose-200 text-xs font-semibold flex items-center justify-between gap-2 text-left shadow-lg"
+            className="w-full p-3 rounded-2xl bg-red-950/80 border border-[#EF4444]/60 text-[#F2ECD9] text-xs font-semibold flex items-center justify-between gap-2 text-left"
           >
             <div className="flex items-center gap-2 min-w-0">
-              <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+              <AlertCircle className="w-4 h-4 text-[#FCA5A5] shrink-0" />
               <span className="leading-snug">{onlineError}</span>
             </div>
             {onClearOnlineError && (
               <button
                 onClick={onClearOnlineError}
-                className="p-1 rounded-lg hover:bg-rose-900/80 text-rose-300 shrink-0"
+                className="p-1 rounded-lg hover:bg-red-900/70 text-[#FCA5A5] shrink-0"
                 aria-label="Hata mesajını kapat"
               >
                 <X className="w-4 h-4" />
@@ -264,86 +230,86 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
           </div>
         )}
 
-        {/* 3 Primary Game Mode Cards */}
+        {/* 3 Core Game Mode Cards (Classic Pitch Cards) */}
         <div className="w-full grid grid-cols-1 sm:grid-cols-2 gap-3 text-left">
-          {/* 1. 1v1 Çevrimiçi Maç (Featured Full-Width CTA) */}
+          {/* 1. 1v1 Çevrimiçi Maç (Featured Top Card) */}
           <button
             type="button"
             data-testid="mode-online-btn"
             onClick={() => setMinigameModalContext('online_match')}
-            className="sm:col-span-2 flex items-center justify-between gap-3.5 p-4 rounded-2xl bg-gradient-to-r from-cyan-500/20 via-teal-950/75 to-emerald-500/20 hover:from-cyan-500/30 hover:to-emerald-500/30 border border-cyan-400/60 hover:border-cyan-300 transition transform active:scale-[0.99] text-left shadow-xl group cursor-pointer"
+            className="sm:col-span-2 flex items-center justify-between gap-3.5 p-4 rounded-2xl bg-[#244632] hover:bg-[#2a523b] border-2 border-[#D9B76B]/75 hover:border-[#D9B76B] transition transform active:scale-[0.99] text-left shadow-lg group cursor-pointer"
           >
             <div className="flex items-center gap-3.5 min-w-0 flex-1">
-              <div className="w-12 h-12 rounded-xl bg-cyan-500/20 border border-cyan-400/50 flex items-center justify-center text-cyan-300 group-hover:scale-105 transition shrink-0">
+              <div className="w-12 h-12 rounded-xl bg-[#3C8052] border border-[#D9B76B]/60 flex items-center justify-center text-[#F2ECD9] group-hover:scale-105 transition shrink-0">
                 <Globe className="w-6 h-6" />
               </div>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className="font-black text-white text-sm sm:text-base">
+                  <span className="font-display font-extrabold text-[#F2ECD9] text-lg sm:text-xl leading-none uppercase">
                     1v1 Çevrimiçi Maç
                   </span>
-                  <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-md bg-cyan-400 text-slate-950 shrink-0">
-                    CANLI · 4 Oyun
+                  <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded bg-[#D9B76B] text-[#101C16] shrink-0">
+                    CANLI · 4 OYUN
                   </span>
                 </div>
-                <span className="block text-xs text-slate-300 mt-0.5 truncate">
+                <span className="block text-xs text-[#A8B6A5] mt-1 truncate">
                   {t('lobbyOnlineDesc')}
                 </span>
               </div>
             </div>
-            <ChevronRight className="w-5 h-5 text-cyan-300 shrink-0" />
+            <ChevronRight className="w-5 h-5 text-[#D9B76B] shrink-0" />
           </button>
 
-          {/* 2. Arkadaşla Oda */}
+          {/* 2. Arkadaşla Oyna */}
           <button
             type="button"
             data-testid="mode-room-btn"
             onClick={() => setShowRoomModal(true)}
-            className="flex items-center justify-between gap-3 p-3.5 rounded-2xl bg-gradient-to-br from-slate-900 to-slate-900/90 hover:from-purple-950/60 hover:to-slate-900 border border-purple-500/40 hover:border-purple-400 transition transform active:scale-[0.99] text-left shadow-lg group cursor-pointer"
+            className="flex items-center justify-between gap-3 p-3.5 rounded-2xl bg-[#244632] hover:bg-[#2a523b] border border-[#3C8052] hover:border-[#D9B76B]/70 transition transform active:scale-[0.99] text-left shadow-md group cursor-pointer"
           >
             <div className="flex items-center gap-3 min-w-0 flex-1">
-              <div className="w-12 h-12 rounded-xl bg-purple-500/10 border border-purple-500/30 flex items-center justify-center text-purple-400 group-hover:scale-105 transition shrink-0">
-                <Users className="w-6 h-6" />
+              <div className="w-11 h-11 rounded-xl bg-[#183022] border border-[#D9B76B]/45 flex items-center justify-center text-[#D9B76B] group-hover:scale-105 transition shrink-0">
+                <Users className="w-5 h-5" />
               </div>
               <div className="min-w-0 flex-1">
-                <span className="block font-black text-white text-sm">
-                  Arkadaşla Oda
+                <span className="block font-display font-extrabold text-[#F2ECD9] text-lg leading-tight uppercase">
+                  Arkadaşla Oyna
                 </span>
-                <span className="block text-xs text-slate-400 truncate">
-                  {t('lobbyRoomDesc')}
+                <span className="block text-xs text-[#A8B6A5] truncate">
+                  Özel oda kur veya koda katıl
                 </span>
               </div>
             </div>
-            <ChevronRight className="w-4 h-4 text-purple-400 shrink-0" />
+            <ChevronRight className="w-4 h-4 text-[#D9B76B] shrink-0" />
           </button>
 
-          {/* 3. Botla Maç */}
+          {/* 3. Bota Karşı Oyna */}
           <button
             type="button"
             data-testid="mode-bot-btn"
             onClick={() => setShowBotModal(true)}
-            className="flex items-center justify-between gap-3 p-3.5 rounded-2xl bg-gradient-to-br from-slate-900 to-slate-900/90 hover:from-blue-950/60 hover:to-slate-900 border border-blue-500/40 hover:border-blue-400 transition transform active:scale-[0.99] text-left shadow-lg group cursor-pointer"
+            className="flex items-center justify-between gap-3 p-3.5 rounded-2xl bg-[#244632] hover:bg-[#2a523b] border border-[#3C8052] hover:border-[#D9B76B]/70 transition transform active:scale-[0.99] text-left shadow-md group cursor-pointer"
           >
             <div className="flex items-center gap-3 min-w-0 flex-1">
-              <div className="w-12 h-12 rounded-xl bg-blue-500/10 border border-blue-500/30 flex items-center justify-center text-blue-400 group-hover:scale-105 transition shrink-0">
-                <Bot className="w-6 h-6" />
+              <div className="w-11 h-11 rounded-xl bg-[#183022] border border-[#3C8052] flex items-center justify-center text-[#F2ECD9] group-hover:scale-105 transition shrink-0">
+                <Bot className="w-5 h-5" />
               </div>
               <div className="min-w-0 flex-1">
-                <span className="block font-black text-white text-sm">
-                  Botla Maç
+                <span className="block font-display font-extrabold text-[#F2ECD9] text-lg leading-tight uppercase">
+                  Bota Karşı Oyna
                 </span>
-                <span className="block text-xs text-slate-400 truncate">
+                <span className="block text-xs text-[#A8B6A5] truncate">
                   Çırak · Şampiyon · Efsane
                 </span>
               </div>
             </div>
-            <ChevronRight className="w-4 h-4 text-blue-400 shrink-0" />
+            <ChevronRight className="w-4 h-4 text-[#A8B6A5] shrink-0" />
           </button>
         </div>
 
         <p
           data-testid="lobby-copyright-notice"
-          className="pt-1 px-2 text-[11px] font-medium text-slate-500 text-center leading-relaxed"
+          className="pt-1 px-2 text-[11px] font-medium text-[#A8B6A5]/80 text-center leading-relaxed"
         >
           Bağımsız hayran yapımı bilgi yarışmasıdır; hiçbir kulüp, lig veya kuruluşla resmi bağlantısı yoktur.
         </p>
@@ -351,20 +317,20 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
 
       {/* Private Room Modal */}
       {showRoomModal && typeof document !== 'undefined' && createPortal(
-        <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/85 animate-in fade-in duration-150">
-          <div className="w-full max-w-sm bg-slate-900 border border-purple-500/40 rounded-3xl p-5 sm:p-6 text-center shadow-2xl max-h-[90dvh] overflow-y-auto">
-            <h3 className="text-lg font-black text-white flex items-center justify-center gap-2 mb-4">
-              <KeyRound className="w-5 h-5 text-purple-400" />
+        <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-[#101C16]/90 animate-in fade-in duration-150">
+          <div className="w-full max-w-sm bg-[#244632] border border-[#D9B76B]/55 rounded-3xl p-5 sm:p-6 text-center shadow-2xl max-h-[90dvh] overflow-y-auto">
+            <h3 className="font-display font-extrabold text-2xl text-[#F2ECD9] flex items-center justify-center gap-2 mb-4 uppercase">
+              <KeyRound className="w-5 h-5 text-[#D9B76B]" />
               <span>Arkadaşla Oda</span>
             </h3>
 
-            <div className="flex rounded-xl bg-slate-950 p-1 mb-4 border border-slate-800">
+            <div className="flex rounded-xl bg-[#183022] p-1 mb-4 border border-[#F2ECD9]/12">
               <button
                 onClick={() => setRoomAction('create')}
                 className={`flex-1 py-2 rounded-lg text-xs font-bold transition cursor-pointer ${
                   roomAction === 'create'
-                    ? 'bg-purple-600 text-white'
-                    : 'text-slate-400 hover:text-white'
+                    ? 'bg-[#3C8052] text-[#F2ECD9]'
+                    : 'text-[#A8B6A5] hover:text-[#F2ECD9]'
                 }`}
               >
                 Oda Oluştur
@@ -373,8 +339,8 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                 onClick={() => setRoomAction('join')}
                 className={`flex-1 py-2 rounded-lg text-xs font-bold transition cursor-pointer ${
                   roomAction === 'join'
-                    ? 'bg-purple-600 text-white'
-                    : 'text-slate-400 hover:text-white'
+                    ? 'bg-[#3C8052] text-[#F2ECD9]'
+                    : 'text-[#A8B6A5] hover:text-[#F2ECD9]'
                 }`}
               >
                 Odaya Katıl
@@ -383,7 +349,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
 
             {roomAction === 'create' ? (
               <div className="text-left">
-                <label className="block text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1.5">
+                <label className="block text-[10px] font-black uppercase tracking-wider text-[#A8B6A5] mb-1.5">
                   Oyun Türünü Seç
                 </label>
                 <div className="space-y-1.5 mb-4">
@@ -394,12 +360,12 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                       onClick={() => setRoomMinigame(mg.id)}
                       className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl border text-xs font-bold transition cursor-pointer ${
                         roomMinigame === mg.id
-                          ? 'bg-purple-500/20 border-purple-400 text-white'
-                          : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
+                          ? 'bg-[#3C8052]/45 border-[#D9B76B] text-[#F2ECD9]'
+                          : 'bg-[#183022] border-[#F2ECD9]/12 text-[#A8B6A5] hover:text-[#F2ECD9]'
                       }`}
                     >
                       <span>{mg.title}</span>
-                      <span className="text-[10px] text-purple-300">{mg.badgeText}</span>
+                      <span className="text-[10px] text-[#D9B76B]">{mg.badgeText}</span>
                     </button>
                   ))}
                 </div>
@@ -408,7 +374,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                     setShowRoomModal(false);
                     onSelectMode('online_room', { minigameType: roomMinigame });
                   }}
-                  className="w-full py-3 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-black text-sm transition active:scale-95 cursor-pointer"
+                  className="w-full py-3 rounded-xl bg-[#D9B76B] hover:bg-[#e5c784] text-[#101C16] font-black text-sm transition active:scale-95 cursor-pointer"
                 >
                   Odayı Başlat
                 </button>
@@ -428,7 +394,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                     setInputCode(extracted);
                   }}
                   placeholder="6 HANELİ ODA KODU"
-                  className="w-full bg-slate-950 text-white font-mono font-black text-center text-lg tracking-widest px-3 py-3 rounded-xl border border-slate-700 focus:border-purple-400 mb-3 outline-none uppercase"
+                  className="w-full bg-[#183022] text-[#F2ECD9] font-mono font-black text-center text-lg tracking-widest px-3 py-3 rounded-xl border border-[#F2ECD9]/20 focus:border-[#D9B76B] mb-3 outline-none uppercase"
                 />
                 <button
                   disabled={!inputCode.trim()}
@@ -436,7 +402,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                     setShowRoomModal(false);
                     onSelectMode('online_room', { roomCode: inputCode.trim() });
                   }}
-                  className="w-full py-3 rounded-xl bg-purple-600 hover:bg-purple-500 disabled:opacity-40 text-white font-black text-sm transition active:scale-95 cursor-pointer"
+                  className="w-full py-3 rounded-xl bg-[#D9B76B] hover:bg-[#e5c784] disabled:opacity-40 text-[#101C16] font-black text-sm transition active:scale-95 cursor-pointer"
                 >
                   Odaya Katıl
                 </button>
@@ -445,7 +411,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
 
             <button
               onClick={() => setShowRoomModal(false)}
-              className="mt-3 text-xs text-slate-400 hover:text-white font-semibold cursor-pointer"
+              className="mt-3 text-xs text-[#A8B6A5] hover:text-[#F2ECD9] font-semibold cursor-pointer"
             >
               Vazgeç
             </button>

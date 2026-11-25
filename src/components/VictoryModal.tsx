@@ -358,7 +358,7 @@ Ortak futbolcuları benden hızlı bulabilir misin? Meydan okuyorum! 🔥`;
         <div className="my-4 p-3 sm:p-4 rounded-2xl bg-[#14232C] border border-white/10 flex items-center justify-around">
           <div className="flex flex-col items-center">
             <PlayerAvatar
-              avatar="⚽"
+              avatar={player1.avatar}
               name={p1Name}
               size="sm"
               variant="circle"
@@ -391,7 +391,7 @@ Ortak futbolcuları benden hızlı bulabilir misin? Meydan okuyorum! 🔥`;
             className="group flex flex-col items-center px-2.5 py-1.5 rounded-2xl border border-transparent hover:border-white/15 transition cursor-pointer active:scale-95"
           >
             <PlayerAvatar
-              avatar={isBotMatch ? '🤖' : '⚽'}
+              avatar={isBotMatch ? '🤖' : player2.avatar}
               name={p2Name}
               size="sm"
               variant="circle"

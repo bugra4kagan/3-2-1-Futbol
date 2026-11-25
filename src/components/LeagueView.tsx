@@ -361,11 +361,11 @@ export const LeagueView: React.FC<LeagueViewProps> = ({
                 >
                   <div className="flex items-center gap-2.5 min-w-0">
                     <PlayerAvatar
-                      avatar="⚽"
+                      avatar={item.avatar}
                       name={safeItemName}
                       size="sm"
                       variant="circle"
-                      className="bg-slate-800 border border-slate-700"
+                      className="bg-[#183022] border border-[#D9B76B]/40"
                     />
                     <div className="min-w-0">
                       <span className="block font-bold text-xs text-white truncate">

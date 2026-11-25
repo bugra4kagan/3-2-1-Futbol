@@ -37,6 +37,12 @@ import {
 import { sounds } from '../utils/audio';
 import { PlayerAvatar } from './PlayerAvatar';
 import { ClubBadge } from './ClubBadge';
+import {
+  PROFILE_ICONS,
+  getProfileIconLabel,
+  normalizeProfileIconId,
+} from '../game/profileIcons';
+import { ProfileIconSvg } from './ProfileIconSvg';
 
 interface AuthModalProps {
   currentProfile: PlayerProfile;
@@ -81,6 +87,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     text: string;
   } | null>(null);
   const [name, setName] = useState(initialIsGeneric ? '' : currentProfile.name);
+  const [selectedAvatar, setSelectedAvatar] = useState(() =>
+    normalizeProfileIconId(currentProfile.avatar)
+  );
   const [favoriteClubId, setFavoriteClubId] = useState(
     currentProfile.favoriteClubId || 'galatasaray'
   );
@@ -235,7 +244,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       const updatedProfile: PlayerProfile = {
         ...currentProfile,
         name: fmt.cleanedDisplay,
-        avatar: '⚽',
+        avatar: normalizeProfileIconId(selectedAvatar),
         favoriteClubId,
         accountStats: currentProfile.accountStats || {
           totalMatches: 0,
@@ -411,15 +420,15 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   return (
     <div
       data-testid="auth-modal"
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/92 overflow-y-auto animate-screen-fade"
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-[#101C16]/95 overflow-y-auto animate-screen-fade"
     >
-      <div className="relative w-full max-w-md bg-gradient-to-b from-slate-900 via-slate-900 to-emerald-950 border border-emerald-500/40 rounded-3xl p-5 sm:p-6 shadow-2xl text-left my-auto max-h-[92dvh] overflow-y-auto animate-screen-slide-up">
+      <div className="relative w-full max-w-md bg-[#244632] border border-[#D9B76B]/45 rounded-3xl p-5 sm:p-6 shadow-2xl text-left my-auto max-h-[92dvh] overflow-y-auto animate-screen-slide-up">
         {/* Modal Header */}
         <div className="relative text-center mb-3.5">
           {progression && (
             <div
               data-testid="auth-coins-badge"
-              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-950/90 border border-amber-400/40 text-amber-400 text-xs font-black font-mono mb-2"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#183022] border border-[#D9B76B]/45 text-[#D9B76B] text-xs font-black font-mono mb-2"
             >
               <CoinIcon size="xs" />
               <span>{formatPoints(coins)} Coin</span>
@@ -427,36 +436,39 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           )}
 
           <div className="mx-auto mb-2 flex items-center justify-center">
-            <div className="w-14 h-14 rounded-2xl bg-[#123D2B] border border-[#22C55E]/40 flex items-center justify-center text-[#22C55E]">
-              <UserCheck className="w-7 h-7 stroke-[2.2]" />
-            </div>
+            <PlayerAvatar
+              avatar={selectedAvatar}
+              name={name || 'Oyuncu'}
+              size="lg"
+              variant="circle"
+            />
           </div>
 
-          <span className="text-[11px] font-black tracking-widest text-[#22C55E] uppercase px-3 py-0.5 rounded-full bg-[#123D2B] border border-[#22C55E]/40">
+          <span className="text-[11px] font-black tracking-widest text-[#D9B76B] uppercase px-3 py-0.5 rounded-full bg-[#183022] border border-[#3C8052]">
             OYUNCU PROFİLİ
           </span>
-          <h2 className="text-xl sm:text-2xl font-black text-[#F8FAFC] mt-1.5 tracking-tight">
+          <h2 className="font-display font-extrabold text-2xl sm:text-3xl text-[#F2ECD9] mt-1.5 tracking-wide uppercase">
             {modalMode === 'profile'
               ? 'Oyuncu Hesabın'
               : 'Hesap Bağla & Giriş Yap'}
           </h2>
-          <p className="text-xs text-[#94A3B8] mt-0.5">
+          <p className="text-xs text-[#A8B6A5] mt-0.5">
             {modalMode === 'profile'
-              ? 'Kullanıcı adını ve favori kulübünü seç.'
+              ? 'Kullanıcı adını, profil simgeni ve favori kulübünü seç.'
               : 'Google veya E-posta hesabını bağlayarak coin ve lig puanlarını koru.'}
           </p>
         </div>
 
         {/* Mode Switcher: Misafir/Profil vs Google & E-posta Auth */}
-        <div className="grid grid-cols-2 gap-1.5 p-1 rounded-2xl bg-slate-950/90 border border-slate-800 mb-4">
+        <div className="grid grid-cols-2 gap-1.5 p-1 rounded-2xl bg-[#183022] border border-[#F2ECD9]/12 mb-4">
           <button
             type="button"
             data-testid="auth-mode-profile"
             onClick={() => setModalMode('profile')}
             className={`py-2 px-2.5 rounded-xl text-xs font-black transition cursor-pointer ${
               modalMode === 'profile'
-                ? 'bg-emerald-500 text-slate-950 shadow'
-                : 'text-slate-400 hover:text-white'
+                ? 'bg-[#3C8052] text-[#F2ECD9] shadow'
+                : 'text-[#A8B6A5] hover:text-[#F2ECD9]'
             }`}
           >
             Misafir / Profil
@@ -467,8 +479,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             onClick={() => setModalMode('email')}
             className={`py-2 px-2.5 rounded-xl text-xs font-black transition flex items-center justify-center gap-1.5 cursor-pointer ${
               modalMode === 'email'
-                ? 'bg-amber-400 text-slate-950 shadow'
-                : 'text-slate-400 hover:text-white'
+                ? 'bg-[#D9B76B] text-[#101C16] shadow'
+                : 'text-[#A8B6A5] hover:text-[#F2ECD9]'
             }`}
           >
             <Mail className="w-3.5 h-3.5 shrink-0" />
@@ -656,7 +668,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               <div className="relative flex items-center">
                 <div className="absolute left-2.5 flex items-center justify-center pointer-events-none">
                   <PlayerAvatar
-                    avatar="⚽"
+                    avatar={selectedAvatar}
                     name={name || 'Oyuncu'}
                     size="sm"
                   />
@@ -670,12 +682,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder="Sana özel bir kullanıcı adı yaz..."
-                  className={`w-full bg-slate-950 text-white font-bold pl-13 pr-9 py-3 rounded-xl border outline-none text-base shadow-inner transition ${
+                  className={`w-full bg-[#183022] text-[#F2ECD9] font-bold pl-13 pr-9 py-3 rounded-xl border outline-none text-base shadow-inner transition ${
                     nameCheckState === 'taken' || nameCheckState === 'invalid'
                       ? 'border-rose-500 focus:ring-2 focus:ring-rose-500/20'
                       : nameCheckState === 'available'
-                      ? 'border-emerald-400 focus:ring-2 focus:ring-emerald-400/20'
-                      : 'border-slate-700 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-400/20'
+                      ? 'border-[#3C8052] focus:ring-2 focus:ring-[#3C8052]/25'
+                      : 'border-[#F2ECD9]/20 focus:border-[#D9B76B]'
                   }`}
                 />
                 <div className="absolute right-3 flex items-center pointer-events-none">
@@ -729,16 +741,69 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               )}
             </div>
 
+            {/* 10 Free Vector Profile Icons Picker (5x2 Grid) */}
+            <div data-testid="auth-avatar-picker">
+              <div className="flex items-center justify-between gap-2 mb-1.5">
+                <label className="block text-xs font-black uppercase tracking-wider text-[#F2ECD9]">
+                  Profil Simgesi
+                </label>
+                <span className="text-[11px] font-bold text-[#D9B76B]">
+                  {getProfileIconLabel(selectedAvatar)} • Ücretsiz
+                </span>
+              </div>
+              <div className="grid grid-cols-5 gap-2 p-2.5 rounded-2xl bg-[#183022] border border-[#F2ECD9]/12">
+                {PROFILE_ICONS.map((iconDef) => {
+                  const isSelected = selectedAvatar === iconDef.id;
+                  return (
+                    <button
+                      key={iconDef.id}
+                      type="button"
+                      data-testid={`avatar-option-${iconDef.id}`}
+                      aria-pressed={isSelected}
+                      aria-label={iconDef.label}
+                      title={iconDef.label}
+                      onClick={() => {
+                        sounds.playCountdown(1);
+                        setSelectedAvatar(iconDef.id);
+                      }}
+                      className={`relative flex flex-col items-center justify-center gap-1 py-2 px-1 rounded-xl border transition active:scale-95 cursor-pointer ${
+                        isSelected
+                          ? 'bg-[#3C8052]/60 border-[#D9B76B] ring-2 ring-[#D9B76B]/40 shadow'
+                          : 'bg-[#101C16]/75 border-[#F2ECD9]/10 hover:border-[#3C8052]'
+                      }`}
+                    >
+                      <ProfileIconSvg iconId={iconDef.id} className="w-6 h-6" />
+                      <span
+                        className={`text-[9px] font-bold leading-none truncate max-w-full ${
+                          isSelected ? 'text-[#D9B76B]' : 'text-[#A8B6A5]'
+                        }`}
+                      >
+                        {iconDef.shortLabel}
+                      </span>
+                      {isSelected && (
+                        <span
+                          aria-hidden="true"
+                          className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-[#D9B76B] text-[#101C16] flex items-center justify-center shadow"
+                        >
+                          <Check className="w-2.5 h-2.5 stroke-[3]" />
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
             {/* Favorite Club Picker */}
             <div>
-              <label className="block text-xs font-black uppercase tracking-wider text-slate-300 mb-1.5">
+              <label className="block text-xs font-black uppercase tracking-wider text-[#F2ECD9] mb-1.5">
                 Favori Kulübün
               </label>
               <button
                 type="button"
                 data-testid="auth-club-toggle"
                 onClick={() => setShowClubPicker((v) => !v)}
-                className="w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl bg-slate-950 border border-slate-700 hover:border-emerald-400/60 text-left transition cursor-pointer"
+                className="w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl bg-[#183022] border border-[#F2ECD9]/20 hover:border-[#D9B76B]/60 text-left transition cursor-pointer"
               >
                 <div className="flex items-center gap-2.5 min-w-0">
                   {selectedClub ? (
@@ -804,7 +869,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 type="submit"
                 data-testid="auth-save-btn"
                 disabled={isSubmitting || nameCheckState === 'taken' || nameCheckState === 'invalid'}
-                className="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-500 hover:from-emerald-400 hover:to-teal-300 disabled:opacity-50 disabled:cursor-not-allowed text-slate-950 font-black text-sm tracking-wide uppercase transition active:scale-95 shadow-lg shadow-emerald-500/25 flex items-center justify-center gap-2 cursor-pointer"
+                className="w-full py-3.5 px-4 rounded-xl bg-[#3C8052] hover:bg-[#469460] border border-[#D9B76B]/55 disabled:opacity-50 disabled:cursor-not-allowed text-[#F2ECD9] font-display font-extrabold text-lg tracking-wider uppercase transition active:scale-95 shadow-lg flex items-center justify-center gap-2 cursor-pointer"
               >
                 {savedSuccess ? (
                   <>

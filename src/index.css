@@ -1,5 +1,15 @@
 @import "tailwindcss";
 
+:root {
+  --bg-pitch: #101C16;
+  --bg-card: #244632;
+  --bg-surface: #183022;
+  --accent-pitch: #3C8052;
+  --accent-gold: #D9B76B;
+  --text-main: #F2ECD9;
+  --text-muted: #A8B6A5;
+}
+
 @layer base {
   html {
     overscroll-behavior: none;
@@ -11,15 +21,23 @@
   }
 
   body {
-    background-color: #080E14;
-    color: #F8FAFC;
-    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background-color: #101C16;
+    color: #F2ECD9;
+    font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     overscroll-behavior: none;
     overflow-x: hidden;
     user-select: none;
     -webkit-user-select: none;
     -webkit-tap-highlight-color: transparent;
     touch-action: manipulation;
+  }
+
+  h1,
+  h2,
+  h3,
+  .font-display {
+    font-family: 'Barlow Condensed', 'Inter', system-ui, sans-serif;
+    letter-spacing: 0.01em;
   }
 
   button,
@@ -37,15 +55,27 @@
   width: 5px;
 }
 .custom-scrollbar::-webkit-scrollbar-track {
-  background: rgba(15, 23, 42, 0.6);
+  background: rgba(16, 28, 22, 0.75);
   border-radius: 9999px;
 }
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: rgba(16, 185, 129, 0.4);
+  background: rgba(60, 128, 82, 0.55);
   border-radius: 9999px;
 }
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: rgba(16, 185, 129, 0.7);
+  background: rgba(217, 183, 107, 0.75);
+}
+
+/* Subtle classic mowed-turf pitch background texture */
+.pitch-turf-backdrop {
+  background-color: #101C16;
+  background-image: repeating-linear-gradient(
+    90deg,
+    rgba(36, 70, 50, 0.16) 0px,
+    rgba(36, 70, 50, 0.16) 44px,
+    rgba(16, 28, 22, 0.16) 44px,
+    rgba(16, 28, 22, 0.16) 88px
+  );
 }
 
 /* Snappy GPU-Friendly Screen and View Transitions */
@@ -148,19 +178,9 @@
 }
 
 .brand-gradient-text {
-  background-image: linear-gradient(
-    90deg,
-    #a855f7 0%,
-    #ec4899 24%,
-    #22d3ee 50%,
-    #facc15 76%,
-    #a855f7 100%
-  );
-  background-size: 300% 300%;
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  animation: brandGradientShift 4.2s ease-in-out infinite;
+  color: #F2ECD9;
+  font-family: 'Barlow Condensed', 'Inter', system-ui, sans-serif;
+  text-shadow: 0 2px 0 rgba(16, 28, 22, 0.85);
 }
 
 .brand-ball-bounce-a {
@@ -575,6 +595,80 @@ html[data-theme="klasik"] input::placeholder {
 /* RTL Support Helpers */
 html[dir="rtl"] .rtl-flip {
   transform: scaleX(-1);
+}
+
+/* ============================================================================
+   UNIFIED CLASSIC-MODERN FOOTBALL PITCH PALETTE HARMONIZATION
+   - Ana arka plan: #101C16 | Kart: #244632 | Derin yüzey: #183022
+   - Vurgu: #3C8052 | Altın: #D9B76B | Ana yazı: #F2ECD9 | İkincil: #A8B6A5
+   ============================================================================ */
+:is(
+  [data-testid="stats-view"],
+  [data-testid="friends-view"],
+  [data-testid="league-view"],
+  [data-testid="store-modal"],
+  [data-testid="settings-modal"],
+  [data-testid="minigame-selector-modal"],
+  [data-testid="match-viewport-container"]
+) :is(.bg-slate-900, .bg-slate-900\/95, .bg-slate-900\/90, .bg-slate-900\/85, .bg-slate-900\/80, .bg-slate-900\/75, .bg-slate-900\/70, .bg-\[\#101B24\]) {
+  background-color: #244632 !important;
+  background-image: none !important;
+  border-color: rgba(217, 183, 107, 0.3) !important;
+}
+
+:is(
+  [data-testid="stats-view"],
+  [data-testid="friends-view"],
+  [data-testid="league-view"],
+  [data-testid="store-modal"],
+  [data-testid="settings-modal"],
+  [data-testid="minigame-selector-modal"],
+  [data-testid="match-viewport-container"]
+) :is(.bg-slate-950, .bg-slate-950\/95, .bg-slate-950\/90, .bg-slate-950\/80, .bg-slate-950\/75, .bg-\[\#14232C\], .bg-\[\#080E14\]) {
+  background-color: #183022 !important;
+  border-color: rgba(60, 128, 82, 0.45) !important;
+}
+
+:is(
+  [data-testid="stats-view"],
+  [data-testid="friends-view"],
+  [data-testid="league-view"],
+  [data-testid="store-modal"],
+  [data-testid="settings-modal"],
+  [data-testid="minigame-selector-modal"]
+) .text-white {
+  color: #F2ECD9 !important;
+}
+
+:is(
+  [data-testid="stats-view"],
+  [data-testid="friends-view"],
+  [data-testid="league-view"],
+  [data-testid="store-modal"],
+  [data-testid="settings-modal"],
+  [data-testid="minigame-selector-modal"]
+) :is(.text-slate-300, .text-slate-400, .text-slate-500) {
+  color: #A8B6A5 !important;
+}
+
+:is(
+  [data-testid="stats-view"],
+  [data-testid="friends-view"],
+  [data-testid="league-view"],
+  [data-testid="store-modal"],
+  [data-testid="settings-modal"]
+) :is(.text-amber-300, .text-amber-400) {
+  color: #D9B76B !important;
+}
+
+:is(
+  [data-testid="stats-view"],
+  [data-testid="friends-view"],
+  [data-testid="league-view"],
+  [data-testid="store-modal"],
+  [data-testid="settings-modal"]
+) :is(.text-emerald-300, .text-emerald-400) {
+  color: #D9B76B !important;
 }
 
 
