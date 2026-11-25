@@ -11,6 +11,12 @@ import {
   validateUsernameFormat,
 } from './accountEngine.js';
 import { MinigameType, PlayerProfile, PublicPlayerProfile, UserProgression } from './types.js';
+import {
+  createAccountSessionToken,
+  generateAccountAuthSecret,
+  sanitizeProgressionUpdate,
+  verifyAccountSessionToken,
+} from './serverSecurity.js';
 
 const EMPTY_MINIGAME_COUNTS: Record<MinigameType, number> = {
   two_clubs: 0,
@@ -72,6 +78,7 @@ export interface PersistentAccountRecord {
   username: string;
   usernameKey: string;
   recoveryCode: string;
+  sessionSecret?: string;
   googleUid?: string;
   profile: PlayerProfile;
   progression: UserProgression;
@@ -246,14 +253,22 @@ export class AccountStore {
       name: check.cleanedDisplay,
     };
 
+    let sessionSecret = existing?.sessionSecret;
+    if (!sessionSecret) {
+      sessionSecret = generateAccountAuthSecret();
+    }
+
+    const sanitizedProg = sanitizeProgressionUpdate(existing?.progression, params.progression);
+
     const record: PersistentAccountRecord = {
       accountId: cleanId,
       username: check.cleanedDisplay,
       usernameKey: check.usernameKey,
       recoveryCode,
+      sessionSecret,
       googleUid: params.googleUid || existing?.googleUid,
       profile: cleanedProfile,
-      progression: params.progression,
+      progression: sanitizedProg,
       createdAt: existing?.createdAt ?? now,
       updatedAt: now,
     };
@@ -308,9 +323,10 @@ export class AccountStore {
 
     const updated: PersistentAccountRecord = {
       ...existing,
+      sessionSecret: existing.sessionSecret || generateAccountAuthSecret(),
       googleUid: params.googleUid || existing.googleUid,
       profile: nextProfile,
-      progression: params.progression,
+      progression: sanitizeProgressionUpdate(existing.progression, params.progression),
       updatedAt: Date.now(),
     };
 
@@ -342,6 +358,21 @@ export class AccountStore {
 
   public getByAccountId(accountId: string): PersistentAccountRecord | null {
     return this.byId.get(accountId) || null;
+  }
+
+  public issueSessionTokenForAccount(rec: PersistentAccountRecord): string {
+    if (!rec.sessionSecret) {
+      rec.sessionSecret = generateAccountAuthSecret();
+      this.indexRecord(rec);
+      this.saveToDisk();
+    }
+    return createAccountSessionToken(rec.accountId, rec.sessionSecret);
+  }
+
+  public verifyAccountSession(accountId: string, providedToken: string | undefined | null): boolean {
+    const rec = this.byId.get(String(accountId || '').trim());
+    if (!rec) return false;
+    return verifyAccountSessionToken(rec.accountId, providedToken, rec.sessionSecret);
   }
 
   public deleteByAccountId(accountId: string): boolean {

@@ -232,7 +232,7 @@ service cloud.firestore {
         && (!('lastActivityType' in data) || (data.lastActivityType in ['tournament_started', 'high_score']))
         && (!('lastActivityTitle' in data) || (data.lastActivityTitle is string && data.lastActivityTitle.size() <= 120))
         && (!('lastActivityCode' in data) || (data.lastActivityCode is string && data.lastActivityCode.size() <= 16))
-        && (!('lastActivityScore' in data) || (data.lastActivityScore is int && data.lastActivityScore >= 0))
+        && (!('lastActivityScore' in data) || (data.lastActivityScore is int && data.lastActivityScore >= 0 && data.lastActivityScore <= 50000000))
         && data.updatedAt is timestamp
         && data.updatedAt == request.time;
     }
@@ -362,9 +362,11 @@ service cloud.firestore {
 
     function isValidRoom(data, roomCode) {
       return data.code == roomCode
+        && data.source in ['private', 'matchmaking']
         && isValidMinigame(data.minigameType)
         && data.state in ['waiting', 'countdown', 'playing', 'round_ended', 'game_over']
         && isValidId(data.hostUid)
+        && (!('guestUid' in data) || data.guestUid == null || isValidId(data.guestUid))
         && data.memberUids is list
         && data.memberUids.size() >= 1
         && data.memberUids.size() <= 2
@@ -372,6 +374,11 @@ service cloud.firestore {
         && data.players is map
         && data.players.size() >= 1
         && data.players.size() <= 2
+        && data.scores is map
+        && data.scores.size() <= 2
+        && data.roundIndex is int
+        && data.roundIndex >= 0
+        && data.roundIndex <= 20
         && data.roundIds is list
         && data.roundIds.size() <= 20;
     }
@@ -384,15 +391,33 @@ service cloud.firestore {
       allow create: if isSignedIn()
         && isValidRoomCode(roomCode)
         && isValidRoom(incoming(), roomCode)
-        && incoming().hostUid == request.auth.uid;
+        && incoming().hostUid == request.auth.uid
+        && (
+          // Özel oda veya bekleme odası oluşturma: başlangıçta yalnızca host üye ve skorlar boş
+          (incoming().memberUids == [request.auth.uid]
+            && incoming().state == 'waiting'
+            && (!('guestUid' in incoming()) || incoming().guestUid == null)
+            && incoming().scores.size() == 0)
+          // Hızlı eşleştirme kurucusu: iki farklı gerçek oyuncuyu atomik olarak eşleştirir
+          || (incoming().source == 'matchmaking'
+            && incoming().memberUids.size() == 2
+            && 'guestUid' in incoming()
+            && incoming().guestUid != null
+            && incoming().guestUid != request.auth.uid
+            && incoming().memberUids.hasAll([incoming().hostUid, incoming().guestUid]))
+        );
 
       allow update: if isSignedIn()
         && isValidRoomCode(roomCode)
         && isValidRoom(incoming(), roomCode)
+        && incoming().code == existing().code
+        && incoming().source == existing().source
         && incoming().hostUid == existing().hostUid
         && incoming().hostId == existing().hostId
         && incoming().minigameType == existing().minigameType
         && incoming().createdAt == existing().createdAt
+        && (!('guestUid' in existing()) || existing().guestUid == null
+          || (incoming().guestUid == existing().guestUid && incoming().guestId == existing().guestId))
         && (
           // Aynı maç içerisinde soru dizisi değiştirilemez; yeni rövanşta matchSeq +1 artar
           (incoming().matchSeq == existing().matchSeq
@@ -417,13 +442,16 @@ service cloud.firestore {
           // Odadaki oyuncular maç durumunu, skoru ve hamleleri güncelleyebilir
           (request.auth.uid in existing().memberUids
             && incoming().memberUids == existing().memberUids)
-          // Bekleyen odaya 2. oyuncu olarak katılma (aynı oturum/hesap katılamaz)
+          // Bekleyen odaya 2. oyuncu olarak katılma: katılırken skor/tur enjekte edilemez
           || (existing().state == 'waiting'
             && existing().memberUids.size() == 1
             && !(request.auth.uid in existing().memberUids)
             && incoming().guestUid == request.auth.uid
             && incoming().memberUids == existing().memberUids.concat([request.auth.uid])
-            && incoming().players.keys().hasAll(existing().players.keys()))
+            && incoming().players.keys().hasAll(existing().players.keys())
+            && incoming().scores == existing().scores
+            && incoming().roundIndex == existing().roundIndex
+            && incoming().matchSeq == existing().matchSeq)
         );
 
       // İptal / çıkış: odadaki oyuncular odayı silebilir
@@ -439,13 +467,19 @@ service cloud.firestore {
         && data.uid == request.auth.uid
         && data.minigameType == minigameType
         && data.profile is map
+        && data.profile.keys().size() <= 8
+        && data.profile.id is string
+        && data.profile.id.size() >= 1
+        && data.profile.name is string
+        && data.profile.name.size() >= 1
+        && data.profile.name.size() <= 40
         && data.joinedAt == request.time
         && data.matchedRoomCode == null;
     }
 
     match /matchmaking/{minigameType}/queue/{playerKey} {
       allow get: if isSignedIn();
-      allow list: if isSignedIn() && request.query.limit <= 25;
+      allow list: if isSignedIn() && request.query.limit != null && request.query.limit <= 25;
 
       allow create: if isSignedIn()
         && isValidMinigame(minigameType)

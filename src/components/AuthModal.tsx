@@ -257,9 +257,16 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       let persistedProfile = updatedProfile;
 
       try {
+        const storedToken =
+          typeof window !== 'undefined'
+            ? window.localStorage.getItem(`321_server_session_token_${currentProfile.id}`)
+            : null;
+        const regHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (storedToken) regHeaders['X-Account-Token'] = storedToken;
+
         const regRes = await fetch('/api/accounts/register', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: regHeaders,
           body: JSON.stringify({
             accountId: currentProfile.id,
             profile: updatedProfile,
@@ -268,6 +275,16 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           }),
         });
         const regData = await regRes.json().catch(() => null);
+        if (regRes.ok && regData?.sessionToken && typeof window !== 'undefined') {
+          try {
+            window.localStorage.setItem(
+              `321_server_session_token_${currentProfile.id}`,
+              String(regData.sessionToken)
+            );
+          } catch {
+            // ignore
+          }
+        }
         if (regRes.status === 409 || regRes.status === 400 || (regData && regData.ok === false)) {
           sounds.playWrong();
           setNameCheckState('taken');

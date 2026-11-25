@@ -208,6 +208,33 @@ import {
   normalizeRoomCode,
   parseRoomXoxState,
 } from './game/roomEngine';
+
+function getServerSessionToken(accountId: string): string | null {
+  if (typeof window === 'undefined' || !accountId) return null;
+  try {
+    return window.localStorage.getItem(`321_server_session_token_${accountId}`);
+  } catch {
+    return null;
+  }
+}
+
+function storeServerSessionToken(accountId: string, token: unknown): void {
+  if (typeof window === 'undefined' || !accountId || typeof token !== 'string' || !token) return;
+  try {
+    window.localStorage.setItem(`321_server_session_token_${accountId}`, token);
+  } catch {
+    // ignore storage errors
+  }
+}
+
+function buildAccountApiHeaders(accountId: string): Record<string, string> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  const token = getServerSessionToken(accountId);
+  if (token) {
+    headers['X-Account-Token'] = token;
+  }
+  return headers;
+}
 import { getAuthoritativeServerNowMs } from './game/serverTime';
 import { ONLINE_MATCHMAKING_TIMEOUT_MS } from './game/realtimeSyncHelpers';
 import {
@@ -1340,14 +1367,21 @@ export default function App() {
           }).catch(() => {});
           fetch('/api/accounts/register', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: buildAccountApiHeaders(sessionPlayerIdRef.current),
             body: JSON.stringify({
               accountId: sessionPlayerIdRef.current,
               profile: nextProfile,
               progression: mergedProg,
               googleUid: user.uid,
             }),
-          }).catch(() => {});
+          })
+            .then((r) => (r.ok ? r.json() : null))
+            .then((data) => {
+              if (data?.sessionToken) {
+                storeServerSessionToken(sessionPlayerIdRef.current, data.sessionToken);
+              }
+            })
+            .catch(() => {});
         }
       } catch (err) {
         console.warn('Cloud backup sync failed:', err);
@@ -1362,8 +1396,11 @@ export default function App() {
   // Restore saved account from server if local storage missed profile
   useEffect(() => {
     const accountId = sessionPlayerIdRef.current;
-    if (!accountId) return;
-    fetch(`/api/accounts/by-id/${encodeURIComponent(accountId)}`)
+    const token = accountId ? getServerSessionToken(accountId) : null;
+    if (!accountId || !token) return;
+    fetch(`/api/accounts/by-id/${encodeURIComponent(accountId)}`, {
+      headers: { 'X-Account-Token': token },
+    })
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (!data?.ok || !data?.account) return;
@@ -1397,16 +1434,24 @@ export default function App() {
     if (!player1.name || player1.name === 'Futbol Gurmesi') return;
     if (serverAccountSaveTimerRef.current) clearTimeout(serverAccountSaveTimerRef.current);
     serverAccountSaveTimerRef.current = setTimeout(() => {
+      const aid = sessionPlayerIdRef.current;
       fetch('/api/accounts/sync', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: buildAccountApiHeaders(aid),
         body: JSON.stringify({
-          accountId: sessionPlayerIdRef.current,
+          accountId: aid,
           profile: player1Ref.current,
           progression: progressionRef.current,
           googleUid: firebaseUser?.uid,
         }),
-      }).catch(() => {});
+      })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          if (data?.sessionToken) {
+            storeServerSessionToken(aid, data.sessionToken);
+          }
+        })
+        .catch(() => {});
     }, 650);
   }, [progression, player1.name, player1.avatar, player1.favoriteClubId, firebaseUser]);
 
@@ -3709,14 +3754,21 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
         }).catch(() => {});
         fetch('/api/accounts/register', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: buildAccountApiHeaders(sessionPlayerIdRef.current),
           body: JSON.stringify({
             accountId: sessionPlayerIdRef.current,
             profile: nextProfile,
             progression: mergedProg,
             googleUid: user.uid,
           }),
-        }).catch(() => {});
+        })
+          .then((r) => (r.ok ? r.json() : null))
+          .then((data) => {
+            if (data?.sessionToken) {
+              storeServerSessionToken(sessionPlayerIdRef.current, data.sessionToken);
+            }
+          })
+          .catch(() => {});
       }
 
       return {
@@ -3786,11 +3838,15 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
           restoredSources += 1;
         }
       } else {
-        const serverRec = await fetch(
-          `/api/accounts/by-id/${encodeURIComponent(sessionPlayerIdRef.current)}`
-        )
-          .then((r) => (r.ok ? r.json() : null))
-          .catch(() => null);
+        const aid = sessionPlayerIdRef.current;
+        const tok = getServerSessionToken(aid);
+        const serverRec = tok
+          ? await fetch(`/api/accounts/by-id/${encodeURIComponent(aid)}`, {
+              headers: { 'X-Account-Token': tok },
+            })
+              .then((r) => (r.ok ? r.json() : null))
+              .catch(() => null)
+          : null;
 
         if (serverRec?.ok && serverRec?.account?.progression) {
           mergedProg = mergeCloudAndLocalProgression(
@@ -3836,6 +3892,7 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
 
     await fetch(`/api/accounts/by-id/${encodeURIComponent(sessionPlayerIdRef.current)}`, {
       method: 'DELETE',
+      headers: buildAccountApiHeaders(sessionPlayerIdRef.current),
     }).catch(() => {});
 
     if (typeof window !== 'undefined') {

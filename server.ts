@@ -17,6 +17,11 @@ import {
   normalizeUsernameKey,
   sanitizePublicDisplayName,
 } from './src/game/accountEngine.js';
+import {
+  SlidingRateLimiter,
+  applySecurityHeaders,
+  sanitizeLeaderboardNumbers,
+} from './src/game/serverSecurity.js';
 
 const VALID_MINIGAMES: MinigameType[] = ['two_clubs', 'xox', 'career', 'country_club'];
 
@@ -32,7 +37,46 @@ const app = express();
 const server = http.createServer(app);
 const port = process.env.PORT || 3000;
 
+app.disable('x-powered-by');
+app.use(applySecurityHeaders);
 app.use(express.json({ limit: '512kb' }));
+
+const recoverLimiter = new SlidingRateLimiter(10, 5 * 60 * 1000);
+const accountWriteLimiter = new SlidingRateLimiter(45, 60 * 1000);
+const socialLimiter = new SlidingRateLimiter(30, 60 * 1000);
+
+function getClientRateKey(req: express.Request): string {
+  const fwd = req.header('x-forwarded-for');
+  const ip = (fwd ? fwd.split(',')[0] : req.ip || req.socket?.remoteAddress || 'unknown').trim();
+  return ip.slice(0, 96);
+}
+
+function readAccountToken(req: express.Request): string | undefined {
+  const direct = req.header('x-account-token');
+  if (direct && direct.trim()) return direct.trim();
+  const authHeader = req.header('authorization');
+  if (authHeader && authHeader.toLowerCase().startsWith('bearer ')) {
+    return authHeader.slice(7).trim();
+  }
+  return undefined;
+}
+
+function enforceRateLimit(
+  limiter: SlidingRateLimiter,
+  req: express.Request,
+  res: express.Response
+): boolean {
+  const check = limiter.consume(getClientRateKey(req));
+  if (!check.allowed) {
+    res.setHeader('Retry-After', String(check.retryAfterSec));
+    res.status(429).json({
+      ok: false,
+      error: 'Çok fazla istek gönderildi. Lütfen kısa süre bekleyip tekrar dene.',
+    });
+    return false;
+  }
+  return true;
+}
 
 // API Endpoints
 app.get('/api/health', (_req, res) => {
@@ -97,9 +141,14 @@ app.get('/api/accounts/suggest-name', (_req, res) => {
 });
 
 app.get('/api/accounts/by-id/:accountId', (req, res) => {
-  const rec = accountStore.getByAccountId(String(req.params.accountId || '').trim());
+  const accountId = String(req.params.accountId || '').trim();
+  const rec = accountStore.getByAccountId(accountId);
   if (!rec) {
     return res.json({ ok: false, found: false });
+  }
+  const token = readAccountToken(req);
+  if (!accountStore.verifyAccountSession(accountId, token)) {
+    return res.status(401).json({ ok: false, error: 'Oturum doğrulaması gerekli.' });
   }
   res.json({
     ok: true,
@@ -115,9 +164,18 @@ app.get('/api/accounts/by-id/:accountId', (req, res) => {
 });
 
 app.delete('/api/accounts/by-id/:accountId', (req, res) => {
+  if (!enforceRateLimit(accountWriteLimiter, req, res)) return;
   const accountId = String(req.params.accountId || '').trim();
   if (!accountId) {
     return res.status(400).json({ ok: false, error: 'Geçersiz hesap kimliği.' });
+  }
+  const existing = accountStore.getByAccountId(accountId);
+  if (!existing) {
+    return res.json({ ok: true, deleted: false });
+  }
+  const token = readAccountToken(req);
+  if (!accountStore.verifyAccountSession(accountId, token)) {
+    return res.status(401).json({ ok: false, error: 'Bu hesabı silme yetkin yok.' });
   }
   const deleted = accountStore.deleteByAccountId(accountId);
   liveLeaderboard.delete(accountId);
@@ -125,12 +183,23 @@ app.delete('/api/accounts/by-id/:accountId', (req, res) => {
 });
 
 app.post('/api/accounts/register', (req, res) => {
+  if (!enforceRateLimit(accountWriteLimiter, req, res)) return;
   const { accountId, profile, progression, googleUid } = req.body || {};
   if (!accountId || !profile?.name || !progression) {
     return res.status(400).json({ ok: false, error: 'Hesap bilgileri eksik.' });
   }
+  const cleanId = String(accountId).trim().slice(0, 64);
+  const existing = accountStore.getByAccountId(cleanId);
+  if (existing) {
+    const token = readAccountToken(req);
+    const tokenOk = accountStore.verifyAccountSession(cleanId, token);
+    const sameVerifiedGoogle = Boolean(googleUid && existing.googleUid && existing.googleUid === String(googleUid));
+    if (!tokenOk && !sameVerifiedGoogle) {
+      return res.status(401).json({ ok: false, error: 'Hesap güncelleme yetkisi doğrulanamadı.' });
+    }
+  }
   const result = accountStore.registerOrUpdate({
-    accountId: String(accountId),
+    accountId: cleanId,
     profile,
     progression,
     googleUid: googleUid ? String(googleUid) : undefined,
@@ -144,10 +213,12 @@ app.post('/api/accounts/register', (req, res) => {
   }
 
   const acc = result.account;
+  const sessionToken = accountStore.issueSessionTokenForAccount(acc);
   liveLeaderboard.set(acc.accountId, buildPublicProfileFromRecord(acc));
 
   res.json({
     ok: true,
+    sessionToken,
     requiresUsernameRename: isLegacyFlaggedUsername(acc.profile?.name || acc.username),
     account: {
       accountId: acc.accountId,
@@ -159,12 +230,23 @@ app.post('/api/accounts/register', (req, res) => {
 });
 
 app.post('/api/accounts/sync', (req, res) => {
+  if (!enforceRateLimit(accountWriteLimiter, req, res)) return;
   const { accountId, profile, progression, googleUid } = req.body || {};
   if (!accountId || !progression) {
     return res.status(400).json({ ok: false, error: 'Senkronizasyon verisi eksik.' });
   }
+  const cleanId = String(accountId).trim().slice(0, 64);
+  const existing = accountStore.getByAccountId(cleanId);
+  if (existing) {
+    const token = readAccountToken(req);
+    const tokenOk = accountStore.verifyAccountSession(cleanId, token);
+    const sameVerifiedGoogle = Boolean(googleUid && existing.googleUid && existing.googleUid === String(googleUid));
+    if (!tokenOk && !sameVerifiedGoogle) {
+      return res.status(401).json({ ok: false, error: 'Senkronizasyon yetkisi doğrulanamadı.' });
+    }
+  }
   const syncRes = accountStore.syncProgression({
-    accountId: String(accountId),
+    accountId: cleanId,
     profile,
     progression,
     googleUid: googleUid ? String(googleUid) : undefined,
@@ -172,14 +254,17 @@ app.post('/api/accounts/sync', (req, res) => {
   if (!syncRes.ok || !syncRes.account) {
     return res.json({ ok: false });
   }
+  const sessionToken = accountStore.issueSessionTokenForAccount(syncRes.account);
   liveLeaderboard.set(syncRes.account.accountId, buildPublicProfileFromRecord(syncRes.account));
   res.json({
     ok: true,
+    sessionToken,
     recoveryCode: syncRes.account.recoveryCode,
   });
 });
 
 app.post('/api/accounts/recover', (req, res) => {
+  if (!enforceRateLimit(recoverLimiter, req, res)) return;
   const { recoveryCode, username } = req.body || {};
   const result = accountStore.recoverByCode(
     String(recoveryCode || ''),
@@ -189,8 +274,10 @@ app.post('/api/accounts/recover', (req, res) => {
     return res.status(404).json({ ok: false, error: result.reason });
   }
   const acc = result.account;
+  const sessionToken = accountStore.issueSessionTokenForAccount(acc);
   res.json({
     ok: true,
+    sessionToken,
     requiresUsernameRename: isLegacyFlaggedUsername(acc.profile?.name || acc.username),
     account: {
       accountId: acc.accountId,
@@ -207,6 +294,7 @@ app.get('/api/leaderboard', (_req, res) => {
 });
 
 app.post('/api/leaderboard/sync', (req, res) => {
+  if (!enforceRateLimit(accountWriteLimiter, req, res)) return;
   const body = req.body || {};
   const { id, friendCode, name, avatar, weeklyPoints, totalPoints, subtitle, hasCrown } = body;
   if (!id || !name) {
@@ -222,7 +310,8 @@ app.post('/api/leaderboard/sync', (req, res) => {
     }
   }
   const cleanName = sanitizePublicDisplayName(String(name).slice(0, 20), cleanId);
-  const nextWeekly = Math.max(0, Number(weeklyPoints) || 0);
+  const boundedScores = sanitizeLeaderboardNumbers(existing, weeklyPoints, totalPoints);
+  const nextWeekly = boundedScores.weeklyPoints;
   const nextAvatar = String(avatar || existing?.avatar || '⚽').slice(0, 64);
   const nextFriendCode = friendCode ? String(friendCode).slice(0, 12) : existing?.friendCode;
   liveLeaderboard.set(cleanId, {
@@ -245,8 +334,8 @@ app.post('/api/leaderboard/sync', (req, res) => {
     equippedBadge:
       typeof body.equippedBadge === 'string' ? body.equippedBadge.slice(0, 16) : existing?.equippedBadge,
     hasCrown: Boolean(hasCrown),
-    weeklyPoints: Math.max(0, Number(weeklyPoints) || 0),
-    totalPoints: Math.max(0, Number(totalPoints) || 0),
+    weeklyPoints: boundedScores.weeklyPoints,
+    totalPoints: boundedScores.totalPoints,
     matchesPlayed:
       body.matchesPlayed !== undefined
         ? Math.max(0, Number(body.matchesPlayed) || 0)
@@ -411,12 +500,15 @@ app.get('/api/pairings', (_req, res) => {
 });
 
 app.post('/api/validate', (req, res) => {
-  const { answer, pairingId } = req.body;
+  const { answer, pairingId } = req.body || {};
+  if (typeof answer !== 'string' || typeof pairingId !== 'string') {
+    return res.status(400).json({ error: 'Invalid answer payload' });
+  }
   const pairing = MATCH_PAIRINGS.find((p) => p.id === pairingId);
   if (!pairing) {
     return res.status(404).json({ error: 'Pairing not found' });
   }
-  const result = validateAnswerForPairing(answer, pairing);
+  const result = validateAnswerForPairing(answer.slice(0, 120), pairing);
   res.json(result);
 });
 
@@ -550,6 +642,7 @@ app.post('/api/activity/high-score', (req, res) => {
 });
 
 app.post('/api/friends/request', (req, res) => {
+  if (!enforceRateLimit(socialLimiter, req, res)) return;
   const body = req.body || {};
   const fromPlayerId = String(body.fromPlayerId || '').trim().slice(0, 64);
   const fromFriendCode = String(body.fromFriendCode || '').trim().toUpperCase().slice(0, 12);
@@ -627,6 +720,7 @@ app.post('/api/friends/request', (req, res) => {
 });
 
 app.post('/api/friends/respond', (req, res) => {
+  if (!enforceRateLimit(socialLimiter, req, res)) return;
   const body = req.body || {};
   const requestId = String(body.requestId || '').trim().slice(0, 64);
   const action: 'accept' | 'reject' = body.action === 'accept' ? 'accept' : 'reject';
