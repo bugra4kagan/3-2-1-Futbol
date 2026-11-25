@@ -349,5 +349,104 @@ service cloud.firestore {
         && isSignedIn()
         && existing().ownerUid == request.auth.uid;
     }
+
+    // ── Gerçek zamanlı 1v1 odalar (src/services/firestoreRoomService.ts) ──
+
+    function isValidRoomCode(code) {
+      return code is string && code.matches('^[A-Z0-9]{6}$');
+    }
+
+    function isValidMinigame(mg) {
+      return mg in ['two_clubs', 'silhouette', 'xox', 'career', 'country_club'];
+    }
+
+    function isValidRoom(data, roomCode) {
+      return data.code == roomCode
+        && isValidMinigame(data.minigameType)
+        && data.state in ['waiting', 'countdown', 'playing', 'round_ended', 'game_over']
+        && isValidId(data.hostUid)
+        && data.memberUids is list
+        && data.memberUids.size() >= 1
+        && data.memberUids.size() <= 2
+        && data.hostUid in data.memberUids
+        && data.players is map
+        && data.players.size() >= 1
+        && data.players.size() <= 2
+        && data.roundIds is list
+        && data.roundIds.size() <= 20;
+    }
+
+    match /rooms/{roomCode} {
+      // Oda kodunu bilen her oturum açmış oyuncu okuyabilir (katılmak için gerekli); listeleme yok
+      allow get: if isSignedIn() && isValidRoomCode(roomCode);
+      allow list: if false;
+
+      allow create: if isSignedIn()
+        && isValidRoomCode(roomCode)
+        && isValidRoom(incoming(), roomCode)
+        && incoming().hostUid == request.auth.uid;
+
+      allow update: if isSignedIn()
+        && isValidRoomCode(roomCode)
+        && isValidRoom(incoming(), roomCode)
+        && incoming().hostUid == existing().hostUid
+        && incoming().hostId == existing().hostId
+        && incoming().createdAt == existing().createdAt
+        && (
+          // Odadaki oyuncular maç durumunu, skoru ve hamleleri güncelleyebilir
+          (request.auth.uid in existing().memberUids
+            && incoming().memberUids == existing().memberUids)
+          // Bekleyen odaya 2. oyuncu olarak katılma
+          || (existing().state == 'waiting'
+            && existing().memberUids.size() == 1
+            && !(request.auth.uid in existing().memberUids)
+            && incoming().guestUid == request.auth.uid
+            && incoming().memberUids == existing().memberUids.concat([request.auth.uid])
+            && incoming().players.keys().hasAll(existing().players.keys()))
+        );
+
+      // İptal / çıkış: odadaki oyuncular odayı silebilir
+      allow delete: if isSignedIn() && request.auth.uid in existing().memberUids;
+    }
+
+    // ── Hızlı eşleşme kuyruğu ──
+
+    function isValidQueueEntry(data, minigameType, playerKey) {
+      return data.keys().hasAll(['playerKey', 'uid', 'minigameType', 'profile', 'joinedAt', 'matchedRoomCode'])
+        && data.keys().hasOnly(['playerKey', 'uid', 'minigameType', 'profile', 'joinedAt', 'matchedRoomCode', 'expiresAt'])
+        && data.playerKey == playerKey
+        && data.uid == request.auth.uid
+        && data.minigameType == minigameType
+        && data.profile is map
+        && data.joinedAt == request.time
+        && data.matchedRoomCode == null;
+    }
+
+    match /matchmaking/{minigameType}/queue/{playerKey} {
+      allow get: if isSignedIn();
+      allow list: if isSignedIn() && request.query.limit <= 25;
+
+      allow create: if isSignedIn()
+        && isValidMinigame(minigameType)
+        && playerKey.size() <= 128
+        && isValidQueueEntry(incoming(), minigameType, playerKey);
+
+      allow update: if isSignedIn()
+        && (
+          // Eşleştiren oyuncu rakibin kaydına oda kodunu bir kez yazar; oda (aynı işlemde)
+          // gerçekten oluşturulmuş olmalı ve hem yazan hem kayıt sahibi odanın üyesi olmalı
+          (existing().matchedRoomCode == null
+            && incoming().diff(existing()).affectedKeys().hasOnly(['matchedRoomCode'])
+            && isValidRoomCode(incoming().matchedRoomCode)
+            && getAfter(/databases/$(database)/documents/rooms/$(incoming().matchedRoomCode))
+              .data.memberUids.hasAll([request.auth.uid, existing().uid]))
+          // Kendi kaydını (veya 2 dakikadan eski terk edilmiş bir kaydı) yeniden kuyruğa sokma
+          || (isValidQueueEntry(incoming(), minigameType, playerKey)
+            && (existing().uid == request.auth.uid
+              || existing().joinedAt < request.time - duration.value(2, 'm')))
+        );
+
+      allow delete: if isSignedIn() && existing().uid == request.auth.uid;
+    }
   }
 }

@@ -82,6 +82,17 @@ export const OnlineRoomView: React.FC<OnlineRoomViewProps> = ({
             : 'Oda kodunu veya davet linkini arkadaşına gönder, anında 1v1 başlasın!'}
         </p>
 
+        {/* Room is being created on Firestore — code not assigned yet */}
+        {!roomCode && !isMatchmaking && (
+          <div
+            data-testid="room-code-loading"
+            className="my-5 p-4 rounded-2xl bg-slate-950 border border-purple-500/40 flex items-center justify-center gap-2 text-xs font-bold text-purple-300"
+          >
+            <Loader2 className="w-4 h-4 animate-spin" />
+            <span>Oda oluşturuluyor...</span>
+          </div>
+        )}
+
         {/* Room Code Display if private room */}
         {roomCode && !isMatchmaking && (
           <div className="my-5 p-4 rounded-2xl bg-slate-950 border border-purple-500/40">
