@@ -1522,12 +1522,6 @@ export default function App() {
       syncServerLeaderboard(synced, player1Ref.current);
       syncPendingFriendRequestsFromServer();
 
-      if (!dailyAutoOpenedRef.current && !pendingInviteRoom && !pendingInviteTournament) {
-        dailyAutoOpenedRef.current = true;
-        if (canClaimDailyReward(synced)) {
-          setShowDailyModal(true);
-        }
-      }
       if (pendingInviteTournament) {
         setShowTournamentModal(true);
         if (typeof window !== 'undefined') {
@@ -1538,7 +1532,7 @@ export default function App() {
   }, [screen]);
 
   useEffect(() => {
-    if (screen === 'lobby' && activeTab === 'league') {
+    if (screen === 'lobby' && (activeTab === 'league' || activeTab === 'stats')) {
       fetchServerLeaderboard();
       return subscribeRtdbLeaderboard((players) => {
         setLiveLeaderboardPlayers(players);
@@ -2451,7 +2445,7 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
           Boolean(progression.permanentMultiplier2x) ||
           (progression.multiplier2xMatches ?? 0) > 0;
         const roundCoins = has2x ? 50 : 25;
-        const roundPoints = has2x ? 60 : 30;
+        const roundPoints = mode === 'bot' ? 0 : has2x ? 60 : 30;
         setLastRoundReward({ coins: roundCoins, points: roundPoints });
         setRoundDoubledByAd(false);
         const withBonus = grantExtraRewards(progression, roundCoins, roundPoints);
@@ -4354,12 +4348,11 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
   };
 
   const pendingFriendRequestsCount = getPendingIncomingRequestCount(progression);
-  const hasClaimableGift =
-    canClaimDailyReward(progression) ||
-    progression.dailyQuests.some((q) => !q.claimed && q.progress >= q.target) ||
-    getClaimableAchievementsCount(achievementsState) > 0;
+  const hasClaimableGift = false;
   const userClub = player1.favoriteClubId ? CLUBS[player1.favoriteClubId] : null;
   const tabHeaderTitle: Record<MainTab, string> = {
+    stats: t('tabStatsTitle'),
+    friends: t('tabFriendsTitle'),
     play: '3-2-1 FUTBOL',
     league: t('tabLeagueTitle'),
     profile: t('tabProfileTitle'),
@@ -4402,29 +4395,10 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
                   }
                 }}
                 onOpenSettings={() => setShowSettingsModal(true)}
-                onOpenDailyRewards={() => setShowDailyModal(true)}
-                onOpenQuests={() => handleSelectBottomTab('profile')}
                 onOpenStore={handleOpenStore}
-                onOpenEnergy={() => setShowEnergyModal(true)}
-                onOpenTournament={() => setShowTournamentModal(true)}
-                onOpenDailyChallenge={() => {
-                  if (!canPlayDailyChallengeNow(progressionRef.current)) return;
-                  setShowDailyChallengeModal(true);
-                }}
-                onOpenDailyWheel={() => setShowDailyWheelModal(true)}
-                onOpenV3Quests={() => setShowV3QuestsModal(true)}
                 onToggleMute={toggleSoundMute}
                 isMuted={isMuted}
-                uiTheme={uiTheme}
-                onToggleTheme={handleToggleTheme}
-                v3ClaimableQuestsCount={getV3ClaimableQuestsCount(v3QuestsState)}
-                hasFreeWheelSpin={canUseFreeWheelSpin(progression)}
                 pendingFriendRequestsCount={pendingFriendRequestsCount}
-                activeTournamentStageLabel={
-                  activeTournament && activeTournament.status === 'active'
-                    ? getTournamentMatchForUser(activeTournament, player1.id).stageLabel
-                    : null
-                }
                 onExitApp={handlePromptExitApp}
                 isNetworkOnline={isNetworkOnline}
                 onlineError={onlineError}
@@ -4503,6 +4477,30 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
                 </header>
 
                 <div className="relative z-10 flex-1 w-full pb-[env(safe-area-inset-bottom)]">
+                  {activeTab === 'stats' && (
+                    <StatsView
+                      playerProfile={player1}
+                      progression={progression}
+                      liveServerPlayers={liveLeaderboardPlayers}
+                      onInspectPlayer={handleInspectPlayer}
+                    />
+                  )}
+                  {activeTab === 'friends' && (
+                    <FriendsView
+                      progression={progression}
+                      selfPlayerId={player1.id}
+                      liveServerPlayers={liveLeaderboardPlayers}
+                      onInspectPlayer={handleInspectPlayer}
+                      onAddFriend={handleRequestAddFriend}
+                      onAcceptFriendRequest={handleAcceptFriendRequest}
+                      onRejectFriendRequest={handleRejectFriendRequest}
+                      onCancelOutgoingRequest={handleCancelOutgoingRequest}
+                      onRemoveFriend={handleRemoveFriendAction}
+                      onChallengeFriend={(mg) =>
+                        handleSelectOnlineMode('online_room', { minigameType: mg })
+                      }
+                    />
+                  )}
                   {activeTab === 'league' && (
                     <LeagueView
                       playerProfile={player1}

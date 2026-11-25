@@ -8,6 +8,7 @@ import {
 } from '../game/types';
 import { buildLeagueStandings, formatPoints } from '../game/retentionEngine';
 import { MINIGAME_OPTIONS } from '../game/minigameEngine';
+import { sanitizePublicDisplayName } from '../game/usernameFilter';
 import { PlayerAvatar } from './PlayerAvatar';
 
 interface StatsViewProps {
@@ -137,64 +138,70 @@ export const StatsView: React.FC<StatsViewProps> = ({
               ) : lookupResults.length === 0 ? (
                 <p className="text-xs text-slate-400 px-1 py-1.5">Aramanla eşleşen oyuncu bulunamadı.</p>
               ) : (
-                lookupResults.map((p) => (
-                  <button
-                    key={p.id}
-                    type="button"
-                    data-testid={`stats-search-result-${p.id}`}
-                    onClick={() => {
-                      onInspectPlayer(p);
-                      setLookupQuery('');
-                    }}
-                    className="w-full flex items-center justify-between gap-2 p-2 rounded-xl bg-slate-950/90 hover:bg-slate-800 border border-slate-800 hover:border-emerald-400/50 transition text-left cursor-pointer"
-                  >
-                    <div className="flex items-center gap-2 min-w-0">
-                      <PlayerAvatar
-                        avatar={p.avatar}
-                        name={p.name}
-                        size="sm"
-                        variant="circle"
-                        frame={p.equippedFrame}
-                        className="bg-slate-800"
-                      />
-                      <div className="min-w-0">
-                        <span className="block text-xs font-bold text-white truncate">
-                          {p.name}
-                        </span>
-                        <span className="block text-[10px] text-slate-400 truncate">
-                          {formatPoints(p.totalPoints)} puan • {p.wins}G / {p.matchesPlayed}M
-                        </span>
+                lookupResults.map((p) => {
+                  const safeName = sanitizePublicDisplayName(p.name, p.id);
+                  return (
+                    <button
+                      key={p.id}
+                      type="button"
+                      data-testid={`stats-search-result-${p.id}`}
+                      onClick={() => {
+                        onInspectPlayer(p);
+                        setLookupQuery('');
+                      }}
+                      className="w-full flex items-center justify-between gap-2 p-2 rounded-xl bg-slate-950/90 hover:bg-slate-800 border border-slate-800 hover:border-emerald-400/50 transition text-left cursor-pointer"
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <PlayerAvatar
+                          avatar={p.avatar}
+                          name={safeName}
+                          size="sm"
+                          variant="circle"
+                          frame={p.equippedFrame}
+                          className="bg-slate-800"
+                        />
+                        <div className="min-w-0">
+                          <span className="block text-xs font-bold text-white truncate">
+                            {safeName}
+                          </span>
+                          <span className="block text-[10px] text-slate-400 truncate">
+                            {formatPoints(p.totalPoints)} puan • {p.wins}G / {p.matchesPlayed}M
+                          </span>
+                        </div>
                       </div>
-                    </div>
-                    <span className="text-[11px] font-black text-emerald-300 shrink-0">
-                      İncele →
-                    </span>
-                  </button>
-                ))
+                      <span className="text-[11px] font-black text-emerald-300 shrink-0">
+                        İncele →
+                      </span>
+                    </button>
+                  );
+                })
               )}
             </div>
           )}
 
           {quickPlayers.length > 0 && lookupQuery.trim().length < 2 && (
             <div className="flex flex-wrap gap-1.5 pt-0.5">
-              {quickPlayers.map((p) => (
-                <button
-                  key={p.id}
-                  type="button"
-                  data-testid={`stats-quick-inspect-${p.id}`}
-                  onClick={() => onInspectPlayer(p)}
-                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-950 hover:bg-slate-800 border border-slate-800 hover:border-emerald-400/50 text-xs font-bold text-slate-200 transition cursor-pointer"
-                >
-                  <PlayerAvatar
-                    avatar={p.avatar}
-                    name={p.name}
-                    size="xs"
-                    variant="circle"
-                    className="bg-slate-800"
-                  />
-                  <span className="truncate max-w-[110px]">{p.name}</span>
-                </button>
-              ))}
+              {quickPlayers.map((p) => {
+                const safeName = sanitizePublicDisplayName(p.name, p.id);
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    data-testid={`stats-quick-inspect-${p.id}`}
+                    onClick={() => onInspectPlayer(p)}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-950 hover:bg-slate-800 border border-slate-800 hover:border-emerald-400/50 text-xs font-bold text-slate-200 transition cursor-pointer"
+                  >
+                    <PlayerAvatar
+                      avatar={p.avatar}
+                      name={safeName}
+                      size="xs"
+                      variant="circle"
+                      className="bg-slate-800"
+                    />
+                    <span className="truncate max-w-[110px]">{safeName}</span>
+                  </button>
+                );
+              })}
             </div>
           )}
         </div>

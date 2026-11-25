@@ -5,6 +5,7 @@ import { getRoundRevealInfo } from '../game/minigameEngine';
 import { CLUBS, PLAYERS } from '../game/database';
 import { getPlayerAsset } from '../game/playerAssets';
 import { getGoalEffectColors } from '../game/storeCatalog';
+import { sanitizePublicDisplayName } from '../game/usernameFilter';
 import { ClubBadge } from './ClubBadge';
 import { CountryFlag } from './CountryFlag';
 import { PlayerAvatar } from './PlayerAvatar';
@@ -62,6 +63,9 @@ export const RoundResultSheet: React.FC<RoundResultSheetProps> = ({
   const { validPlayers, funFact } = getRoundRevealInfo(round);
   const resolvedReason = endReason || (isTimeExpired ? 'timeout' : 'draw');
   const didUserWinRound = Boolean(winnerPlayer && player1Id && winnerPlayer.id === player1Id);
+  const safeWinnerName = winnerPlayer
+    ? sanitizePublicDisplayName(winnerPlayer.name, winnerPlayer.id)
+    : '';
 
   useEffect(() => {
     if (!didUserWinRound) return;
@@ -110,12 +114,12 @@ export const RoundResultSheet: React.FC<RoundResultSheetProps> = ({
             <h3 className="text-xl sm:text-2xl font-black text-white mt-1.5 flex items-center justify-center gap-2">
               <PlayerAvatar
                 avatar={winnerPlayer.avatar}
-                name={winnerPlayer.name}
+                name={safeWinnerName}
                 size="sm"
                 variant="circle"
                 className="bg-slate-800 border border-emerald-400/50"
               />
-              <span>{winnerPlayer.name} Kazandı!</span>
+              <span>{safeWinnerName} Kazandı!</span>
             </h3>
             {acceptedAnswer && (
               <p className="text-sm font-semibold text-emerald-300 mt-1">
@@ -125,8 +129,10 @@ export const RoundResultSheet: React.FC<RoundResultSheetProps> = ({
             {didUserWinRound && roundReward && (
               <div className="mt-2.5 flex flex-wrap items-center justify-center gap-2">
                 <span className="px-2.5 py-1 rounded-xl bg-amber-500/15 border border-amber-400/40 text-amber-300 text-xs font-black">
-                  🪙 +{roundDoubled ? roundReward.coins * 2 : roundReward.coins} Coin • 🏆 +
-                  {roundDoubled ? roundReward.points * 2 : roundReward.points} Puan
+                  🪙 +{roundDoubled ? roundReward.coins * 2 : roundReward.coins} Coin
+                  {roundReward.points > 0
+                    ? ` • 🏆 +${roundDoubled ? roundReward.points * 2 : roundReward.points} Puan`
+                    : ''}
                 </span>
                 {onRequestDoubleRound && (
                   <button

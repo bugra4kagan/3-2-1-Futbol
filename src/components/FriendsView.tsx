@@ -24,6 +24,7 @@ import {
   formatPoints,
   hasPendingOutgoingRequest,
 } from '../game/retentionEngine';
+import { sanitizePublicDisplayName } from '../game/usernameFilter';
 import { PlayerAvatar } from './PlayerAvatar';
 
 type InspectTarget = {
@@ -198,43 +199,45 @@ export const FriendsView: React.FC<FriendsViewProps> = ({
           </div>
 
           <div className="space-y-2">
-            {incomingRequests.map((req) => (
-              <div
-                key={req.id}
-                data-testid={`incoming-request-row-${req.id}`}
-                className="flex flex-wrap sm:flex-nowrap items-center justify-between gap-2.5 p-2.5 rounded-2xl bg-slate-950/90 border border-rose-500/30"
-              >
-                <button
-                  type="button"
-                  onClick={() =>
-                    onInspectPlayer?.({
-                      id: req.fromPlayerId,
-                      name: req.fromName,
-                      avatar: req.fromAvatar,
-                      friendCode: req.fromFriendCode,
-                      weeklyPoints: req.weeklyPoints,
-                      totalPoints: req.totalPoints,
-                      subtitle: req.subtitle,
-                    })
-                  }
-                  className="flex items-center gap-2.5 min-w-0 flex-1 text-left cursor-pointer"
+            {incomingRequests.map((req) => {
+              const safeFromName = sanitizePublicDisplayName(req.fromName, req.fromPlayerId);
+              return (
+                <div
+                  key={req.id}
+                  data-testid={`incoming-request-row-${req.id}`}
+                  className="flex flex-wrap sm:flex-nowrap items-center justify-between gap-2.5 p-2.5 rounded-2xl bg-slate-950/90 border border-rose-500/30"
                 >
-                  <PlayerAvatar
-                    avatar={req.fromAvatar}
-                    name={req.fromName}
-                    size="sm"
-                    variant="circle"
-                    className="bg-slate-800 border border-rose-400/40 shrink-0"
-                  />
-                  <div className="min-w-0">
-                    <span className="block font-black text-xs sm:text-sm text-white truncate">
-                      {req.fromName}
-                    </span>
-                    <span className="block text-[10px] text-rose-200/80 truncate">
-                      Sana arkadaşlık isteği gönderdi • #{req.fromFriendCode}
-                    </span>
-                  </div>
-                </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onInspectPlayer?.({
+                        id: req.fromPlayerId,
+                        name: safeFromName,
+                        avatar: req.fromAvatar,
+                        friendCode: req.fromFriendCode,
+                        weeklyPoints: req.weeklyPoints,
+                        totalPoints: req.totalPoints,
+                        subtitle: req.subtitle,
+                      })
+                    }
+                    className="flex items-center gap-2.5 min-w-0 flex-1 text-left cursor-pointer"
+                  >
+                    <PlayerAvatar
+                      avatar={req.fromAvatar}
+                      name={safeFromName}
+                      size="sm"
+                      variant="circle"
+                      className="bg-slate-800 border border-rose-400/40 shrink-0"
+                    />
+                    <div className="min-w-0">
+                      <span className="block font-black text-xs sm:text-sm text-white truncate">
+                        {safeFromName}
+                      </span>
+                      <span className="block text-[10px] text-rose-200/80 truncate">
+                        Sana arkadaşlık isteği gönderdi • #{req.fromFriendCode}
+                      </span>
+                    </div>
+                  </button>
 
                 <div className="flex items-center gap-1.5 shrink-0 ml-auto">
                   <button
@@ -257,7 +260,8 @@ export const FriendsView: React.FC<FriendsViewProps> = ({
                   </button>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         </section>
       )}
@@ -312,51 +316,54 @@ export const FriendsView: React.FC<FriendsViewProps> = ({
             <span>GÖNDERİLEN İSTEKLER ({outgoingRequests.length})</span>
           </h3>
           <div className="space-y-1.5">
-            {outgoingRequests.map((req) => (
-              <div
-                key={req.id}
-                data-testid={`outgoing-request-row-${req.toPlayerId || req.id}`}
-                className="flex items-center justify-between gap-2 p-2.5 rounded-xl bg-slate-950/90 border border-slate-800"
-              >
-                <div className="flex items-center gap-2 min-w-0">
-                  <PlayerAvatar
-                    avatar={req.toAvatar || '⚽'}
-                    name={req.toName}
-                    size="sm"
-                    variant="circle"
-                    className="bg-slate-800 border border-amber-400/40 shrink-0"
-                  />
-                  <div className="min-w-0">
-                    <span className="block font-bold text-xs text-white truncate">
-                      {req.toName}
+            {outgoingRequests.map((req) => {
+              const safeToName = sanitizePublicDisplayName(req.toName, req.toPlayerId || req.id);
+              return (
+                <div
+                  key={req.id}
+                  data-testid={`outgoing-request-row-${req.toPlayerId || req.id}`}
+                  className="flex items-center justify-between gap-2 p-2.5 rounded-xl bg-slate-950/90 border border-slate-800"
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <PlayerAvatar
+                      avatar={req.toAvatar || '⚽'}
+                      name={safeToName}
+                      size="sm"
+                      variant="circle"
+                      className="bg-slate-800 border border-amber-400/40 shrink-0"
+                    />
+                    <div className="min-w-0">
+                      <span className="block font-bold text-xs text-white truncate">
+                        {safeToName}
+                      </span>
+                      <span className="block text-[10px] text-amber-300/90 font-semibold">
+                        Onay bekleniyor {req.toFriendCode ? `• #${req.toFriendCode}` : ''}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <span
+                      data-testid="outgoing-request-pending-label"
+                      className="px-2.5 py-1 rounded-lg bg-amber-500/15 border border-amber-400/45 text-amber-300 font-black text-[11px] inline-flex items-center gap-1"
+                    >
+                      <Clock className="w-3 h-3" />
+                      <span>İstek Gönderildi</span>
                     </span>
-                    <span className="block text-[10px] text-amber-300/90 font-semibold">
-                      Onay bekleniyor {req.toFriendCode ? `• #${req.toFriendCode}` : ''}
-                    </span>
+                    {onCancelOutgoingRequest && (
+                      <button
+                        type="button"
+                        onClick={() => onCancelOutgoingRequest(req.id)}
+                        aria-label={`${safeToName} isteğini iptal et`}
+                        className="p-1.5 rounded-lg bg-slate-800 hover:bg-rose-950/70 text-slate-400 hover:text-rose-300 transition cursor-pointer"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                   </div>
                 </div>
-
-                <div className="flex items-center gap-1.5 shrink-0">
-                  <span
-                    data-testid="outgoing-request-pending-label"
-                    className="px-2.5 py-1 rounded-lg bg-amber-500/15 border border-amber-400/45 text-amber-300 font-black text-[11px] inline-flex items-center gap-1"
-                  >
-                    <Clock className="w-3 h-3" />
-                    <span>İstek Gönderildi</span>
-                  </span>
-                  {onCancelOutgoingRequest && (
-                    <button
-                      type="button"
-                      onClick={() => onCancelOutgoingRequest(req.id)}
-                      aria-label={`${req.toName} isteğini iptal et`}
-                      className="p-1.5 rounded-lg bg-slate-800 hover:bg-rose-950/70 text-slate-400 hover:text-rose-300 transition cursor-pointer"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  )}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </section>
       )}
@@ -412,6 +419,7 @@ export const FriendsView: React.FC<FriendsViewProps> = ({
               <p className="text-xs text-slate-400 px-1">Eşleşen oyuncu bulunamadı.</p>
             ) : (
               searchResults.map((p) => {
+                const safeName = sanitizePublicDisplayName(p.name, p.id);
                 const alreadyFriend = addedIds.has(p.id);
                 const isSelfRow = p.id === selfPlayerId;
                 const isPending = hasPendingOutgoingRequest(progression, p);
@@ -427,7 +435,7 @@ export const FriendsView: React.FC<FriendsViewProps> = ({
                     >
                       <PlayerAvatar
                         avatar={p.avatar}
-                        name={p.name}
+                        name={safeName}
                         size="sm"
                         variant="circle"
                         frame={p.equippedFrame}
@@ -435,7 +443,7 @@ export const FriendsView: React.FC<FriendsViewProps> = ({
                       />
                       <div className="min-w-0">
                         <span className="block font-bold text-xs text-white truncate">
-                          {p.name}
+                          {safeName}
                         </span>
                         <span className="block text-[10px] text-slate-400 truncate">
                           {formatPoints(p.totalPoints)} puan • {p.wins}G/{p.matchesPlayed}M
@@ -504,70 +512,73 @@ export const FriendsView: React.FC<FriendsViewProps> = ({
           </div>
         ) : (
           <div className="space-y-2">
-            {progression.friends.map((friend) => (
-              <div
-                key={friend.id}
-                data-testid={`friend-row-${friend.id}`}
-                className="flex items-center justify-between gap-2.5 p-3 rounded-2xl bg-slate-900/90 border border-slate-800 shadow"
-              >
-                <button
-                  type="button"
-                  data-testid={`inspect-friend-${friend.id}`}
-                  onClick={() => onInspectPlayer?.(friend)}
-                  aria-label={`${friend.name} profilini ve istatistiklerini incele`}
-                  className="flex items-center gap-2.5 min-w-0 flex-1 text-left cursor-pointer group"
+            {progression.friends.map((friend) => {
+              const safeFriendName = sanitizePublicDisplayName(friend.name, friend.id);
+              return (
+                <div
+                  key={friend.id}
+                  data-testid={`friend-row-${friend.id}`}
+                  className="flex items-center justify-between gap-2.5 p-3 rounded-2xl bg-slate-900/90 border border-slate-800 shadow"
                 >
-                  <div className="relative shrink-0">
-                    <PlayerAvatar
-                      avatar={friend.avatar}
-                      name={friend.name}
-                      size="md"
-                      variant="circle"
-                      className="bg-slate-800 border border-slate-700 group-hover:border-emerald-400 transition"
-                    />
-                    <span
-                      className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-slate-900 ${
-                        friend.isOnline ? 'bg-emerald-400' : 'bg-slate-500'
-                      }`}
-                    />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-1.5">
-                      <span className="font-bold text-sm text-white group-hover:text-emerald-300 truncate transition">
-                        {friend.name}
-                      </span>
-                      <span className="text-[10px] font-bold text-emerald-300/80 inline-flex items-center gap-0.5 shrink-0">
-                        <UserSearch className="w-3 h-3" />
-                        <span>İncele</span>
+                  <button
+                    type="button"
+                    data-testid={`inspect-friend-${friend.id}`}
+                    onClick={() => onInspectPlayer?.(friend)}
+                    aria-label={`${safeFriendName} profilini ve istatistiklerini incele`}
+                    className="flex items-center gap-2.5 min-w-0 flex-1 text-left cursor-pointer group"
+                  >
+                    <div className="relative shrink-0">
+                      <PlayerAvatar
+                        avatar={friend.avatar}
+                        name={safeFriendName}
+                        size="md"
+                        variant="circle"
+                        className="bg-slate-800 border border-slate-700 group-hover:border-emerald-400 transition"
+                      />
+                      <span
+                        className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-slate-900 ${
+                          friend.isOnline ? 'bg-emerald-400' : 'bg-slate-500'
+                        }`}
+                      />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-bold text-sm text-white group-hover:text-emerald-300 truncate transition">
+                          {safeFriendName}
+                        </span>
+                        <span className="text-[10px] font-bold text-emerald-300/80 inline-flex items-center gap-0.5 shrink-0">
+                          <UserSearch className="w-3 h-3" />
+                          <span>İncele</span>
+                        </span>
+                      </div>
+                      <span className="block text-[11px] text-slate-400 truncate">
+                        Haftalık: <strong className="text-amber-400">{formatPoints(friend.weeklyPoints)}</strong> • {friend.friendCode}
                       </span>
                     </div>
-                    <span className="block text-[11px] text-slate-400 truncate">
-                      Haftalık: <strong className="text-amber-400">{formatPoints(friend.weeklyPoints)}</strong> • {friend.friendCode}
-                    </span>
-                  </div>
-                </button>
+                  </button>
 
-                <div className="flex items-center gap-1.5 shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => onChallengeFriend('two_clubs')}
-                    className="px-3 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-black text-[11px] flex items-center gap-1 transition active:scale-95 cursor-pointer"
-                    title="Özel 1v1 Oda Aç"
-                  >
-                    <Swords className="w-3.5 h-3.5" />
-                    <span className="hidden sm:inline">Meydan Oku</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => onRemoveFriend(friend.id)}
-                    className="p-2 rounded-xl bg-slate-800 hover:bg-rose-950/70 text-slate-400 hover:text-rose-400 transition cursor-pointer"
-                    aria-label={`${friend.name} arkadaşlıktan çıkar`}
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => onChallengeFriend('two_clubs')}
+                      className="px-3 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-black text-[11px] flex items-center gap-1 transition active:scale-95 cursor-pointer"
+                      title="Özel 1v1 Oda Aç"
+                    >
+                      <Swords className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline">Meydan Oku</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onRemoveFriend(friend.id)}
+                      className="p-2 rounded-xl bg-slate-800 hover:bg-rose-950/70 text-slate-400 hover:text-rose-400 transition cursor-pointer"
+                      aria-label={`${safeFriendName} arkadaşlıktan çıkar`}
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
@@ -582,6 +593,7 @@ export const FriendsView: React.FC<FriendsViewProps> = ({
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             {realOnlinePlayers.map((item) => {
               const isPending = hasPendingOutgoingRequest(progression, item);
+              const safeItemName = sanitizePublicDisplayName(item.name, item.id);
               return (
                 <div
                   key={item.id}
@@ -591,12 +603,12 @@ export const FriendsView: React.FC<FriendsViewProps> = ({
                     type="button"
                     data-testid={`inspect-active-player-${item.id}`}
                     onClick={() => onInspectPlayer?.(item)}
-                    aria-label={`${item.name} profilini incele`}
+                    aria-label={`${safeItemName} profilini incele`}
                     className="flex items-center gap-2 min-w-0 flex-1 text-left cursor-pointer group"
                   >
                     <PlayerAvatar
                       avatar={item.avatar}
-                      name={item.name}
+                      name={safeItemName}
                       size="sm"
                       variant="circle"
                       frame={item.equippedFrame}
@@ -604,7 +616,7 @@ export const FriendsView: React.FC<FriendsViewProps> = ({
                     />
                     <div className="min-w-0">
                       <span className="block font-bold text-xs text-white group-hover:text-emerald-300 truncate transition">
-                        {item.name}
+                        {safeItemName}
                       </span>
                       <span className="block text-[10px] text-amber-400 font-semibold">
                         {formatPoints(item.weeklyPoints)} puan • İncele
