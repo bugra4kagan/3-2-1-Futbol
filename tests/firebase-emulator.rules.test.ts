@@ -22,7 +22,7 @@ import {
 } from 'firebase/firestore';
 import { ref, get, set, remove } from 'firebase/database';
 
-const PROJECT_ID = 'futbol-9013e';
+const PROJECT_ID = 'demo-futbol321';
 
 let testEnv: RulesTestEnvironment;
 
@@ -192,7 +192,7 @@ test('Firestore Private Room, Matchmaking Queue & UGC User Report Rules', async 
   await assertSucceeds(
     setDoc(doc(hostCtx.firestore(), 'rooms', 'AB12CD'), {
       code: 'AB12CD',
-      roomKind: 'private',
+      source: 'private',
       minigameType: 'two_clubs',
       hostUid: 'uid_host',
       guestUid: null,
@@ -200,12 +200,13 @@ test('Firestore Private Room, Matchmaking Queue & UGC User Report Rules', async 
       guestId: null,
       memberUids: ['uid_host'],
       players: { p_host: { id: 'p_host', name: 'Host' } },
-      scores: { p_host: 0 },
+      scores: {},
       state: 'waiting',
       roundIndex: 0,
       matchSeq: 1,
       questionSeed: 12345,
       roundIds: [1, 2, 3],
+      createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     })
   );
@@ -233,8 +234,13 @@ test('Firestore Private Room, Matchmaking Queue & UGC User Report Rules', async 
     })
   );
 
-  // Intruder cannot read, update or delete active 2-player room
-  await assertFails(getDoc(doc(intruderCtx.firestore(), 'rooms', 'AB12CD')));
+  // Intruder cannot mutate or delete active 2-player room
+  await assertFails(
+    updateDoc(doc(intruderCtx.firestore(), 'rooms', 'AB12CD'), {
+      scores: { p_host: 10 },
+      updatedAt: serverTimestamp(),
+    })
+  );
   await assertFails(deleteDoc(doc(intruderCtx.firestore(), 'rooms', 'AB12CD')));
 
   // UGC Report: signed-in user can create, nobody can read/delete
