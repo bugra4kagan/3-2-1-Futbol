@@ -8,6 +8,10 @@ import {
 } from './types';
 import { CLUBS, PLAYERS_LIST } from './database';
 import { getClubCrestUrl } from './clubLogos';
+import {
+  buildExpandedCountryClubChallenges,
+  buildExpandedXoxBoards,
+} from './expandedQuestionPools';
 
 const CURATED_SILHOUETTE_CHALLENGES: SilhouetteChallenge[] = [
   {
@@ -1215,13 +1219,10 @@ const AUTO_CAREER_CHALLENGES: CareerChallenge[] = PLAYERS_LIST.filter(
   (player) => !curatedCareerIds.has(player.id)
 )
   .map((player): CareerChallenge | null => {
-    const seniorEntries = (player.careerHistory || []).filter((entry) => !entry.isYouth);
+    const seniorEntries = (player.careerHistory || [])
+      .filter((entry) => !entry.isYouth)
+      .filter((entry) => Boolean(getClubCrestUrl(entry.clubId, entry.club)));
     if (seniorEntries.length < 2) return null;
-
-    const allHaveCrests = seniorEntries.every((entry) =>
-      Boolean(getClubCrestUrl(entry.clubId, entry.club))
-    );
-    if (!allHaveCrests) return null;
 
     return {
       id: `car_auto_${player.id}`,
@@ -1242,7 +1243,7 @@ export const CAREER_CHALLENGES: CareerChallenge[] = [
   ...AUTO_CAREER_CHALLENGES,
 ];
 
-export const COUNTRY_CLUB_CHALLENGES: CountryClubChallenge[] = [
+const CURATED_COUNTRY_CLUB_CHALLENGES: CountryClubChallenge[] = [
   {
     id: 'cc_bra_fb',
     country: 'Brezilya',
@@ -1725,7 +1726,13 @@ export const COUNTRY_CLUB_CHALLENGES: CountryClubChallenge[] = [
   },
 ];
 
-export const XOX_BOARDS: XoxBoardChallenge[] = [
+export const COUNTRY_CLUB_CHALLENGES: CountryClubChallenge[] = buildExpandedCountryClubChallenges(
+  PLAYERS_LIST,
+  CLUBS,
+  CURATED_COUNTRY_CLUB_CHALLENGES
+);
+
+const CURATED_XOX_BOARDS: XoxBoardChallenge[] = [
   {
     id: 'xox_cr7_giants',
     title: 'Avrupa Devleri & CR7 Ortakları',
@@ -2127,6 +2134,13 @@ export const XOX_BOARDS: XoxBoardChallenge[] = [
     },
   },
 ];
+
+export const XOX_BOARDS: XoxBoardChallenge[] = buildExpandedXoxBoards(
+  PLAYERS_LIST,
+  CLUBS,
+  CURATED_XOX_BOARDS,
+  320
+);
 
 
 

@@ -65,31 +65,31 @@ export const ScoreBoard: React.FC<ScoreBoardProps> = ({
   const gameMeta = getMinigameMeta(minigameType);
 
   return (
-    <header className="shrink-0 z-30 w-full max-w-4xl mx-auto px-2.5 sm:px-4 pt-[max(0.65rem,calc(env(safe-area-inset-top)+0.4rem))] pb-1 sm:pb-1.5 bg-[#101C16] border-b border-[#D9B76B]/25">
+    <header className="shrink-0 z-30 w-full max-w-4xl mx-auto px-2.5 sm:px-4 pt-[max(0.65rem,calc(env(safe-area-inset-top)+0.4rem))] pb-1 sm:pb-1.5 bg-[#0B1220] border-b border-[#A8B3C2]/20">
       {/* Top utility bar */}
-      <div className="flex items-center justify-between gap-1.5 sm:gap-2 text-xs text-[#F2ECD9] font-semibold mb-2 sm:mb-2.5">
+      <div className="flex items-center justify-between gap-1.5 sm:gap-2 text-xs text-[#F5F3EB] font-semibold mb-2 sm:mb-2.5">
         <button
           type="button"
           onClick={onExit}
-          className="flex items-center gap-1.5 min-h-[42px] px-2.5 sm:px-3 py-1.5 rounded-xl bg-[#244632] hover:bg-[#2a523b] border border-[#F2ECD9]/15 transition active:scale-95 text-[#F2ECD9] whitespace-nowrap shrink-0 cursor-pointer touch-manipulation"
+          className="flex items-center gap-1.5 min-h-[42px] px-2.5 sm:px-3 py-1.5 rounded-xl bg-[#16212E] hover:bg-[#1E293B] border border-[#A8B3C2]/25 transition active:scale-95 text-[#FFFFFF] whitespace-nowrap shrink-0 cursor-pointer touch-manipulation"
           title="Maçtan Çık"
           aria-label="Maçtan Çık"
         >
-          <LogOut className="w-4 h-4 shrink-0 text-[#A8B6A5]" />
+          <LogOut className="w-4 h-4 shrink-0 text-[#A8B3C2]" />
           <span className="font-bold">{t('menu')}</span>
         </button>
 
         <div className="flex items-center justify-center gap-1.5 sm:gap-2 min-w-0">
-          <div className="min-w-0 truncate px-2.5 sm:px-3.5 py-1.5 rounded-full bg-[#244632] border border-[#3C8052] text-[#D9B76B] font-black tracking-wide uppercase text-[11px] sm:text-xs whitespace-nowrap">
+          <div className="min-w-0 truncate px-2.5 sm:px-3.5 py-1.5 rounded-full bg-[#183D2B] border border-[#168A52] text-[#22C55E] font-black tracking-wide uppercase text-[11px] sm:text-xs whitespace-nowrap">
             <span className="md:hidden">TUR {roundNumber} · {gameMeta.shortTitle}</span>
             <span className="hidden md:inline">İLK 3 KAZANIR • TUR {roundNumber} • {gameMeta.shortTitle}</span>
           </div>
           <div
             data-testid="round-timer-badge"
-            className={`px-2.5 sm:px-3.5 py-1.5 rounded-full border font-black tracking-wider text-[11px] sm:text-xs transition-colors whitespace-nowrap shrink-0 tabular-nums ${
+            className={`px-2.5 sm:px-3.5 py-1.5 rounded-full border font-score font-extrabold tracking-wider text-xs sm:text-sm transition-colors whitespace-nowrap shrink-0 ${
               isLowTime
-                ? 'bg-red-950/95 border-[#EF4444] text-[#FCA5A5] animate-pulse'
-                : 'bg-[#183022] border-[#D9B76B]/45 text-[#F2ECD9]'
+                ? 'bg-[#DC2626] border-[#FFFFFF]/60 text-[#FFFFFF] animate-pulse'
+                : 'bg-[#16212E] border-[#E5B94F]/55 text-[#E5B94F]'
             }`}
           >
             ⏱ {formattedTime}
@@ -100,7 +100,7 @@ export const ScoreBoard: React.FC<ScoreBoardProps> = ({
           type="button"
           data-testid="header-settings-btn"
           onClick={onOpenSettings}
-          className="min-w-[42px] min-h-[42px] p-2 rounded-xl bg-[#244632] hover:bg-[#2a523b] border border-[#F2ECD9]/15 transition active:scale-95 text-[#D9B76B] flex items-center justify-center shrink-0 cursor-pointer touch-manipulation"
+          className="min-w-[42px] min-h-[42px] p-2 rounded-xl bg-[#16212E] hover:bg-[#1E293B] border border-[#A8B3C2]/25 transition active:scale-95 text-[#E5B94F] flex items-center justify-center shrink-0 cursor-pointer touch-manipulation"
           title={t('settings')}
           aria-label={t('settings')}
         >
@@ -109,15 +109,15 @@ export const ScoreBoard: React.FC<ScoreBoardProps> = ({
       </div>
 
       {/* Main Scoreboard Banner */}
-      <div className="relative overflow-hidden rounded-2xl sm:rounded-3xl bg-[#244632] border border-[#D9B76B]/35 p-2.5 sm:p-4">
+      <div className="relative overflow-hidden rounded-2xl sm:rounded-3xl bg-[#16212E] border border-[#A8B3C2]/20 p-2.5 sm:p-4">
         {/* MOBILE LAYOUT (< 640px) */}
         <div className="relative z-10 grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-1.5 sm:hidden">
           {/* Mobile Player 1 Card */}
           <div
             className={`min-w-0 p-2 rounded-xl transition ${
               p1Leading
-                ? 'bg-[#123D2B]/70 border border-[#22C55E]/60'
-                : 'bg-[#14232C] border border-white/10'
+                ? 'bg-[#183D2B] border border-[#168A52]/75'
+                : 'bg-[#16212E] border border-white/10'
             }`}
           >
             <div className="flex items-center gap-1.5 min-w-0">
@@ -164,8 +164,8 @@ export const ScoreBoard: React.FC<ScoreBoardProps> = ({
           <div
             className={`min-w-0 p-2 rounded-xl transition ${
               p2Leading
-                ? 'bg-[#123D2B]/70 border border-[#22C55E]/60'
-                : 'bg-[#14232C] border border-white/10'
+                ? 'bg-[#183D2B] border border-[#168A52]/75'
+                : 'bg-[#16212E] border border-white/10'
             }`}
           >
             <div className="flex items-center justify-end gap-1.5 min-w-0">
@@ -223,8 +223,8 @@ export const ScoreBoard: React.FC<ScoreBoardProps> = ({
           <div
             className={`flex-1 min-w-0 flex items-center gap-3 md:gap-4 p-3 rounded-2xl transition ${
               p1Leading
-                ? 'bg-[#123D2B]/70 border border-[#22C55E]/60'
-                : 'bg-[#14232C] border border-white/10'
+                ? 'bg-[#183D2B] border border-[#168A52]/75'
+                : 'bg-[#16212E] border border-white/10'
             }`}
           >
             <PlayerAvatar
@@ -279,8 +279,8 @@ export const ScoreBoard: React.FC<ScoreBoardProps> = ({
           <div
             className={`flex-1 min-w-0 flex items-center justify-end gap-3 md:gap-4 p-3 rounded-2xl transition ${
               p2Leading
-                ? 'bg-[#123D2B]/70 border border-[#22C55E]/60'
-                : 'bg-[#14232C] border border-white/10'
+                ? 'bg-[#183D2B] border border-[#168A52]/75'
+                : 'bg-[#16212E] border border-white/10'
             }`}
           >
             <div className="text-left pr-1 shrink-0">

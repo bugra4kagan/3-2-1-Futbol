@@ -5,22 +5,22 @@ interface BrandTitleProps {
   className?: string;
 }
 
-const ClassicFootballSvg: React.FC<{ className?: string }> = ({ className = '' }) => (
+const SportFootballSvg: React.FC<{ className?: string }> = ({ className = '' }) => (
   <svg
     viewBox="0 0 64 64"
     aria-hidden="true"
     className={`inline-block shrink-0 ${className}`}
   >
-    <circle cx="32" cy="32" r="28" fill="#F2ECD9" stroke="#D9B76B" strokeWidth="4" />
-    <polygon points="32,20 43,28 39,40 25,40 21,28" fill="#101C16" />
-    <polygon points="32,6 39,12 36,18 28,18 25,12" fill="#101C16" />
-    <polygon points="54,23 51,32 45,30 45,22 50,18" fill="#101C16" />
-    <polygon points="10,23 14,18 19,22 19,30 13,32" fill="#101C16" />
-    <polygon points="48,50 40,53 38,46 44,41 51,44" fill="#101C16" />
-    <polygon points="16,50 13,44 20,41 26,46 24,53" fill="#101C16" />
+    <circle cx="32" cy="32" r="28" fill="#FFFFFF" stroke="#0B1220" strokeWidth="4" />
+    <polygon points="32,20 43,28 39,40 25,40 21,28" fill="#0B1220" />
+    <polygon points="32,6 39,12 36,18 28,18 25,12" fill="#0B1220" />
+    <polygon points="54,23 51,32 45,30 45,22 50,18" fill="#0B1220" />
+    <polygon points="10,23 14,18 19,22 19,30 13,32" fill="#0B1220" />
+    <polygon points="48,50 40,53 38,46 44,41 51,44" fill="#0B1220" />
+    <polygon points="16,50 13,44 20,41 26,46 24,53" fill="#0B1220" />
     <path
       d="M32 18 L32 20 M43 28 L45 27 M21 28 L19 27 M39 40 L41 43 M25 40 L23 43"
-      stroke="#244632"
+      stroke="#16212E"
       strokeWidth="2.4"
       strokeLinecap="round"
     />
@@ -33,7 +33,7 @@ export const BrandTitle: React.FC<BrandTitleProps> = ({
 }) => {
   const textSizeClass =
     size === 'sm'
-      ? 'text-base sm:text-lg tracking-wide'
+      ? 'text-lg sm:text-xl tracking-wide'
       : size === 'md'
       ? 'text-2xl sm:text-3xl tracking-wide'
       : 'text-4xl sm:text-5xl tracking-wide';
@@ -54,11 +54,11 @@ export const BrandTitle: React.FC<BrandTitleProps> = ({
       aria-label="3-2-1 FUTBOL"
       className={`font-display inline-flex items-center justify-center font-extrabold uppercase select-none leading-none whitespace-nowrap ${textSizeClass} ${gapClass} ${className}`}
     >
-      <span className="text-[#D9B76B]">3-2-1</span>
-      <span className="inline-flex items-center text-[#F2ECD9]">
+      <span className="text-[#E5B94F]">3-2-1</span>
+      <span className="inline-flex items-center text-[#FFFFFF]">
         <span>FUTB</span>
         <span className="inline-flex items-center mx-[1.5px]">
-          <ClassicFootballSvg className={ballSizeClass} />
+          <SportFootballSvg className={ballSizeClass} />
         </span>
         <span>L</span>
       </span>

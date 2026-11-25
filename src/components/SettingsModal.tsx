@@ -25,6 +25,7 @@ import { LANGUAGE_OPTIONS } from '../game/i18n';
 import { UiTheme } from '../game/themeEngine';
 import { useLanguage } from '../game/LanguageContext';
 import { sounds } from '../utils/audio';
+import { GameLogoAppIconPreview } from './GameLogo';
 
 export interface CloudUserSummary {
   uid: string;
@@ -165,20 +166,20 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   return (
     <div
       data-testid="settings-modal"
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/92 overflow-y-auto animate-screen-fade"
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-[#0B1220]/92 overflow-y-auto animate-screen-fade"
     >
-      <div className="relative w-full max-w-lg bg-gradient-to-b from-slate-900 via-slate-900 to-slate-950 border border-emerald-500/40 rounded-3xl p-4 sm:p-6 shadow-2xl text-left my-auto max-h-[92dvh] flex flex-col overflow-hidden">
+      <div className="relative w-full max-w-lg bg-[#16212E] border border-[#168A52]/40 rounded-3xl p-4 sm:p-6 shadow-2xl text-left my-auto max-h-[92dvh] flex flex-col overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between gap-2 pb-3 border-b border-slate-800 shrink-0">
+        <div className="flex items-center justify-between gap-2 pb-3 border-b border-white/10 shrink-0">
           <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-400 text-slate-950 flex items-center justify-center shadow-lg shrink-0">
+            <div className="w-10 h-10 rounded-2xl bg-[#168A52] text-white flex items-center justify-center shadow-lg shrink-0">
               <Settings className="w-5 h-5 stroke-[2.4]" />
             </div>
             <div className="min-w-0">
-              <h2 className="text-base sm:text-xl font-black text-white leading-tight truncate">
+              <h2 className="font-display text-lg sm:text-xl font-black text-[#F5F3EB] leading-tight truncate uppercase">
                 {t('settings')}
               </h2>
-              <p className="text-[11px] text-slate-400 font-medium truncate">
+              <p className="text-[11px] text-[#9FB0C4] font-medium truncate">
                 {t('settingsSubtitle')}
               </p>
             </div>
@@ -188,7 +189,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             type="button"
             data-testid="settings-close-btn"
             onClick={onClose}
-            className="min-w-[40px] min-h-[40px] rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white flex items-center justify-center shrink-0 cursor-pointer"
+            className="min-w-[40px] min-h-[40px] rounded-xl bg-[#0B1220] hover:bg-[#1E2D3D] border border-white/10 text-[#9FB0C4] hover:text-white flex items-center justify-center shrink-0 cursor-pointer"
             aria-label={t('close')}
           >
             <X className="w-5 h-5" />
@@ -197,8 +198,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
         {/* Scrollable Content */}
         <div className="flex-1 overflow-y-auto pt-4 space-y-4 pr-0.5">
+          {/* App Brand & Store Icon Preview */}
+          <section
+            data-testid="settings-brand-preview"
+            className="p-3.5 rounded-2xl bg-[#0B1220] border border-white/10 flex items-center justify-between gap-3"
+          >
+            <GameLogoAppIconPreview />
+          </section>
+
           {/* 1. Sound On/Off */}
-          <section className="p-3.5 rounded-2xl bg-slate-950/85 border border-slate-800 flex items-center justify-between gap-3">
+          <section className="p-3.5 rounded-2xl bg-[#0B1220] border border-white/10 flex items-center justify-between gap-3">
             <div className="flex items-center gap-3 min-w-0">
               <div
                 className={`w-10 h-10 rounded-xl border flex items-center justify-center shrink-0 ${

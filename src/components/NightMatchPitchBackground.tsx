@@ -18,18 +18,18 @@ interface PitchPalette {
 }
 
 function resolvePitchPalette(_theme?: string): PitchPalette {
-  // Classic-modern dark stadium pitch (#101C16, #244632, #3C8052, #D9B76B)
+  // Deep navy & pitch green stadium arena (#0B1220, #16212E, #183D2B, #168A52)
   return {
-    skyTop: '#101C16',
-    turfDark: '#162920',
-    turfMid: '#244632',
-    stripeA: 'rgba(60, 128, 82, 0.14)',
-    stripeB: 'rgba(16, 28, 22, 0.25)',
-    glowPrimary: 'rgba(60, 128, 82, 0.18)',
-    glowSecondary: 'rgba(217, 183, 107, 0.08)',
-    lineColor: 'rgba(242, 236, 217, 0.36)',
-    lineGlow: 'rgba(217, 183, 107, 0.25)',
-    floodlightColor: 'rgba(242, 236, 217, 0.08)',
+    skyTop: '#0B1220',
+    turfDark: '#121D2B',
+    turfMid: '#183D2B',
+    stripeA: 'rgba(22, 138, 82, 0.12)',
+    stripeB: 'rgba(11, 18, 32, 0.25)',
+    glowPrimary: 'rgba(22, 138, 82, 0.14)',
+    glowSecondary: 'rgba(59, 130, 246, 0.08)',
+    lineColor: 'rgba(245, 243, 235, 0.34)',
+    lineGlow: 'rgba(229, 185, 79, 0.22)',
+    floodlightColor: 'rgba(255, 255, 255, 0.07)',
   };
 }
 

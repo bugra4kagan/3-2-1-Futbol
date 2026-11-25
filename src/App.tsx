@@ -38,7 +38,11 @@ import {
   getMinigamePoolSize,
   getRoundItemId,
 } from './game/minigameEngine';
-import { getSeenIdsForMinigame, recordSeenQuestions } from './game/questionHistory';
+import {
+  getRoundCanonicalKey,
+  getSeenIdsForMinigame,
+  recordSeenQuestions,
+} from './game/questionHistory';
 import {
   TOURNAMENT_OPEN_ENTRY_COINS,
   TOURNAMENT_OPEN_PRIZE_COINS,
@@ -127,6 +131,7 @@ import {
 import { AchievementsModal } from './components/AchievementsModal';
 
 import { LobbyScreen } from './components/LobbyScreen';
+import { GameLogo } from './components/GameLogo';
 import { ScoreBoard } from './components/ScoreBoard';
 import { CountdownOverlay } from './components/CountdownOverlay';
 import { SinglePlayerView } from './components/SinglePlayerView';
@@ -619,6 +624,10 @@ export default function App() {
     timeRemainingRef.current = timeRemaining;
   }, [timeRemaining]);
   const [isRoundPlaying, setIsRoundPlaying] = useState<boolean>(false);
+  const isRoundPlayingRef = useRef<boolean>(false);
+  useEffect(() => {
+    isRoundPlayingRef.current = isRoundPlaying;
+  }, [isRoundPlaying]);
   const [showResultSheet, setShowResultSheet] = useState<boolean>(false);
   const [roundWinnerPlayer, setRoundWinnerPlayer] = useState<PlayerProfile | null>(null);
   const [acceptedAnswerText, setAcceptedAnswerText] = useState<string>('');
@@ -2104,7 +2113,11 @@ trackGameEvent('match_complete', {
     const generatedRounds = generateMinigameRounds(selectedMinigame, 12, seenIds);
     recordSeenQuestions(
       selectedMinigame,
-      generatedRounds.map(getRoundItemId),
+      generatedRounds.flatMap((r) => {
+        const id = getRoundItemId(r);
+        const canon = getRoundCanonicalKey(r);
+        return canon && canon !== id ? [id, canon] : [id];
+      }),
       getMinigamePoolSize(selectedMinigame)
     );
 
@@ -2119,12 +2132,14 @@ trackGameEvent('match_complete', {
       name: `${tierMeta.title} Bot`,
       avatar: '🤖',
     };
-    setPlayer2({
+    const nextPlayer2: PlayerProfile = {
       id: b.id,
       name: b.name,
       avatar: b.avatar,
       score: 0,
-    });
+    };
+    player2Ref.current = nextPlayer2;
+    setPlayer2(nextPlayer2);
 
     setPlayer1((prev) => ({ ...prev, score: 0 }));
     setPlayer1Stats({ ...initialStats });
@@ -2142,6 +2157,7 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
     _roundList: MinigameRoundPayload[] = roundsRef.current,
     activeMinigame: MinigameType = minigameTypeRef.current
   ) => {
+    isRoundPlayingRef.current = false;
     setIsRoundPlaying(false);
     setShowResultSheet(false);
     setRoundWinnerPlayer(null);
@@ -2157,7 +2173,7 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
     soloXoxTimeoutsRef.current = 0;
 
     if (activeMinigame === 'xox') {
-      const starterId = roundIdx % 2 === 0 ? player1Ref.current.id : 'bot_ai';
+      const starterId = roundIdx % 2 === 0 ? player1Ref.current.id : player2Ref.current.id;
       const initialXox: XoxRuntimeState = {
         board: createEmptyXoxBoard(),
         currentTurnPlayerId: starterId,
@@ -2198,6 +2214,7 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
     bonusReviveTimeRef.current = 0;
     const duration = getRoundDurationSeconds(minigameTypeRef.current) + bonusSec;
     roundStartedAtRef.current = Date.now();
+    isRoundPlayingRef.current = true;
     setIsRoundPlaying(true);
     timeRemainingRef.current = duration;
     setTimeRemaining(duration);
@@ -2306,7 +2323,7 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
         const cur = xoxStateRef.current;
         const nextTurnId =
           cur.currentTurnPlayerId === player1Ref.current.id
-            ? 'bot_ai'
+            ? player2Ref.current.id
             : player1Ref.current.id;
         const updated: XoxRuntimeState = {
           ...cur,
@@ -2417,26 +2434,39 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
     }
   };
 
+  const handleBotWrongAttempt = useCallback((_guessedName: string) => {
+    setPlayer2Stats((prev) => ({
+      ...prev,
+      currentStreak: 0,
+      totalWrongAttempts: prev.totalWrongAttempts + 1,
+    }));
+  }, []);
+
   const handleAnswerWinner = useCallback(
     (winnerPlayerId: string, answer: string, playerName: string) => {
-      if (!isRoundPlaying) return;
+      if (!isRoundPlayingRef.current) return;
       if (roundTimerRef.current) clearInterval(roundTimerRef.current);
 
+      isRoundPlayingRef.current = false;
       setIsRoundPlaying(false);
 
+      const curP1 = player1Ref.current;
+      const curP2 = player2Ref.current;
+      const curProg = progressionRef.current;
+      const curTime = timeRemainingRef.current;
       const activeMinigame = minigameTypeRef.current;
-      const elapsedSec = Math.max(1, getRoundDurationSeconds(activeMinigame) - timeRemaining);
+      const elapsedSec = Math.max(1, getRoundDurationSeconds(activeMinigame) - curTime);
       const exactElapsedSec = (Date.now() - roundStartedAtRef.current) / 1000;
-      const isClutch = timeRemaining <= getClutchThresholdSeconds(activeMinigame);
+      const isClutch = curTime <= getClutchThresholdSeconds(activeMinigame);
 
-      const winner = winnerPlayerId === player1.id ? player1 : player2;
+      const winner = winnerPlayerId === curP1.id ? curP1 : curP2;
       setRoundWinnerPlayer(winner);
       setAcceptedAnswerText(playerName || answer);
       setShowResultSheet(true);
 
       let matchFinished = false;
 
-      if (winnerPlayerId === player1.id) {
+      if (winnerPlayerId === curP1.id) {
         if (exactElapsedSec < FAST_COMBO_THRESHOLD_SEC) {
           const nextCombo = fastComboStreakRef.current + 1;
           fastComboStreakRef.current = nextCombo;
@@ -2459,19 +2489,20 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
           notifyUnlockedAchievements(achRes.newlyUnlocked);
           setV3QuestsState((prev) => recordV3QuestPlayerGuess(guessedPlayer, prev));
         }
-        const wasTrailing = player1.score < player2.score;
-        const newScore = player1.score + 1;
+        const wasTrailing = curP1.score < curP2.score;
+        const newScore = curP1.score + 1;
+        player1Ref.current = { ...curP1, score: newScore };
         setPlayer1((p) => ({ ...p, score: newScore }));
         if (newScore >= 3) matchFinished = true;
 
         const has2x =
-          Boolean(progression.permanentMultiplier2x) ||
-          (progression.multiplier2xMatches ?? 0) > 0;
+          Boolean(curProg.permanentMultiplier2x) ||
+          (curProg.multiplier2xMatches ?? 0) > 0;
         const roundCoins = has2x ? 50 : 25;
         const roundPoints = mode === 'bot' ? 0 : has2x ? 60 : 30;
         setLastRoundReward({ coins: roundCoins, points: roundPoints });
         setRoundDoubledByAd(false);
-        const withBonus = grantExtraRewards(progression, roundCoins, roundPoints);
+        const withBonus = grantExtraRewards(curProg, roundCoins, roundPoints);
         persistProgression(withBonus);
 
         setPlayer1Stats((prev) => {
@@ -2495,8 +2526,9 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
         setFastComboStreak(0);
         setLastRoundReward(null);
         setRoundDoubledByAd(false);
-        const wasTrailing = player2.score < player1.score;
-        const newScore = player2.score + 1;
+        const wasTrailing = curP2.score < curP1.score;
+        const newScore = curP2.score + 1;
+        player2Ref.current = { ...curP2, score: newScore };
         setPlayer2((p) => ({ ...p, score: newScore }));
         if (newScore >= 3) matchFinished = true;
 
@@ -2519,9 +2551,9 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
       }
 
       const nextP1Score =
-        winnerPlayerId === player1.id ? player1.score + 1 : player1.score;
+        winnerPlayerId === curP1.id ? curP1.score + 1 : curP1.score;
       const nextP2Score =
-        winnerPlayerId === player1.id ? player2.score : player2.score + 1;
+        winnerPlayerId === curP1.id ? curP2.score : curP2.score + 1;
 
       setMatchHighlights((prev) => [
         ...prev,
@@ -2549,7 +2581,7 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
         advanceNextRound(shouldFinish);
       }, 3500);
     },
-    [isRoundPlaying, player1, player2, timeRemaining, progression, persistProgression]
+    [mode, notifyUnlockedAchievements, persistProgression, updateAchievementsState]
   );
 
   // Solo Bot XOX move / turn / win handler
@@ -3207,9 +3239,10 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
     return { ok: res.ok, reason: res.reason };
   };
 
-  const handleOpenStore = (category: StoreCategory = 'featured') => {
-    setStoreCategory(category);
-    setShowStoreModal(true);
+  const handleOpenStore = (_category: StoreCategory = 'featured') => {
+    setShowStoreModal(false);
+    setScreen('lobby');
+    setActiveTab('profile');
   };
 
   const handleStartOpenTournament = (mg: MinigameType) => {
@@ -4388,7 +4421,7 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
     <main
       data-testid="app-container"
       data-state={screen}
-      className="relative min-h-[100dvh] w-full flex flex-col bg-[#101C16] font-sans selection:bg-[#3C8052] selection:text-[#F2ECD9] overflow-x-clip text-[#F2ECD9]"
+      className="relative min-h-[100dvh] w-full flex flex-col bg-[#0B1220] font-sans selection:bg-[#168A52] selection:text-[#F5F3EB] overflow-x-clip text-[#F5F3EB]"
     >
       {/* Screen 0: Animated Intro / Splash Screen */}
       {screen === 'intro' && (
@@ -4427,19 +4460,15 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
                 onClearOnlineError={() => setOnlineError(null)}
               />
             ) : (
-              <div className="relative min-h-[100dvh] w-full flex flex-col bg-[#101C16] pitch-turf-backdrop text-[#F2ECD9] overflow-x-clip">
+              <div className="relative min-h-[100dvh] w-full flex flex-col bg-[#0B1220] pitch-turf-backdrop text-[#F5F3EB] overflow-x-clip">
                 {/* Shared Hub Top Header for Secondary Tabs (No Store Button — Store is exclusively in Profile) */}
-                <header className="sticky top-0 z-40 isolate w-full bg-[#183022] border-b border-[#D9B76B]/25 pt-[max(0.75rem,calc(env(safe-area-inset-top)+0.45rem))] pb-2">
+                <header className="sticky top-0 z-40 isolate w-full bg-[#16212E] border-b border-white/10 pt-[max(0.75rem,calc(env(safe-area-inset-top)+0.45rem))] pb-2">
                   <div className="w-full max-w-xl mx-auto px-3 sm:px-4 flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2.5 min-w-0">
-                      <img
-                        src={`${import.meta.env.BASE_URL}logo.png`}
-                        alt="3-2-1 Futbol Orijinal Logosu"
-                        className="w-8 h-8 rounded-xl object-cover border border-[#D9B76B]/60 shrink-0 bg-[#101C16]"
-                      />
+                      <GameLogo size="xs" />
                       <span
                         data-testid="tab-header-title"
-                        className="font-display font-extrabold tracking-wide text-[#F2ECD9] text-lg sm:text-xl whitespace-nowrap shrink-0 uppercase leading-none"
+                        className="font-display font-extrabold tracking-wide text-[#F5F3EB] text-lg sm:text-xl whitespace-nowrap shrink-0 uppercase leading-none"
                       >
                         {tabHeaderTitle[activeTab]}
                       </span>
@@ -4447,7 +4476,7 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
 
                     <div className="flex items-center gap-1.5 shrink-0">
                       <div
-                        className="flex items-center gap-1 min-h-[38px] px-2.5 py-1.5 rounded-xl bg-[#101C16] border border-[#D9B76B]/45 text-xs font-black text-[#D9B76B] font-mono whitespace-nowrap shrink-0"
+                        className="flex items-center gap-1 min-h-[38px] px-2.5 py-1.5 rounded-xl bg-[#0B1220] border border-[#E5B94F]/45 text-xs font-black text-[#E5B94F] font-mono whitespace-nowrap shrink-0"
                         title="Coin Bakiyesi"
                       >
                         <CoinIcon size="xs" />
@@ -4458,7 +4487,7 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
                         type="button"
                         data-testid="header-settings-btn"
                         onClick={() => setShowSettingsModal(true)}
-                        className="min-w-[38px] min-h-[38px] p-2 rounded-xl bg-[#101C16] hover:bg-[#244632] border border-[#F2ECD9]/15 text-[#D9B76B] flex items-center justify-center cursor-pointer touch-manipulation"
+                        className="min-w-[38px] min-h-[38px] p-2 rounded-xl bg-[#0B1220] hover:bg-[#1E2D3D] border border-white/10 text-[#E5B94F] flex items-center justify-center cursor-pointer touch-manipulation"
                         title={t('settings')}
                         aria-label={t('settings')}
                       >
@@ -4469,7 +4498,7 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
                         type="button"
                         data-testid="header-exit-btn"
                         onClick={handlePromptExitApp}
-                        className="flex min-w-[38px] min-h-[38px] p-2 rounded-xl bg-[#101C16] hover:bg-red-950/60 border border-[#F2ECD9]/15 hover:border-[#EF4444] text-[#A8B6A5] hover:text-[#FCA5A5] items-center justify-center cursor-pointer touch-manipulation"
+                        className="flex min-w-[38px] min-h-[38px] p-2 rounded-xl bg-[#0B1220] hover:bg-[#DC2626]/20 border border-white/10 hover:border-[#DC2626] text-[#9FB0C4] hover:text-[#FCA5A5] items-center justify-center cursor-pointer touch-manipulation"
                         title="Oyundan Çıkış"
                         aria-label="Oyundan Çıkış"
                       >
@@ -4548,6 +4577,9 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
                         syncServerLeaderboard(progression, { ...player1, avatar: av });
                       }}
                       onOpenStore={handleOpenStore}
+                      onPurchaseStoreItem={handlePurchaseStoreItemAction}
+                      onEquipItem={handleEquipStoreItemAction}
+                      onRestorePurchases={handleRestorePurchases}
                       onDeleteAccount={handleDeleteAccount}
                       onExitApp={handlePromptExitApp}
                     />
@@ -4644,13 +4676,7 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
                 roundSeed={`${matchInstanceIdRef.current}-${currentRoundIndex}-${currentRound.pairing.id}`}
                 onSpendCoinsForJoker={handleSpendCoinsForJoker}
                 onAnswerWinner={handleAnswerWinner}
-                onBotWrongAttempt={() =>
-                  setPlayer2Stats((prev) => ({
-                    ...prev,
-                    currentStreak: 0,
-                    totalWrongAttempts: prev.totalWrongAttempts + 1,
-                  }))
-                }
+                onBotWrongAttempt={handleBotWrongAttempt}
                 onBotStatusChange={setBotStatus}
                 onSubmitOnlineAnswer={(ans) => handleSubmitOnlineAnswer(ans)}
                 serverWrongFeedback={serverWrongFeedback}
@@ -4675,13 +4701,7 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
                 roundSeed={`${matchInstanceIdRef.current}-${currentRoundIndex}-${currentRound.minigameType}-${currentRound.silhouette?.id || currentRound.career?.id || currentRound.countryClub?.id || currentRound.xoxBoard?.id || 'r'}`}
                 onSpendCoinsForJoker={handleSpendCoinsForJoker}
                 onAnswerWinner={handleAnswerWinner}
-                onBotWrongAttempt={() =>
-                  setPlayer2Stats((prev) => ({
-                    ...prev,
-                    currentStreak: 0,
-                    totalWrongAttempts: prev.totalWrongAttempts + 1,
-                  }))
-                }
+                onBotWrongAttempt={handleBotWrongAttempt}
                 onBotStatusChange={setBotStatus}
                 onSubmitOnlineAnswer={handleSubmitOnlineAnswer}
                 serverWrongFeedback={serverWrongFeedback}

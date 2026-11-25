@@ -98,9 +98,9 @@ export const PublicProfileModal: React.FC<PublicProfileModalProps> = ({
       role="dialog"
       aria-modal="true"
       aria-label={`${profile.name} profil ve istatistik incelemesi`}
-      className="fixed inset-0 z-[70] overflow-y-auto p-3 sm:p-4 bg-slate-950/94 flex justify-center items-start sm:items-center animate-screen-fade"
+      className="fixed inset-0 z-[70] overflow-y-auto p-3 sm:p-4 bg-[#0B1220]/94 flex justify-center items-start sm:items-center animate-screen-fade"
     >
-      <div className="relative w-full max-w-lg bg-gradient-to-b from-slate-900 via-slate-900 to-slate-950 border border-emerald-500/40 rounded-3xl p-4 sm:p-6 shadow-2xl text-left my-4 sm:my-auto animate-screen-slide-up">
+      <div className="relative w-full max-w-lg bg-[#16212E] border border-[#168A52]/40 rounded-3xl p-4 sm:p-6 shadow-2xl text-left my-4 sm:my-auto animate-screen-slide-up">
         {/* Top Bar: Label & Close */}
         <div className="flex items-center justify-between gap-2 pb-3 border-b border-slate-800/80">
           <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-400/35 text-emerald-300 text-[10px] font-black uppercase tracking-wider">

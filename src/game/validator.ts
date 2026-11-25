@@ -1,6 +1,6 @@
 import { MATCH_PAIRINGS, PLAYERS, CLUBS } from './database';
 import { Player, MatchPairing } from './types';
-import { selectDiverseItems } from './questionHistory';
+import { canonicalTwoClubsKey, selectDiverseItems } from './questionHistory';
 
 /**
  * Normalizes text for football player recognition:
@@ -163,7 +163,12 @@ export function getRandomPairings(
     MATCH_PAIRINGS,
     Math.min(count, MATCH_PAIRINGS.length),
     excludeIds,
-    (p) => p.id
+    (p) => p.id,
+    Math.random,
+    {
+      getCanonicalKey: (p) => canonicalTwoClubsKey(p.club1Id, p.club2Id),
+      getClubKeys: (p) => [p.club1Id, p.club2Id],
+    }
   );
   return items;
 }

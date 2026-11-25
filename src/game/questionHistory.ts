@@ -1,6 +1,7 @@
 import { MinigameRoundPayload, MinigameType } from './types';
 
 const STORAGE_KEY = 'football_seen_question_ids_v1';
+export const MIN_RECENT_QUESTION_WINDOW = 60;
 
 export type SeenQuestionMap = Partial<Record<MinigameType, string[]>>;
 
@@ -11,6 +12,10 @@ export function shuffleFisherYates<T>(items: readonly T[], rng: () => number = M
     [copy[i], copy[j]] = [copy[j], copy[i]];
   }
   return copy;
+}
+
+export function canonicalTwoClubsKey(club1Id: string, club2Id: string): string {
+  return club1Id < club2Id ? `pair:${club1Id}__${club2Id}` : `pair:${club2Id}__${club1Id}`;
 }
 
 export function getRoundItemId(round: MinigameRoundPayload): string {
@@ -28,38 +33,117 @@ export function getRoundItemId(round: MinigameRoundPayload): string {
   }
 }
 
+export function getRoundCanonicalKey(round: MinigameRoundPayload): string {
+  if (round.minigameType === 'two_clubs' && round.pairing) {
+    return canonicalTwoClubsKey(round.pairing.club1Id, round.pairing.club2Id);
+  }
+  return getRoundItemId(round);
+}
+
+export interface SelectDiverseOptions<T> {
+  getCanonicalKey?: (item: T) => string;
+  getClubKeys?: (item: T) => readonly string[];
+}
+
+function reorderAvoidConsecutiveClubs<T>(
+  candidates: T[],
+  count: number,
+  getId: (item: T) => string,
+  options?: SelectDiverseOptions<T>
+): T[] {
+  if (!options?.getClubKeys && !options?.getCanonicalKey) {
+    return candidates.slice(0, count);
+  }
+
+  const remaining = [...candidates];
+  const chosen: T[] = [];
+  const usedCanonical = new Set<string>();
+  let prevClubs = new Set<string>();
+
+  while (chosen.length < count && remaining.length > 0) {
+    let pickIdx = remaining.findIndex((item) => {
+      const canon = options.getCanonicalKey ? options.getCanonicalKey(item) : getId(item);
+      if (usedCanonical.has(canon)) return false;
+      if (!options.getClubKeys) return true;
+      const clubs = options.getClubKeys(item);
+      return clubs.every((c) => !prevClubs.has(c));
+    });
+
+    if (pickIdx < 0) {
+      pickIdx = remaining.findIndex((item) => {
+        const canon = options.getCanonicalKey ? options.getCanonicalKey(item) : getId(item);
+        return !usedCanonical.has(canon);
+      });
+    }
+
+    if (pickIdx < 0) {
+      pickIdx = 0;
+    }
+
+    const [picked] = remaining.splice(pickIdx, 1);
+    chosen.push(picked);
+    const canon = options.getCanonicalKey ? options.getCanonicalKey(picked) : getId(picked);
+    usedCanonical.add(canon);
+    prevClubs = new Set(options.getClubKeys ? options.getClubKeys(picked) : []);
+  }
+
+  return chosen;
+}
+
 /**
  * Selects `count` items prioritizing unseen items first (Fisher-Yates shuffled),
- * then wrapping cleanly only once the full pool has been exhausted.
+ * deduplicating symmetric canonical keys (e.g., A-B === B-A) and spreading clubs across consecutive questions.
  */
 export function selectDiverseItems<T>(
   pool: readonly T[],
   count: number,
   excludeIds: ReadonlySet<string> | readonly string[],
   getId: (item: T) => string,
-  rng: () => number = Math.random
+  rng: () => number = Math.random,
+  options?: SelectDiverseOptions<T>
 ): { items: T[]; cycledReset: boolean } {
   if (pool.length === 0) return { items: [], cycledReset: false };
 
   const seenSet = excludeIds instanceof Set ? excludeIds : new Set(excludeIds);
-  const unseen = shuffleFisherYates(
-    pool.filter((item) => !seenSet.has(getId(item))),
-    rng
+  const getKey = (item: T) => getId(item);
+  const getCanon = (item: T) => (options?.getCanonicalKey ? options.getCanonicalKey(item) : getId(item));
+
+  // Deduplicate canonical keys inside pool first after shuffling so randomized symmetric duplicates collapse
+  const shuffledPool = shuffleFisherYates(pool, rng);
+  const uniqueByCanon: T[] = [];
+  const seenCanonInPool = new Set<string>();
+  for (const item of shuffledPool) {
+    const cKey = getCanon(item);
+    if (!seenCanonInPool.has(cKey)) {
+      seenCanonInPool.add(cKey);
+      uniqueByCanon.push(item);
+    }
+  }
+
+  const unseen = uniqueByCanon.filter(
+    (item) => !seenSet.has(getKey(item)) && !seenSet.has(getCanon(item))
   );
 
   if (unseen.length >= count) {
-    return { items: unseen.slice(0, count), cycledReset: false };
+    return {
+      items: reorderAvoidConsecutiveClubs(unseen, count, getKey, options),
+      cycledReset: false,
+    };
   }
 
-  // Not enough unseen left: use all remaining unseen first, then reshuffle seen pool
-  // excluding whatever was already put in `unseen` so the same item never repeats inside a match.
-  const pickedIds = new Set(unseen.map(getId));
-  const seenRemainder = shuffleFisherYates(
-    pool.filter((item) => !pickedIds.has(getId(item))),
-    rng
-  );
+  // Not enough unseen left: use all remaining unseen first, then pull oldest seen pool entries
+  // excluding whatever was already chosen in `unseen`.
+  const pickedCanons = new Set(unseen.map(getCanon));
+  const seenRemainder = uniqueByCanon.filter((item) => !pickedCanons.has(getCanon(item)));
 
   const combined = [...unseen, ...seenRemainder];
+  if (combined.length >= count) {
+    return {
+      items: reorderAvoidConsecutiveClubs(combined, count, getKey, options),
+      cycledReset: true,
+    };
+  }
+
   const result: T[] = [];
   for (let i = 0; i < count; i++) {
     result.push(combined[i % combined.length]);
@@ -94,14 +178,25 @@ export function recordSeenQuestions(
   try {
     const map = loadSeenQuestionMap();
     const prev = Array.isArray(map[minigameType]) ? map[minigameType]! : [];
-    const mergedSet = new Set([...prev, ...ids.filter(Boolean)]);
+    const cleanedNew = ids.filter(Boolean);
+    const merged: string[] = [];
+    const seen = new Set<string>();
 
-    // Once the entire pool has been seen, reset history keeping only the current match's IDs
-    // so the very next match never repeats what the player just saw.
+    // Preserve recency order so the trailing `keepRecentCount` entries stay protected
+    for (const id of [...prev, ...cleanedNew]) {
+      if (seen.has(id)) {
+        const oldIdx = merged.indexOf(id);
+        if (oldIdx >= 0) merged.splice(oldIdx, 1);
+      }
+      seen.add(id);
+      merged.push(id);
+    }
+
+    const keepRecentCount = Math.min(Math.max(MIN_RECENT_QUESTION_WINDOW, cleanedNew.length), Math.max(0, poolSize - 1));
     const nextList =
-      mergedSet.size >= poolSize
-        ? Array.from(new Set(ids.filter(Boolean)))
-        : Array.from(mergedSet);
+      merged.length >= poolSize
+        ? merged.slice(-Math.max(cleanedNew.length, keepRecentCount))
+        : merged;
 
     map[minigameType] = nextList;
     localStorage.setItem(STORAGE_KEY, JSON.stringify(map));

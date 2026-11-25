@@ -76,6 +76,21 @@ export const SinglePlayerView: React.FC<SinglePlayerViewProps> = ({
   const [botFeedbackToast, setBotFeedbackToast] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const botAttemptedRoundRef = useRef<string | null>(null);
+  const pairingRef = useRef(pairing);
+  const player2Ref = useRef(player2);
+  const timeRemainingRef = useRef(timeRemaining);
+  const disabledRef = useRef(disabled);
+  const onAnswerWinnerRef = useRef(onAnswerWinner);
+  const onBotWrongAttemptRef = useRef(onBotWrongAttempt);
+  const onBotStatusChangeRef = useRef(onBotStatusChange);
+
+  pairingRef.current = pairing;
+  player2Ref.current = player2;
+  timeRemainingRef.current = timeRemaining;
+  disabledRef.current = disabled;
+  onAnswerWinnerRef.current = onAnswerWinner;
+  onBotWrongAttemptRef.current = onBotWrongAttempt;
+  onBotStatusChangeRef.current = onBotStatusChange;
 
   // Clear round-scoped errors and focus input whenever new round starts
   useEffect(() => {
@@ -109,62 +124,54 @@ export const SinglePlayerView: React.FC<SinglePlayerViewProps> = ({
     return () => clearTimeout(t);
   }, [isOnlineMatch, opponentMissedPulse]);
 
-  // Bot logic (only in offline bot mode): active every round, 1 attempt per round, thinking status
+  // Bot logic (only in offline bot mode): active every round, 1 attempt per round, stable timer across 1s ticks
   useEffect(() => {
+    const activePairing = pairingRef.current;
     if (!isBotMatch || isOnlineMatch || disabled) {
-      onBotStatusChange?.('idle');
+      onBotStatusChangeRef.current?.('idle');
       return;
     }
 
-    const validPlayers = getPlayersForPairing(pairing);
+    const validPlayers = getPlayersForPairing(activePairing);
     if (validPlayers.length === 0) {
-      onBotStatusChange?.('idle');
+      onBotStatusChangeRef.current?.('idle');
       return;
     }
 
-    if (botAttemptedRoundRef.current === pairing.id) {
-      onBotStatusChange?.('answered');
+    if (botAttemptedRoundRef.current === activePairing.id) {
+      onBotStatusChangeRef.current?.('answered');
       return;
     }
 
-    onBotStatusChange?.('thinking');
-    const plan = getBotRoundPlan(botDifficulty, 'two_clubs');
-    const maxRemainingMs = Math.max(900, timeRemaining * 1000);
+    onBotStatusChangeRef.current?.('thinking');
+    const plan = getBotRoundPlan(botDifficulty, 'two_clubs', validPlayers.length);
+    const maxRemainingMs = Math.max(900, timeRemainingRef.current * 1000);
     const delay = computeHumanizedBotDelayMs(plan, Math.random, maxRemainingMs);
 
     const botTimer = setTimeout(() => {
-      if (disabled || botAttemptedRoundRef.current === pairing.id) return;
-      botAttemptedRoundRef.current = pairing.id;
-      onBotStatusChange?.('answered');
+      const latestPairing = pairingRef.current;
+      const latestBot = player2Ref.current;
+      if (disabledRef.current || botAttemptedRoundRef.current === latestPairing.id) return;
+      botAttemptedRoundRef.current = latestPairing.id;
+      onBotStatusChangeRef.current?.('answered');
 
       const willKnow = Math.random() < plan.accuracy;
       if (willKnow) {
         const chosen = pickBotValidPlayer(validPlayers);
         if (chosen) {
-          onAnswerWinner(player2.id, chosen.name, chosen.name);
+          onAnswerWinnerRef.current(latestBot.id, chosen.name, chosen.name);
         }
       } else {
-        const wrongPlayer = pickBotWrongPlayer(pairing.validPlayerIds);
+        const wrongPlayer = pickBotWrongPlayer(latestPairing.validPlayerIds);
         const wrongName = wrongPlayer?.name || 'Yanlış Tahmin';
-        onBotWrongAttempt?.(wrongName);
-        setBotFeedbackToast(`${player2.name} yanlış tahmin yaptı!`);
+        onBotWrongAttemptRef.current?.(wrongName);
+        setBotFeedbackToast(`${latestBot.name} yanlış tahmin yaptı!`);
         setTimeout(() => setBotFeedbackToast(null), 2200);
       }
     }, delay);
 
     return () => clearTimeout(botTimer);
-  }, [
-    pairing.id,
-    disabled,
-    isBotMatch,
-    isOnlineMatch,
-    botDifficulty,
-    player2.id,
-    player2.name,
-    onAnswerWinner,
-    onBotWrongAttempt,
-    onBotStatusChange,
-  ]);
+  }, [pairing.id, disabled, isBotMatch, isOnlineMatch, botDifficulty]);
 
   const autocompletePlayers = useMemo(() => {
     if (disabled) return [];
@@ -216,31 +223,31 @@ export const SinglePlayerView: React.FC<SinglePlayerViewProps> = ({
         className="w-full max-w-xl flex items-stretch justify-center gap-2 sm:gap-6 my-auto shrink min-h-0 animate-card-pop"
       >
         {/* Club 1 */}
-        <div className="flex-1 min-w-0 flex flex-col items-center justify-center text-center p-2 sm:p-4 rounded-2xl bg-slate-900/95 border border-slate-700/80 shadow-xl">
+        <div className="flex-1 min-w-0 flex flex-col items-center justify-center text-center p-2 sm:p-4 rounded-2xl bg-[#16212E] border border-white/10 shadow-xl">
           <ClubBadge club={club1} size="lg" />
-          <h3 className="mt-1.5 sm:mt-2.5 font-black text-xs sm:text-base text-white text-center line-clamp-2 leading-tight w-full break-words">
+          <h3 className="mt-1.5 sm:mt-2.5 font-display font-black text-xs sm:text-base text-[#F5F3EB] text-center line-clamp-2 leading-tight w-full break-words uppercase tracking-wide">
             {club1.name}
           </h3>
-          <span className="text-[10px] sm:text-[11px] text-slate-400 font-medium truncate max-w-full mt-0.5">
+          <span className="text-[10px] sm:text-[11px] text-[#9FB0C4] font-medium truncate max-w-full mt-0.5">
             {club1.country} • {club1.stadium}
           </span>
         </div>
 
         {/* Link / Plus Badge */}
         <div className="flex flex-col items-center justify-center shrink-0">
-          <div className="w-9 h-9 sm:w-11 sm:h-11 rounded-full bg-emerald-500 text-slate-950 font-black flex items-center justify-center shadow-lg shadow-emerald-500/30 text-[10px] sm:text-xs tracking-tighter">
+          <div className="w-9 h-9 sm:w-11 sm:h-11 rounded-full bg-[#168A52] text-white font-black flex items-center justify-center shadow-lg border border-[#22C55E]/40 text-[10px] sm:text-xs tracking-tighter">
             ORTAK
           </div>
-          <span className="text-[9px] sm:text-[10px] text-emerald-400 font-bold uppercase mt-1">OYUNCU</span>
+          <span className="text-[9px] sm:text-[10px] text-[#22C55E] font-bold uppercase mt-1">OYUNCU</span>
         </div>
 
         {/* Club 2 */}
-        <div className="flex-1 min-w-0 flex flex-col items-center justify-center text-center p-2 sm:p-4 rounded-2xl bg-slate-900/95 border border-slate-700/80 shadow-xl">
+        <div className="flex-1 min-w-0 flex flex-col items-center justify-center text-center p-2 sm:p-4 rounded-2xl bg-[#16212E] border border-white/10 shadow-xl">
           <ClubBadge club={club2} size="lg" />
-          <h3 className="mt-1.5 sm:mt-2.5 font-black text-xs sm:text-base text-white text-center line-clamp-2 leading-tight w-full break-words">
+          <h3 className="mt-1.5 sm:mt-2.5 font-display font-black text-xs sm:text-base text-[#F5F3EB] text-center line-clamp-2 leading-tight w-full break-words uppercase tracking-wide">
             {club2.name}
           </h3>
-          <span className="text-[10px] sm:text-[11px] text-slate-400 font-medium truncate max-w-full mt-0.5">
+          <span className="text-[10px] sm:text-[11px] text-[#9FB0C4] font-medium truncate max-w-full mt-0.5">
             {club2.country} • {club2.stadium}
           </span>
         </div>

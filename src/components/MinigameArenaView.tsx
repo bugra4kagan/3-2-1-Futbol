@@ -243,109 +243,135 @@ export const MinigameArenaView: React.FC<MinigameArenaViewProps> = ({
     return () => clearTimeout(t);
   }, [isOnlineMatch, opponentMissedPulse]);
 
-  // Bot AI for silhouette / career / country_club (first-to-answer, max 1 attempt per round)
+  // Bot AI for silhouette / career / country_club (first-to-answer, max 1 attempt per round, stable across 1s ticks)
+  const botRoundRef = useRef(round);
+  const botXoxStateRef = useRef(xoxState);
+  const botTimeRemainingRef = useRef(timeRemaining);
+  const botDisabledRef = useRef(disabled);
+  const botP1Ref = useRef(player1);
+  const botP2Ref = useRef(player2);
+  const botOnWinnerRef = useRef(onAnswerWinner);
+  const botOnWrongRef = useRef(onBotWrongAttempt);
+  const botOnStatusRef = useRef(onBotStatusChange);
+  const botOnXoxMoveRef = useRef(onSoloXoxMove);
+
+  botRoundRef.current = round;
+  botXoxStateRef.current = xoxState;
+  botTimeRemainingRef.current = timeRemaining;
+  botDisabledRef.current = disabled;
+  botP1Ref.current = player1;
+  botP2Ref.current = player2;
+  botOnWinnerRef.current = onAnswerWinner;
+  botOnWrongRef.current = onBotWrongAttempt;
+  botOnStatusRef.current = onBotStatusChange;
+  botOnXoxMoveRef.current = onSoloXoxMove;
+
   useEffect(() => {
+    const activeRound = botRoundRef.current;
     if (!isBotMatch || isOnlineMatch || disabled || isXox) {
-      if (!isXox) onBotStatusChange?.('idle');
+      if (!isXox) botOnStatusRef.current?.('idle');
       return;
     }
 
-    const validIds = getRoundValidPlayerIds(round);
+    const validIds = getRoundValidPlayerIds(activeRound);
     const validPlayers = validIds.map((id) => PLAYERS[id]).filter(Boolean);
     if (validPlayers.length === 0) {
-      onBotStatusChange?.('idle');
+      botOnStatusRef.current?.('idle');
       return;
     }
 
     if (botAttemptedRoundKeyRef.current === roundKey) {
-      onBotStatusChange?.('answered');
+      botOnStatusRef.current?.('answered');
       return;
     }
 
-    onBotStatusChange?.('thinking');
-    const plan = getBotRoundPlan(botDifficulty, round.minigameType);
-    const maxRemainingMs = Math.max(900, timeRemaining * 1000);
+    botOnStatusRef.current?.('thinking');
+    const plan = getBotRoundPlan(botDifficulty, activeRound.minigameType, validPlayers.length);
+    const maxRemainingMs = Math.max(900, botTimeRemainingRef.current * 1000);
     const delay = computeHumanizedBotDelayMs(plan, Math.random, maxRemainingMs);
 
     const botTimer = setTimeout(() => {
-      if (disabled || botAttemptedRoundKeyRef.current === roundKey) return;
+      const latestBot = botP2Ref.current;
+      if (botDisabledRef.current || botAttemptedRoundKeyRef.current === roundKey) return;
       botAttemptedRoundKeyRef.current = roundKey;
-      onBotStatusChange?.('answered');
+      botOnStatusRef.current?.('answered');
 
       if (Math.random() < plan.accuracy) {
         const chosen = pickBotValidPlayer(validPlayers);
         if (chosen) {
-          onAnswerWinner(player2.id, chosen.name, chosen.name);
+          botOnWinnerRef.current(latestBot.id, chosen.name, chosen.name);
         }
       } else {
         const wrongPlayer = pickBotWrongPlayer(validIds);
         const wrongName = wrongPlayer?.name || 'Yanlış Tahmin';
-        onBotWrongAttempt?.(wrongName);
-        setBotFeedbackToast(`${player2.name} yanlış tahmin yaptı!`);
+        botOnWrongRef.current?.(wrongName);
+        setBotFeedbackToast(`${latestBot.name} yanlış tahmin yaptı!`);
         setTimeout(() => setBotFeedbackToast(null), 2200);
       }
     }, delay);
 
     return () => clearTimeout(botTimer);
-  }, [
-    roundKey,
-    round,
-    disabled,
-    isBotMatch,
-    isOnlineMatch,
-    isXox,
-    botDifficulty,
-    player2.id,
-    player2.name,
-    onAnswerWinner,
-    onBotWrongAttempt,
-    onBotStatusChange,
-  ]);
+  }, [roundKey, disabled, isBotMatch, isOnlineMatch, isXox, botDifficulty]);
 
-  // Bot AI for Solo XOX turn (Tactical win / block / center / corner)
+  // Bot AI for Solo XOX turn (Tactical win / block / center / corner, stable across 1s ticks)
+  const xoxTurnOwner = xoxState?.currentTurnPlayerId ?? null;
+  const xoxMoveCount = xoxState
+    ? xoxState.board.flat().filter((cell) => cell !== null).length
+    : 0;
+
   useEffect(() => {
+    const activeRound = botRoundRef.current;
+    const activeXoxState = botXoxStateRef.current;
+    const latestP1 = botP1Ref.current;
+    const latestP2 = botP2Ref.current;
     if (
       !isBotMatch ||
       isOnlineMatch ||
       disabled ||
       !isXox ||
-      !xoxState ||
-      !round.xoxBoard ||
-      !onSoloXoxMove
+      !activeXoxState ||
+      !activeRound.xoxBoard ||
+      !botOnXoxMoveRef.current
     ) {
-      if (isXox) onBotStatusChange?.('idle');
+      if (isXox) botOnStatusRef.current?.('idle');
       return;
     }
-    if (xoxState.currentTurnPlayerId !== player2.id) {
-      onBotStatusChange?.('idle');
+    if (activeXoxState.currentTurnPlayerId !== latestP2.id) {
+      botOnStatusRef.current?.('idle');
       return;
     }
 
-    onBotStatusChange?.('thinking');
+    botOnStatusRef.current?.('thinking');
     const { delayMs, missRate } = getBotXoxTurnConfig(botDifficulty);
 
     const t = setTimeout(() => {
-      if (disabled) return;
-      onBotStatusChange?.('answered');
+      const curState = botXoxStateRef.current;
+      const curRound = botRoundRef.current;
+      const p1 = botP1Ref.current;
+      const p2 = botP2Ref.current;
+      const moveCb = botOnXoxMoveRef.current;
+      if (botDisabledRef.current || !curState || !moveCb) return;
+      if (curState.currentTurnPlayerId !== p2.id) return;
+      botOnStatusRef.current?.('answered');
 
       const chosenCell = chooseBotXoxCell(
-        xoxState.board,
-        player2.id,
-        player1.id,
-        round,
+        curState.board,
+        p2.id,
+        p1.id,
+        curRound,
         botDifficulty
       );
       if (!chosenCell) return;
 
-      const validIds = getRoundValidPlayerIds(round, chosenCell);
+      const validIds = getRoundValidPlayerIds(curRound, chosenCell);
 
       if (Math.random() < missRate) {
         const wrongPlayer = pickBotWrongPlayer(validIds);
-        onBotWrongAttempt?.(wrongPlayer?.name || '');
-        onSoloXoxMove(
+        botOnWrongRef.current?.(wrongPlayer?.name || '');
+        moveCb(
           {
-            ...xoxState,
-            currentTurnPlayerId: player1.id,
+            ...curState,
+            currentTurnPlayerId: p1.id,
             turnTimeRemaining: 15,
           },
           null,
@@ -360,9 +386,9 @@ export const MinigameArenaView: React.FC<MinigameArenaViewProps> = ({
       const chosenPlayer = pickBotValidPlayer(validPlayers);
       const playerName = chosenPlayer?.name || PLAYERS[validIds[0]]?.name || 'Bilinmeyen';
 
-      const nextBoard = xoxState.board.map((row) => [...row]);
+      const nextBoard = curState.board.map((row) => [...row]);
       nextBoard[chosenCell.row][chosenCell.col] = {
-        ownerId: player2.id,
+        ownerId: p2.id,
         symbol: 'O',
         playerName,
       };
@@ -370,28 +396,17 @@ export const MinigameArenaView: React.FC<MinigameArenaViewProps> = ({
       const winCheck = checkXoxBoardWinner(nextBoard);
       const nextState: XoxRuntimeState = {
         board: nextBoard,
-        currentTurnPlayerId: player1.id,
+        currentTurnPlayerId: p1.id,
         turnTimeRemaining: 15,
         winningCells: winCheck.winningCells,
       };
 
       const isEnded = Boolean(winCheck.winnerId) || winCheck.isBoardFull;
-      onSoloXoxMove(nextState, winCheck.winnerId, isEnded, playerName, true);
+      moveCb(nextState, winCheck.winnerId, isEnded, playerName, true);
     }, delayMs);
 
     return () => clearTimeout(t);
-  }, [
-    isBotMatch,
-    isOnlineMatch,
-    disabled,
-    isXox,
-    xoxState,
-    round,
-    botDifficulty,
-    player1.id,
-    player2.id,
-    onSoloXoxMove,
-  ]);
+  }, [roundKey, isBotMatch, isOnlineMatch, disabled, isXox, xoxTurnOwner, xoxMoveCount, botDifficulty]);
 
   const guessedPlayerIds = useMemo(
     () => silhouetteGuesses.map((g) => g.guessedPlayer.id),

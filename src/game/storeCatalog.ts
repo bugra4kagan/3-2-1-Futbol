@@ -206,17 +206,72 @@ export const STORE_ITEMS: ShopGiftItem[] = [
     value: 'crest_neon_dragon',
   },
 
-  // ── 4. Altın / Neon Oyuncu Kartı Çerçeveleri ──
+  // ── 4. Profil Çerçeveleri (Gümüş 500 → Efsane 5.000 Coin) ──
+  {
+    id: 'frame_silver',
+    title: 'Gümüş Çerçeve',
+    description: 'Sade ve şık gümüş kenarlıklı profil çerçevesi',
+    costCoins: 500,
+    priceTry: 14.99,
+    icon: '🪙',
+    category: 'crests_frames',
+    type: 'frame',
+    value: 'silver',
+  },
+  {
+    id: 'frame_classic',
+    title: 'Klasik Çerçeve',
+    description: 'Futbol yeşili ve kırık beyaz detaylı klasik stadyum çerçevesi',
+    costCoins: 750,
+    priceTry: 19.99,
+    icon: '⚽',
+    category: 'crests_frames',
+    type: 'frame',
+    value: 'classic',
+  },
   {
     id: 'frame_gold',
-    title: 'Altın Efsane Çerçevesi',
-    description: 'Avatarını altın parıltılı efsane kart çerçevesiyle donat!',
-    costCoins: 5500,
-    priceTry: 59.99,
+    title: 'Altın Çerçeve',
+    description: 'Avatarını parlak altın şeritli çerçeveyle donat',
+    costCoins: 1500,
+    priceTry: 29.99,
     icon: '🟨',
     category: 'crests_frames',
     type: 'frame',
     value: 'gold',
+  },
+  {
+    id: 'frame_champion',
+    title: 'Şampiyon Çerçeve',
+    description: 'Turuncu-altın şeritli turnuva şampiyonu çerçevesi',
+    costCoins: 3000,
+    priceTry: 39.99,
+    icon: '🏆',
+    category: 'crests_frames',
+    type: 'frame',
+    value: 'champion',
+  },
+  {
+    id: 'frame_diamond',
+    title: 'Elmas Çerçeve',
+    description: 'Buz mavisi ve gümüş kristal kenarlıklı elit çerçeve',
+    costCoins: 4000,
+    priceTry: 49.99,
+    icon: '💎',
+    category: 'crests_frames',
+    type: 'frame',
+    value: 'diamond',
+  },
+  {
+    id: 'frame_legend',
+    title: 'Efsane Çerçeve',
+    description: 'Altın ve kızılla işlenmiş en üst seviye efsane çerçevesi',
+    costCoins: 5000,
+    priceTry: 59.99,
+    icon: '👑',
+    category: 'crests_frames',
+    type: 'frame',
+    value: 'legend',
   },
   {
     id: 'frame_neon',
@@ -390,7 +445,51 @@ export const STORE_ITEMS: ShopGiftItem[] = [
     value: '🦁',
   },
 
-  // Classic Titles & Avatars (kept for continuity)
+  // Classic Titles & Cosmetics (Kozmetik unvanlar — profil mağazası + geçmiş uyumluluk)
+  {
+    id: 'title_futbol_gurmesi',
+    title: 'Futbol Gurmesi',
+    description: 'Profilinde görünen kozmetik futbol unvanı',
+    costCoins: 500,
+    priceTry: 14.99,
+    icon: '⚽',
+    category: 'pp_badges',
+    type: 'title',
+    value: 'Futbol Gurmesi',
+  },
+  {
+    id: 'title_taktik_ustasi',
+    title: 'Taktik Ustası',
+    description: 'Oyun okuyanlara özel kozmetik unvan',
+    costCoins: 1000,
+    priceTry: 24.99,
+    icon: '🧠',
+    category: 'pp_badges',
+    type: 'title',
+    value: 'Taktik Ustası',
+  },
+  {
+    id: 'title_futbol_profesor',
+    title: 'Futbol Profesörü',
+    description: 'Derin tarih ve istatistik bilgisine sahip oyuncular için kozmetik unvan',
+    costCoins: 2000,
+    priceTry: 34.99,
+    icon: '🎓',
+    category: 'pp_badges',
+    type: 'title',
+    value: 'Futbol Profesörü',
+  },
+  {
+    id: 'title_futbol_ansiklopedisi',
+    title: 'Futbol Ansiklopedisi',
+    description: 'En prestijli kozmetik futbol bilgini unvanı',
+    costCoins: 3000,
+    priceTry: 44.99,
+    icon: '📚',
+    category: 'pp_badges',
+    type: 'title',
+    value: 'Futbol Ansiklopedisi',
+  },
   {
     id: 'gift_title_maestro',
     title: 'Orta Saha Maestrosu',
@@ -484,18 +583,56 @@ export function getStarPpTierLabel(costCoins: number): string {
   return '⭐ Yıldız';
 }
 
+export const PROFILE_STORE_FRAME_IDS = [
+  'frame_silver',
+  'frame_classic',
+  'frame_gold',
+  'frame_champion',
+  'frame_diamond',
+  'frame_legend',
+] as const;
+
+export const PROFILE_STORE_TITLE_IDS = [
+  'title_futbol_gurmesi',
+  'title_taktik_ustasi',
+  'title_futbol_profesor',
+  'title_futbol_ansiklopedisi',
+] as const;
+
+export function getProfileStoreFrames(): ShopGiftItem[] {
+  return PROFILE_STORE_FRAME_IDS.map((id) => STORE_ITEMS.find((item) => item.id === id)).filter(
+    (item): item is ShopGiftItem => Boolean(item)
+  );
+}
+
+export function getProfileStoreTitles(): ShopGiftItem[] {
+  return PROFILE_STORE_TITLE_IDS.map((id) => STORE_ITEMS.find((item) => item.id === id)).filter(
+    (item): item is ShopGiftItem => Boolean(item)
+  );
+}
+
 export function getFrameClasses(frame?: string): string {
   switch (frame) {
-    case 'vip':
-      return 'ring-2 ring-amber-300 border-fuchsia-400 shadow-[0_0_20px_rgba(251,191,36,0.7),0_0_28px_rgba(192,38,211,0.45)]';
+    case 'silver':
+      return 'ring-2 ring-[#CBD5E1] border-2 border-[#64748B]';
+    case 'classic':
+      return 'ring-2 ring-[#168A52] border-2 border-[#F5F3EB]';
     case 'gold':
-      return 'ring-2 ring-amber-400 border-amber-300 shadow-[0_0_16px_rgba(251,191,36,0.55)]';
+      return 'ring-2 ring-[#E5B94F] border-2 border-[#FDE68A]';
+    case 'champion':
+      return 'ring-2 ring-[#F97316] border-2 border-[#E5B94F]';
+    case 'diamond':
+      return 'ring-2 ring-[#3B82F6] border-2 border-[#E0F2FE]';
+    case 'legend':
+      return 'ring-[3px] ring-[#E5B94F] border-2 border-[#DC2626]';
+    case 'vip':
+      return 'ring-2 ring-[#E5B94F] border-2 border-[#F97316]';
     case 'neon':
-      return 'ring-2 ring-cyan-400 border-fuchsia-400 shadow-[0_0_16px_rgba(34,211,238,0.6)]';
+      return 'ring-2 ring-[#3B82F6] border border-[#22C55E]';
     case 'emerald':
-      return 'ring-2 ring-emerald-400 border-teal-300 shadow-[0_0_16px_rgba(52,211,153,0.55)]';
+      return 'ring-2 ring-[#22C55E] border border-[#168A52]';
     case 'fire':
-      return 'ring-2 ring-orange-500 border-rose-400 shadow-[0_0_16px_rgba(249,115,22,0.65)]';
+      return 'ring-2 ring-[#F97316] border border-[#DC2626]';
     default:
       return '';
   }

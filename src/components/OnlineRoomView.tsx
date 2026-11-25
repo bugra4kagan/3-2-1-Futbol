@@ -71,14 +71,14 @@ export const OnlineRoomView: React.FC<OnlineRoomViewProps> = ({
   return (
     <div
       data-testid="online-room-view"
-      className="relative min-h-[100dvh] w-full flex flex-col items-center justify-center p-4 bg-[#080E14] text-[#F8FAFC] overflow-x-hidden"
+      className="relative min-h-[100dvh] w-full flex flex-col items-center justify-center p-4 bg-[#0B1220] text-[#F5F3EB] overflow-x-hidden"
     >
-      <div className="w-full max-w-md bg-[#101B24] border border-white/10 rounded-3xl p-5 sm:p-7 text-center">
-        <div className="w-14 h-14 mx-auto mb-3.5 rounded-2xl bg-[#123D2B] border border-[#22C55E]/35 flex items-center justify-center text-[#22C55E]">
+      <div className="w-full max-w-md bg-[#16212E] border border-[#3B82F6]/30 rounded-3xl p-5 sm:p-7 text-center shadow-2xl">
+        <div className="w-14 h-14 mx-auto mb-3.5 rounded-2xl bg-[#183D2B] border border-[#168A52]/50 flex items-center justify-center text-[#22C55E]">
           <Users className="w-7 h-7" />
         </div>
 
-        <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#14232C] border border-[#22C55E]/35 text-[#22C55E] text-[10px] font-black uppercase tracking-wider mb-2">
+        <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#0B1220] border border-[#22C55E]/40 text-[#22C55E] text-[10px] font-black uppercase tracking-wider mb-2">
           <Wifi className="w-3 h-3" />
           <span>CANLI 1v1 ARENA</span>
         </div>

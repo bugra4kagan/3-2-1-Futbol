@@ -1,6 +1,5 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { sounds } from '../utils/audio';
-
 import { MinigameType } from '../game/types';
 
 interface CountdownOverlayProps {
@@ -17,44 +16,133 @@ const COUNTDOWN_SUBTITLES: Record<MinigameType, string> = {
   country_club: 'Verilen ülke ve kulübün ortak yıldızını ilk yazan kazanır!',
 };
 
+function getStepStyle(value: number | 'go'): {
+  label: string;
+  colorClass: string;
+  ringColor: string;
+  badgeText: string;
+} {
+  if (value === 3) {
+    return {
+      label: '3',
+      colorClass: 'text-[#F97316]',
+      ringColor: 'border-[#F97316]/60',
+      badgeText: 'HAZIR OL!',
+    };
+  }
+  if (value === 2) {
+    return {
+      label: '2',
+      colorClass: 'text-[#E5B94F]',
+      ringColor: 'border-[#E5B94F]/60',
+      badgeText: 'DİKKAT!',
+    };
+  }
+  if (value === 1) {
+    return {
+      label: '1',
+      colorClass: 'text-[#F5F3EB]',
+      ringColor: 'border-[#F5F3EB]/60',
+      badgeText: 'ODAKLAN!',
+    };
+  }
+  return {
+    label: 'BAŞLA!',
+    colorClass: 'text-[#22C55E]',
+    ringColor: 'border-[#22C55E]/70',
+    badgeText: 'MAÇ BAŞLADI',
+  };
+}
+
+/**
+ * Lightweight 3-2-1-BAŞLA overlay using pure transform/opacity transitions.
+ * Does not alter Firestore or match timer sync; flashes "BAŞLA!" briefly when countdown hits 0.
+ */
 export const CountdownOverlay: React.FC<CountdownOverlayProps> = ({
   countdown,
   minigameType = 'two_clubs',
 }) => {
+  const [showGoFlash, setShowGoFlash] = useState(false);
+  const prevCountdownRef = useRef<number>(countdown);
+  const lastSoundStepRef = useRef<number | null>(null);
+  const goTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   useEffect(() => {
+    const prev = prevCountdownRef.current;
+    prevCountdownRef.current = countdown;
+
     if (countdown > 0 && countdown <= 3) {
-      sounds.playCountdown(countdown);
-    } else if (countdown === 0) {
-      sounds.playWhistle();
+      if (goTimerRef.current) {
+        clearTimeout(goTimerRef.current);
+        goTimerRef.current = null;
+      }
+      setShowGoFlash(false);
+      if (lastSoundStepRef.current !== countdown) {
+        lastSoundStepRef.current = countdown;
+        sounds.playCountdown(countdown);
+      }
+    } else if (countdown === 0 && prev > 0) {
+      if (lastSoundStepRef.current !== 0) {
+        lastSoundStepRef.current = 0;
+        sounds.playWhistle();
+      }
+      setShowGoFlash(true);
+      if (goTimerRef.current) clearTimeout(goTimerRef.current);
+      goTimerRef.current = setTimeout(() => {
+        goTimerRef.current = null;
+        setShowGoFlash(false);
+      }, 450);
+    } else if (countdown <= 0 && prev <= 0) {
+      lastSoundStepRef.current = null;
     }
   }, [countdown]);
 
-  if (countdown <= 0) return null;
+  useEffect(() => {
+    return () => {
+      if (goTimerRef.current) {
+        clearTimeout(goTimerRef.current);
+        goTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  if (countdown <= 0 && !showGoFlash) return null;
+
+  const activeValue: number | 'go' = countdown > 0 ? countdown : 'go';
+  const step = getStepStyle(activeValue);
+  const isGo = activeValue === 'go';
 
   return (
     <div
       data-testid="countdown-overlay"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/94 pointer-events-none select-none"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-[#0B1220]/90 pointer-events-none select-none"
     >
       <div className="relative flex flex-col items-center justify-center px-4 text-center">
-        {/* Lightweight GPU Stadium Rings */}
-        <div className="absolute w-60 h-60 sm:w-72 sm:h-72 rounded-full border-4 border-emerald-500/30 will-change-transform animate-card-pop opacity-50" />
-        <div className="absolute w-48 h-48 sm:w-60 sm:h-60 rounded-full border-2 border-emerald-400/60" />
-
-        {/* GPU-Accelerated Countdown Number */}
+        {/* Minimal GPU Circle Rings (No blur, no heavy shadows) */}
         <div
-          key={countdown}
+          className={`absolute w-56 h-56 sm:w-68 sm:h-68 rounded-full border-2 ${step.ringColor} opacity-40 transition-colors duration-150`}
+        />
+        <div
+          className={`absolute w-44 h-44 sm:w-56 sm:h-56 rounded-full border ${step.ringColor} opacity-70 transition-colors duration-150`}
+        />
+
+        <div
+          key={String(activeValue)}
           className="relative flex flex-col items-center animate-card-pop will-change-transform"
         >
-          <span className="font-black tracking-tighter text-transparent bg-clip-text bg-gradient-to-b from-amber-200 via-emerald-400 to-emerald-600 text-9xl sm:text-[14rem] leading-none">
-            {countdown}
+          <span
+            className={`font-score font-extrabold tracking-tight leading-none ${step.colorClass} ${
+              isGo ? 'text-6xl sm:text-8xl tracking-wide' : 'text-9xl sm:text-[12rem]'
+            }`}
+          >
+            {step.label}
           </span>
-          <span className="mt-2 text-xs sm:text-sm font-black tracking-widest text-emerald-300 uppercase px-4 py-1.5 rounded-full bg-emerald-950 border border-emerald-500/50">
-            HAZIR OL!
+          <span className="mt-3 text-xs sm:text-sm font-black tracking-widest text-[#F5F3EB] uppercase px-4 py-1.5 rounded-full bg-[#16212E] border border-[#A8B3C2]/30">
+            {step.badgeText}
           </span>
         </div>
 
-        <p className="mt-8 text-xs sm:text-sm font-semibold text-slate-300 tracking-wide">
+        <p className="mt-8 text-xs sm:text-sm font-semibold text-[#A8B3C2] tracking-wide max-w-xs">
           {COUNTDOWN_SUBTITLES[minigameType] || COUNTDOWN_SUBTITLES.two_clubs}
         </p>
       </div>

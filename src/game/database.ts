@@ -1,4 +1,5 @@
 import { Club, Player, MatchPairing } from './types';
+import { buildExpandedMatchPairings } from './expandedQuestionPools';
 import rawPlayersData from '../data/players.json';
 import { EXTRA_PLAYERS_50 } from './extraPlayers50';
 import { EXTRA_PLAYERS_MORE_50 } from './extraPlayersMore50';
@@ -594,7 +595,7 @@ export const PLAYERS: Record<string, Player> = Object.fromEntries(
   PLAYERS_LIST.map((player) => [player.id, player])
 );
 
-export const MATCH_PAIRINGS: MatchPairing[] = [
+const CURATED_MATCH_PAIRINGS: MatchPairing[] = [
   // ==========================================
   // TÜRKİYE SÜPER LİG DERBİLERİ VE MAÇLARI
   // ==========================================
@@ -1940,3 +1941,9 @@ export const MATCH_PAIRINGS: MatchPairing[] = [
     funFact: "Mohamed Salah ve Federico Chiesa Serie A'da Fiorentina forması giydikten sonra Liverpool'da buluştu.",
   },
 ];
+
+export const MATCH_PAIRINGS: MatchPairing[] = buildExpandedMatchPairings(
+  PLAYERS_LIST,
+  CLUBS,
+  CURATED_MATCH_PAIRINGS
+);

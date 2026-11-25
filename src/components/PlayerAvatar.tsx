@@ -138,7 +138,7 @@ export const PlayerAvatar: React.FC<PlayerAvatarProps> = ({
         data-avatar-id={isBotBadge ? 'bot' : normalizeProfileIconId(avatar)}
         role="img"
         aria-label={`${displayName} profil simgesi`}
-        className={`relative overflow-hidden shrink-0 select-none bg-[#183022] border border-[#D9B76B]/45 flex items-center justify-center ${boxSizeMap[size]} ${radiusClass} ${frameClasses} ${className}`}
+        className={`relative overflow-hidden shrink-0 select-none bg-[#16212E] border border-[#A8B3C2]/30 flex items-center justify-center ${boxSizeMap[size]} ${radiusClass} ${frameClasses} ${className}`}
       >
         <ProfileIconSvg
           iconId={isBotBadge ? 'bot' : avatar}

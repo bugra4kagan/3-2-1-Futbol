@@ -37,9 +37,9 @@ export const InterstitialAdModal: React.FC<InterstitialAdModalProps> = ({
     <div
       data-testid="interstitial-ad-modal"
       data-ad-unit-id={adUnitId}
-      className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/95 animate-in fade-in duration-150"
+      className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-[#0B1220]/95 animate-in fade-in duration-150"
     >
-      <div className="relative w-full max-w-sm rounded-3xl bg-gradient-to-b from-slate-900 to-slate-950 border border-slate-700 p-5 text-center shadow-2xl">
+      <div className="relative w-full max-w-sm rounded-3xl bg-[#16212E] border border-[#3B82F6]/35 p-5 text-center shadow-2xl">
         <button
           type="button"
           data-testid="interstitial-ad-close-btn"

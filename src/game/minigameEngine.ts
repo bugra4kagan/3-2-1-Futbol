@@ -152,7 +152,11 @@ export function generateMinigameRounds(
       eligible,
       count,
       excludeIds,
-      (c) => c.id
+      (c) => c.id,
+      Math.random,
+      {
+        getClubKeys: (c) => c.steps.map((st) => st.clubId || st.clubName),
+      }
     );
     return items.map((career) => ({
       minigameType: 'career',
@@ -165,7 +169,12 @@ export function generateMinigameRounds(
       COUNTRY_CLUB_CHALLENGES,
       count,
       excludeIds,
-      (cc) => cc.id
+      (cc) => cc.id,
+      Math.random,
+      {
+        getCanonicalKey: (cc) => `cc:${cc.country}||${cc.clubId}`,
+        getClubKeys: (cc) => [cc.clubId],
+      }
     );
     return items.map((countryClub) => ({
       minigameType: 'country_club',
@@ -173,7 +182,16 @@ export function generateMinigameRounds(
     }));
   }
 
-  const { items } = selectDiverseItems(XOX_BOARDS, count, excludeIds, (b) => b.id);
+  const { items } = selectDiverseItems(
+    XOX_BOARDS,
+    count,
+    excludeIds,
+    (b) => b.id,
+    Math.random,
+    {
+      getClubKeys: (b) => b.rows.map((r) => r.id),
+    }
+  );
   return items.map((xoxBoard) => ({
     minigameType: 'xox',
     xoxBoard,

@@ -37,43 +37,43 @@ export const BOT_CONFIG: Record<BotDifficulty, CentralizedBotConfig> = {
     id: 'easy',
     title: 'Çırak',
     emoji: '🌱',
-    minDelayMs: 3000,
+    minDelayMs: 2800,
     maxDelayMs: 5000,
-    accuracy: 0.70,
-    accuracyPct: 70,
-    subtitle: '3–5 sn • %70 isabet',
-    delayLabel: '3–5 sn',
-    xoxMinDelayMs: 2600,
-    xoxMaxDelayMs: 4200,
-    xoxMissRate: 0.30,
+    accuracy: 0.80,
+    accuracyPct: 80,
+    subtitle: '2,8–5 sn • %80 isabet',
+    delayLabel: '2,8–5 sn',
+    xoxMinDelayMs: 2200,
+    xoxMaxDelayMs: 3800,
+    xoxMissRate: 0.20,
   },
   medium: {
     id: 'medium',
     title: 'Şampiyon',
     emoji: '🏆',
-    minDelayMs: 2500,
-    maxDelayMs: 4000,
-    accuracy: 0.85,
-    accuracyPct: 85,
-    subtitle: '2,5–4 sn • %85 isabet',
-    delayLabel: '2,5–4 sn',
-    xoxMinDelayMs: 2000,
-    xoxMaxDelayMs: 3400,
-    xoxMissRate: 0.15,
+    minDelayMs: 1800,
+    maxDelayMs: 3500,
+    accuracy: 0.92,
+    accuracyPct: 92,
+    subtitle: '1,8–3,5 sn • %92 isabet',
+    delayLabel: '1,8–3,5 sn',
+    xoxMinDelayMs: 1500,
+    xoxMaxDelayMs: 2700,
+    xoxMissRate: 0.08,
   },
   hard: {
     id: 'hard',
     title: 'Efsane',
     emoji: '👑',
-    minDelayMs: 2000,
-    maxDelayMs: 3000,
-    accuracy: 0.95,
-    accuracyPct: 95,
-    subtitle: '2–3 sn • %95 isabet',
-    delayLabel: '2–3 sn',
-    xoxMinDelayMs: 1400,
-    xoxMaxDelayMs: 2400,
-    xoxMissRate: 0.05,
+    minDelayMs: 1200,
+    maxDelayMs: 2500,
+    accuracy: 0.98,
+    accuracyPct: 98,
+    subtitle: '1,2–2,5 sn • %98 isabet',
+    delayLabel: '1,2–2,5 sn',
+    xoxMinDelayMs: 1000,
+    xoxMaxDelayMs: 1900,
+    xoxMissRate: 0.02,
   },
 };
 
@@ -123,24 +123,40 @@ const XOX_LINES: [number, number][][] = [
   [[0, 2], [1, 1], [2, 0]],
 ];
 
+/**
+ * Soru zorluğuna (geçerli futbolcu havuzu daraldıkça biraz daha uzun düşünme payı) doğal çarpan döndürür.
+ */
+export function computeQuestionDifficultyDelayFactor(validCandidateCount?: number): number {
+  if (typeof validCandidateCount !== 'number' || !Number.isFinite(validCandidateCount)) {
+    return 1;
+  }
+  if (validCandidateCount <= 1) return 1.15;
+  if (validCandidateCount <= 3) return 1.07;
+  if (validCandidateCount >= 12) return 0.95;
+  return 1;
+}
+
 export function getBotRoundPlan(
   difficulty: BotDifficulty,
-  minigameType: MinigameType
+  minigameType: MinigameType,
+  validCandidateCount?: number
 ): BotRoundPlan {
   const cfg = BOT_CONFIG[difficulty];
+  const factor = computeQuestionDifficultyDelayFactor(validCandidateCount);
+
   if (minigameType === 'silhouette') {
-    if (difficulty === 'easy') {
-      return { minDelayMs: 4200, maxDelayMs: 6500, accuracy: cfg.accuracy };
-    }
-    if (difficulty === 'hard') {
-      return { minDelayMs: 2000, maxDelayMs: 3200, accuracy: cfg.accuracy };
-    }
-    return { minDelayMs: 2800, maxDelayMs: 4600, accuracy: cfg.accuracy };
+    const baseMin = difficulty === 'easy' ? 3600 : difficulty === 'hard' ? 1600 : 2300;
+    const baseMax = difficulty === 'easy' ? 6000 : difficulty === 'hard' ? 3000 : 4100;
+    return {
+      minDelayMs: Math.round(baseMin * factor),
+      maxDelayMs: Math.round(baseMax * factor),
+      accuracy: cfg.accuracy,
+    };
   }
 
   return {
-    minDelayMs: cfg.minDelayMs,
-    maxDelayMs: cfg.maxDelayMs,
+    minDelayMs: Math.round(cfg.minDelayMs * factor),
+    maxDelayMs: Math.round(cfg.maxDelayMs * factor),
     accuracy: cfg.accuracy,
   };
 }
