@@ -73,9 +73,9 @@ export const MinigameSelectorModal: React.FC<MinigameSelectorModalProps> = ({
   return createPortal(
     <div
       data-testid="minigame-selector-modal"
-      className="fixed inset-0 z-[80] flex items-center justify-center p-3 sm:p-4 bg-[#0B1220]/92 animate-in fade-in duration-150"
+      className="fixed inset-0 z-[80] flex items-center justify-center p-3 sm:p-4 bg-[#092316]/88 animate-in fade-in duration-150"
     >
-      <div className="w-full max-w-lg bg-[#16212E] border border-[#3B82F6]/45 rounded-3xl p-4 sm:p-6 shadow-2xl max-h-[90dvh] overflow-y-auto">
+      <div className="w-full max-w-lg bg-[#124029] border-2 border-[#E5B94F]/50 rounded-3xl p-4 sm:p-6 shadow-2xl max-h-[90dvh] overflow-y-auto">
         <div className="flex items-start justify-between gap-2 mb-3">
           <div className="min-w-0">
             <span className="text-[10px] font-black uppercase tracking-widest text-cyan-300">

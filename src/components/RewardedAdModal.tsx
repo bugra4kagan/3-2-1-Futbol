@@ -64,9 +64,9 @@ export const RewardedAdModal: React.FC<RewardedAdModalProps> = ({
     <div
       data-testid="rewarded-ad-modal"
       data-ad-unit-id={adUnitId}
-      className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-[#0B1220]/94 animate-in fade-in duration-150"
+      className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-[#092316]/88 animate-in fade-in duration-150"
     >
-      <div className="relative w-full max-w-sm rounded-3xl bg-[#16212E] border-2 border-[#E5B94F]/55 p-5 text-center shadow-2xl">
+      <div className="relative w-full max-w-sm rounded-3xl bg-[#124029] border-2 border-[#E5B94F]/60 p-5 text-center shadow-2xl">
         <button
           type="button"
           onClick={onClose}

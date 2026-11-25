@@ -298,9 +298,9 @@ Ortak futbolcuları benden hızlı bulabilir misin? Meydan okuyorum! 🔥`;
   return (
     <div
       data-testid="victory-modal"
-      className="fixed inset-0 z-50 overflow-y-auto p-3 sm:p-4 bg-slate-950/92 flex justify-center items-start sm:items-center animate-screen-fade"
+      className="fixed inset-0 z-50 overflow-y-auto p-3 sm:p-4 bg-[#092316]/88 flex justify-center items-start sm:items-center animate-screen-fade"
     >
-      <div className="relative w-full max-w-lg bg-gradient-to-b from-slate-900 via-slate-900 to-emerald-950 border border-emerald-500/40 rounded-3xl p-4 sm:p-6 shadow-2xl text-center overflow-hidden my-4 sm:my-auto animate-screen-slide-up">
+      <div className="relative w-full max-w-lg bg-gradient-to-b from-[#134A2D] via-[#124029] to-[#0F273E] border-2 border-[#E5B94F]/55 rounded-3xl p-4 sm:p-6 shadow-2xl text-center overflow-hidden my-4 sm:my-auto animate-screen-slide-up">
 
         {/* Big Trophy Badge & Confetti Sparkles */}
         <div className="relative mx-auto mb-3 w-28 h-20 flex items-center justify-center">

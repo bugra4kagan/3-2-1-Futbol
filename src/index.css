@@ -1,18 +1,19 @@
 @import "tailwindcss";
 
 :root {
-  --bg-primary: #0B1220;
-  --bg-secondary: #16212E;
-  --bg-elevated: #1E293B;
+  --bg-primary: #0D3822;
+  --bg-secondary: #134A2D;
+  --bg-elevated: #185A36;
+  --bg-navy: #0F273E;
   --football-green: #168A52;
-  --dark-green: #183D2B;
+  --dark-green: #0E3120;
   --accent-orange: #F97316;
   --accent-gold: #E5B94F;
   --text-cream: #F5F3EB;
   --text-white: #FFFFFF;
-  --text-muted: #A8B3C2;
+  --text-muted: #C4D6CA;
   --info-blue: #3B82F6;
-  --danger-red: #DC2626;
+  --danger-red: #C93B32;
   --correct-green: #22C55E;
 }
 
@@ -27,7 +28,7 @@
   }
 
   body {
-    background-color: #0B1220;
+    background-color: #0D3822;
     color: #F5F3EB;
     font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     overscroll-behavior: none;
@@ -77,10 +78,20 @@
   background: rgba(229, 185, 79, 0.8);
 }
 
-/* Subtle dark stadium navy backdrop (never floods screens in green) */
+/* Lightweight rich stadium grass backdrop with subtle mown stripes (60fps, zero blur) */
 .pitch-turf-backdrop {
-  background-color: #0B1220;
-  background-image: radial-gradient(ellipse at 50% -10%, rgba(22, 138, 82, 0.14), transparent 55%);
+  background-color: #0D3822;
+  background-image:
+    radial-gradient(ellipse at 50% -10%, rgba(229, 185, 79, 0.13), transparent 52%),
+    radial-gradient(ellipse at 50% 45%, rgba(34, 197, 94, 0.14), transparent 68%),
+    repeating-linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.024) 0px,
+      rgba(255, 255, 255, 0.024) 40px,
+      transparent 40px,
+      transparent 80px
+    ),
+    linear-gradient(180deg, #0D3822 0%, #144D2F 48%, #0E3A23 100%);
 }
 
 /* Snappy GPU-Friendly Screen and View Transitions */

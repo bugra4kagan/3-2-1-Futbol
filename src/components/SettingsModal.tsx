@@ -166,20 +166,20 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   return (
     <div
       data-testid="settings-modal"
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-[#0B1220]/92 overflow-y-auto animate-screen-fade"
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-[#092316]/88 overflow-y-auto animate-screen-fade"
     >
-      <div className="relative w-full max-w-lg bg-[#16212E] border border-[#168A52]/40 rounded-3xl p-4 sm:p-6 shadow-2xl text-left my-auto max-h-[92dvh] flex flex-col overflow-hidden">
+      <div className="relative w-full max-w-lg bg-[#124029] border-2 border-[#E5B94F]/45 rounded-3xl p-4 sm:p-6 shadow-2xl text-left my-auto max-h-[92dvh] flex flex-col overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between gap-2 pb-3 border-b border-white/10 shrink-0">
+        <div className="flex items-center justify-between gap-2 pb-3 border-b border-white/15 shrink-0">
           <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-10 h-10 rounded-2xl bg-[#168A52] text-white flex items-center justify-center shadow-lg shrink-0">
+            <div className="w-10 h-10 rounded-2xl bg-[#168A52] border border-[#4ADE80]/50 text-white flex items-center justify-center shadow-lg shrink-0">
               <Settings className="w-5 h-5 stroke-[2.4]" />
             </div>
             <div className="min-w-0">
               <h2 className="font-display text-lg sm:text-xl font-black text-[#F5F3EB] leading-tight truncate uppercase">
                 {t('settings')}
               </h2>
-              <p className="text-[11px] text-[#9FB0C4] font-medium truncate">
+              <p className="text-[11px] text-[#C4D6CA] font-medium truncate">
                 {t('settingsSubtitle')}
               </p>
             </div>
@@ -189,7 +189,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             type="button"
             data-testid="settings-close-btn"
             onClick={onClose}
-            className="min-w-[40px] min-h-[40px] rounded-xl bg-[#0B1220] hover:bg-[#1E2D3D] border border-white/10 text-[#9FB0C4] hover:text-white flex items-center justify-center shrink-0 cursor-pointer"
+            className="min-w-[40px] min-h-[40px] rounded-xl bg-[#0F273E] hover:bg-[#173857] border border-white/15 text-[#C4D6CA] hover:text-white flex items-center justify-center shrink-0 cursor-pointer"
             aria-label={t('close')}
           >
             <X className="w-5 h-5" />
@@ -201,13 +201,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           {/* App Brand & Store Icon Preview */}
           <section
             data-testid="settings-brand-preview"
-            className="p-3.5 rounded-2xl bg-[#0B1220] border border-white/10 flex items-center justify-between gap-3"
+            className="p-3.5 rounded-2xl bg-[#0F273E] border border-[#E5B94F]/35 flex items-center justify-between gap-3"
           >
             <GameLogoAppIconPreview />
           </section>
 
           {/* 1. Sound On/Off */}
-          <section className="p-3.5 rounded-2xl bg-[#0B1220] border border-white/10 flex items-center justify-between gap-3">
+          <section className="p-3.5 rounded-2xl bg-[#0E3120] border border-white/15 flex items-center justify-between gap-3">
             <div className="flex items-center gap-3 min-w-0">
               <div
                 className={`w-10 h-10 rounded-xl border flex items-center justify-center shrink-0 ${
@@ -613,20 +613,20 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
           {/* 6. Permanent Account & Data Deletion (Google Play Data Safety) */}
           {onDeleteAccount && (
-            <section className="p-3.5 rounded-2xl bg-rose-950/20 border border-rose-500/35 space-y-2.5">
+            <section className="p-3.5 rounded-2xl bg-[#0F273E] border border-[#C93B32]/55 space-y-2.5">
               {!showDeleteConfirm ? (
                 <button
                   type="button"
                   data-testid="settings-delete-account-btn"
                   onClick={() => setShowDeleteConfirm(true)}
-                  className="w-full py-2.5 px-3 rounded-xl bg-rose-950/70 hover:bg-rose-900/70 border border-rose-500/45 text-rose-200 font-black text-xs flex items-center justify-center gap-2 cursor-pointer transition"
+                  className="w-full py-2.5 px-3 rounded-xl bg-[#C93B32]/20 hover:bg-[#C93B32]/35 border border-[#C93B32]/65 text-[#F5F3EB] font-black text-xs flex items-center justify-center gap-2 cursor-pointer transition"
                 >
-                  <Trash2 className="w-4 h-4" />
+                  <Trash2 className="w-4 h-4 text-[#F87171]" />
                   <span>Hesabımı ve Verilerimi Sil</span>
                 </button>
               ) : (
                 <div data-testid="settings-delete-confirm-box" className="space-y-2.5 text-center">
-                  <p className="text-xs font-black text-rose-200">
+                  <p className="text-xs font-black text-[#F5F3EB]">
                     Tüm bulut verilerin, coinlerin, istatistiklerin ve yerel ilerlemen kalıcı olarak silinecek!
                   </p>
                   <div className="flex gap-2">
@@ -634,7 +634,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       type="button"
                       onClick={() => setShowDeleteConfirm(false)}
                       disabled={isDeletingAccount}
-                      className="flex-1 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs cursor-pointer"
+                      className="flex-1 py-2 rounded-xl bg-[#0E3120] hover:bg-[#14472D] border border-white/15 text-[#F5F3EB] font-bold text-xs cursor-pointer"
                     >
                       Vazgeç
                     </button>
@@ -652,7 +652,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           setShowDeleteConfirm(false);
                         }
                       }}
-                      className="flex-1 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-black text-xs flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-60"
+                      className="flex-1 py-2 rounded-xl bg-[#C93B32] hover:bg-[#B22F27] text-white font-black text-xs flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-60"
                     >
                       {isDeletingAccount ? (
                         <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -675,9 +675,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 onClose();
                 onExitApp();
               }}
-              className="w-full py-3 px-4 rounded-2xl bg-rose-950/50 hover:bg-rose-900/60 border border-rose-500/40 text-rose-300 font-black text-xs flex items-center justify-center gap-2 transition-transform active:scale-95 cursor-pointer touch-manipulation"
+              className="w-full py-3 px-4 rounded-2xl bg-[#C93B32]/18 hover:bg-[#C93B32]/30 border border-[#C93B32]/60 text-[#F5F3EB] font-black text-xs flex items-center justify-center gap-2 transition-transform active:scale-95 cursor-pointer touch-manipulation"
             >
-              <LogOut className="w-4 h-4" />
+              <LogOut className="w-4 h-4 text-[#F87171]" />
               <span>Ana Giriş Ekranına Dön (Çıkış)</span>
             </button>
           )}

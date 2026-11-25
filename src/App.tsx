@@ -52,6 +52,7 @@ import {
   getTournamentMatchForUser,
 } from './game/tournamentEngine';
 import { getClutchThresholdSeconds, getRoundDurationSeconds } from './game/roundTiming';
+import { computeMatchKeyboardMetrics } from './game/viewportKeyboard';
 import { buildOpponentMiniSummary } from './game/opponentSummary';
 import {
   ENERGY_AD_REWARD_AMOUNT,
@@ -550,18 +551,63 @@ export default function App() {
     roundStartedAtRef.current = now;
   }, []);
   const [lastMatchEnergyDeltaLabel, setLastMatchEnergyDeltaLabel] = useState<string | null>(null);
-  const [matchViewportHeight, setMatchViewportHeight] = useState<number | null>(null);
+  const [matchViewportState, setMatchViewportState] = useState<{
+    height: number | null;
+    isKeyboardOpen: boolean;
+    isCompactHeight: boolean;
+  }>({
+    height: null,
+    isKeyboardOpen: false,
+    isCompactHeight: false,
+  });
+  const matchViewportBaselineRef = useRef<{ portrait: number; landscape: number }>({
+    portrait: 0,
+    landscape: 0,
+  });
 
   useEffect(() => {
     if (screen !== 'playing' || typeof window === 'undefined') {
-      setMatchViewportHeight(null);
+      setMatchViewportState({ height: null, isKeyboardOpen: false, isCompactHeight: false });
       return;
     }
 
     const vv = window.visualViewport;
+    const isMatchInputFocused = () => {
+      const el = document.activeElement as HTMLElement | null;
+      return Boolean(
+        el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)
+      );
+    };
+
     const syncViewport = () => {
-      const nextHeight = vv ? Math.round(vv.height) : window.innerHeight;
-      setMatchViewportHeight(nextHeight > 0 ? nextHeight : null);
+      const rawW = vv ? Math.round(vv.width) : window.innerWidth;
+      const rawH = vv ? Math.round(vv.height) : window.innerHeight;
+      const orientationKey = rawW > rawH ? 'landscape' : 'portrait';
+      const prevBaseline = matchViewportBaselineRef.current[orientationKey];
+
+      const metrics = computeMatchKeyboardMetrics({
+        visualHeight: vv?.height ?? null,
+        innerHeight: window.innerHeight,
+        visualWidth: vv?.width ?? null,
+        innerWidth: window.innerWidth,
+        baselineHeight: prevBaseline > 0 ? prevBaseline : null,
+        isInputFocused: isMatchInputFocused(),
+      });
+
+      matchViewportBaselineRef.current[orientationKey] = metrics.baselineHeight;
+
+      setMatchViewportState((prev) =>
+        prev.height === metrics.viewportHeight &&
+        prev.isKeyboardOpen === metrics.isKeyboardOpen &&
+        prev.isCompactHeight === metrics.isCompactHeight
+          ? prev
+          : {
+              height: metrics.viewportHeight,
+              isKeyboardOpen: metrics.isKeyboardOpen,
+              isCompactHeight: metrics.isCompactHeight,
+            }
+      );
+
       if (window.scrollY !== 0 || document.documentElement.scrollTop !== 0) {
         window.scrollTo(0, 0);
         document.documentElement.scrollTop = 0;
@@ -575,11 +621,15 @@ export default function App() {
     vv?.addEventListener('resize', syncViewport);
     vv?.addEventListener('scroll', syncViewport);
     window.addEventListener('resize', syncViewport);
+    window.addEventListener('focusin', syncViewport);
+    window.addEventListener('focusout', syncViewport);
 
     return () => {
       vv?.removeEventListener('resize', syncViewport);
       vv?.removeEventListener('scroll', syncViewport);
       window.removeEventListener('resize', syncViewport);
+      window.removeEventListener('focusin', syncViewport);
+      window.removeEventListener('focusout', syncViewport);
     };
   }, [screen]);
   const [matchDoubleAdLoading, setMatchDoubleAdLoading] = useState<boolean>(false);
@@ -2083,6 +2133,19 @@ trackGameEvent('match_complete', {
         setShowSpecialEventModal(false);
         return;
       }
+      // Klavye / metin girişi açıksa Android geri tuşu önce klavyeyi kapatır, maçtan yanlışlıkla çıkmaz
+      if (typeof document !== 'undefined') {
+        const activeEl = document.activeElement as HTMLElement | null;
+        if (
+          activeEl &&
+          (activeEl.tagName === 'INPUT' ||
+            activeEl.tagName === 'TEXTAREA' ||
+            activeEl.isContentEditable)
+        ) {
+          activeEl.blur();
+          return;
+        }
+      }
       if (screen === 'playing') {
         setExitTarget('lobby');
         setShowExitConfirm(true);
@@ -3284,10 +3347,9 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
     return { ok: res.ok, reason: res.reason };
   };
 
-  const handleOpenStore = (_category: StoreCategory = 'featured') => {
-    setShowStoreModal(false);
-    setScreen('lobby');
-    setActiveTab('profile');
+  const handleOpenStore = (category: StoreCategory = 'featured') => {
+    setStoreCategory(category);
+    setShowStoreModal(true);
   };
 
   const handleStartOpenTournament = (mg: MinigameType) => {
@@ -4478,7 +4540,19 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
     <main
       data-testid="app-container"
       data-state={screen}
-      className="relative min-h-[100dvh] w-full flex flex-col bg-[#0B1220] font-sans selection:bg-[#168A52] selection:text-[#F5F3EB] overflow-x-clip text-[#F5F3EB]"
+      style={
+        screen === 'playing' && matchViewportState.height
+          ? {
+              height: `${matchViewportState.height}px`,
+              minHeight: `${matchViewportState.height}px`,
+              maxHeight: `${matchViewportState.height}px`,
+              overflow: 'hidden',
+            }
+          : undefined
+      }
+      className={`relative w-full flex flex-col bg-[#0D3822] font-sans selection:bg-[#168A52] selection:text-[#FFFFFF] overflow-x-clip text-[#F5F3EB] ${
+        screen === 'playing' ? 'h-[100dvh] max-h-[100dvh] overflow-hidden' : 'min-h-[100dvh]'
+      }`}
     >
       {/* Screen 0: Animated Intro / Splash Screen */}
       {screen === 'intro' && (
@@ -4517,12 +4591,12 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
                 onClearOnlineError={() => setOnlineError(null)}
               />
             ) : (
-              <div className="relative min-h-[100dvh] w-full flex flex-col bg-[#0B1220] pitch-turf-backdrop text-[#F5F3EB] overflow-x-clip">
-                {/* Shared Hub Top Header for Secondary Tabs (No Store Button — Store is exclusively in Profile) */}
-                <header className="sticky top-0 z-40 isolate w-full bg-[#16212E] border-b border-white/10 pt-[max(0.75rem,calc(env(safe-area-inset-top)+0.45rem))] pb-2">
-                  <div className="w-full max-w-xl mx-auto px-3 sm:px-4 flex items-center justify-between gap-2">
+              <div className="relative min-h-[100dvh] w-full flex flex-col pitch-turf-backdrop text-[#F5F3EB] overflow-x-clip">
+                {/* Shared Hub Top Header for Secondary Tabs */}
+                <header className="sticky top-0 z-40 isolate w-full bg-[#0E3120]/95 border-b border-[#E5B94F]/30 pt-[max(0.75rem,calc(env(safe-area-inset-top)+0.45rem))] pb-2">
+                  <div className="w-full max-w-xl md:max-w-3xl lg:max-w-4xl mx-auto px-3 sm:px-4 flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2.5 min-w-0">
-                      <GameLogo size="xs" />
+                      <GameLogo size="xs" variant="compact" />
                       <span
                         data-testid="tab-header-title"
                         className="font-display font-extrabold tracking-wide text-[#F5F3EB] text-lg sm:text-xl whitespace-nowrap shrink-0 uppercase leading-none"
@@ -4533,7 +4607,7 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
 
                     <div className="flex items-center gap-1.5 shrink-0">
                       <div
-                        className="flex items-center gap-1 min-h-[38px] px-2.5 py-1.5 rounded-xl bg-[#0B1220] border border-[#E5B94F]/45 text-xs font-black text-[#E5B94F] font-mono whitespace-nowrap shrink-0"
+                        className="flex items-center gap-1 min-h-[38px] px-2.5 py-1.5 rounded-xl bg-[#0F273E] border border-[#E5B94F]/50 text-xs font-black text-[#E5B94F] font-mono whitespace-nowrap shrink-0"
                         title="Coin Bakiyesi"
                       >
                         <CoinIcon size="xs" />
@@ -4544,7 +4618,7 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
                         type="button"
                         data-testid="header-settings-btn"
                         onClick={() => setShowSettingsModal(true)}
-                        className="min-w-[38px] min-h-[38px] p-2 rounded-xl bg-[#0B1220] hover:bg-[#1E2D3D] border border-white/10 text-[#E5B94F] flex items-center justify-center cursor-pointer touch-manipulation"
+                        className="min-w-[38px] min-h-[38px] p-2 rounded-xl bg-[#0F273E] hover:bg-[#173857] border border-[#F5F3EB]/20 text-[#E5B94F] flex items-center justify-center cursor-pointer touch-manipulation"
                         title={t('settings')}
                         aria-label={t('settings')}
                       >
@@ -4555,7 +4629,7 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
                         type="button"
                         data-testid="header-exit-btn"
                         onClick={handlePromptExitApp}
-                        className="flex min-w-[38px] min-h-[38px] p-2 rounded-xl bg-[#0B1220] hover:bg-[#DC2626]/20 border border-white/10 hover:border-[#DC2626] text-[#9FB0C4] hover:text-[#FCA5A5] items-center justify-center cursor-pointer touch-manipulation"
+                        className="flex min-w-[38px] min-h-[38px] p-2 rounded-xl bg-[#0F273E] hover:bg-[#C93B32]/25 border border-[#F5F3EB]/20 hover:border-[#C93B32] text-[#C4D6CA] hover:text-[#FCA5A5] items-center justify-center cursor-pointer touch-manipulation"
                         title="Oyundan Çıkış"
                         aria-label="Oyundan Çıkış"
                       >
@@ -4685,9 +4759,13 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
         <div
           key={`screen-playing-${mode}-${currentRound.minigameType}`}
           data-testid="match-viewport-container"
+          data-keyboard-open={matchViewportState.isKeyboardOpen ? 'true' : 'false'}
           style={
-            matchViewportHeight
-              ? { height: `${matchViewportHeight}px`, maxHeight: `${matchViewportHeight}px` }
+            matchViewportState.height
+              ? {
+                  height: `${matchViewportState.height}px`,
+                  maxHeight: `${matchViewportState.height}px`,
+                }
               : undefined
           }
           className="relative h-[100dvh] max-h-[100dvh] w-full flex flex-col justify-between overflow-hidden animate-screen-slide"
@@ -4710,6 +4788,7 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
               player1Frame={progression.equippedFrame}
               player1Crest={progression.equippedCrest}
               player1Badge={progression.equippedBadge}
+              compact={matchViewportState.isKeyboardOpen || matchViewportState.isCompactHeight}
               onOpenSettings={() => setShowSettingsModal(true)}
               onExit={handlePromptExitMatch}
             />
@@ -4731,6 +4810,8 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
                 userCoins={progression.coins}
                 freeJokerTickets={progression.freeJokerTickets ?? 0}
                 roundSeed={`${matchInstanceIdRef.current}-${currentRoundIndex}-${currentRound.pairing.id}`}
+                isKeyboardOpen={matchViewportState.isKeyboardOpen}
+                isCompactViewport={matchViewportState.isCompactHeight}
                 onSpendCoinsForJoker={handleSpendCoinsForJoker}
                 onAnswerWinner={handleAnswerWinner}
                 onBotWrongAttempt={handleBotWrongAttempt}
@@ -4756,6 +4837,8 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
                 userCoins={progression.coins}
                 freeJokerTickets={progression.freeJokerTickets ?? 0}
                 roundSeed={`${matchInstanceIdRef.current}-${currentRoundIndex}-${currentRound.minigameType}-${currentRound.silhouette?.id || currentRound.career?.id || currentRound.countryClub?.id || currentRound.xoxBoard?.id || 'r'}`}
+                isKeyboardOpen={matchViewportState.isKeyboardOpen}
+                isCompactViewport={matchViewportState.isCompactHeight}
                 onSpendCoinsForJoker={handleSpendCoinsForJoker}
                 onAnswerWinner={handleAnswerWinner}
                 onBotWrongAttempt={handleBotWrongAttempt}

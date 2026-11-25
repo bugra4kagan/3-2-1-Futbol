@@ -33,20 +33,20 @@ export const BrandTitle: React.FC<BrandTitleProps> = ({
 }) => {
   const textSizeClass =
     size === 'sm'
-      ? 'text-lg sm:text-xl tracking-wide'
+      ? 'text-[13px] min-[360px]:text-[15px] sm:text-xl tracking-wide'
       : size === 'md'
       ? 'text-2xl sm:text-3xl tracking-wide'
-      : 'text-4xl sm:text-5xl tracking-wide';
+      : 'text-3xl sm:text-5xl tracking-wide';
 
   const ballSizeClass =
     size === 'sm'
-      ? 'w-3.5 h-3.5 sm:w-4 sm:h-4'
+      ? 'w-2.5 h-2.5 min-[360px]:w-3 min-[360px]:h-3 sm:w-4 sm:h-4'
       : size === 'md'
       ? 'w-5 h-5 sm:w-6 sm:h-6'
-      : 'w-7 h-7 sm:w-9 sm:h-9';
+      : 'w-6 h-6 sm:w-9 sm:h-9';
 
   const gapClass =
-    size === 'sm' ? 'gap-1.5' : size === 'md' ? 'gap-2' : 'gap-2 sm:gap-2.5';
+    size === 'sm' ? 'gap-1 sm:gap-1.5' : size === 'md' ? 'gap-2' : 'gap-2 sm:gap-2.5';
 
   return (
     <span

@@ -39,24 +39,24 @@ export const BotSetupModal: React.FC<BotSetupModalProps> = ({
   return createPortal(
     <div
       data-testid="bot-setup-modal"
-      className="fixed inset-0 z-[80] flex items-center justify-center p-3 sm:p-4 bg-[#0B1220]/90 animate-in fade-in duration-150"
+      className="fixed inset-0 z-[80] flex items-center justify-center p-3 sm:p-4 bg-[#092316]/88 animate-in fade-in duration-150"
     >
-      <div className="w-full max-w-md bg-[#16212E] border-2 border-[#F97316]/60 rounded-3xl p-5 sm:p-6 shadow-2xl max-h-[92dvh] overflow-y-auto text-[#F5F3EB]">
+      <div className="w-full max-w-md bg-[#124029] border-2 border-[#F97316]/75 rounded-3xl p-5 sm:p-6 shadow-2xl max-h-[92dvh] overflow-y-auto text-[#F5F3EB]">
         <div className="flex items-start justify-between gap-2 mb-4">
           <div className="flex items-center gap-2.5">
-            <div className="w-10 h-10 rounded-xl bg-[#F97316]/15 border border-[#F97316]/60 flex items-center justify-center text-[#F97316] shrink-0">
+            <div className="w-10 h-10 rounded-xl bg-[#0F273E] border border-[#F97316]/70 flex items-center justify-center text-[#F97316] shrink-0">
               <Bot className="w-5 h-5" />
             </div>
             <div>
               <h3 className="font-display font-extrabold text-2xl text-[#FFFFFF] uppercase leading-tight">
                 Bot ile Antrenman
               </h3>
-              <p className="text-xs text-[#A8B3C2]">Bot seviyesini ve oyun türünü seç</p>
+              <p className="text-xs text-[#C4D6CA]">Bot seviyesini ve oyun türünü seç</p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="min-w-[36px] min-h-[36px] rounded-xl bg-[#0B1220] hover:bg-[#1E293B] border border-[#A8B3C2]/25 text-[#A8B3C2] hover:text-[#FFFFFF] flex items-center justify-center shrink-0 cursor-pointer"
+            className="min-w-[36px] min-h-[36px] rounded-xl bg-[#0F273E] hover:bg-[#173857] border border-[#F5F3EB]/20 text-[#C4D6CA] hover:text-[#FFFFFF] flex items-center justify-center shrink-0 cursor-pointer"
             aria-label="Kapat"
           >
             <X className="w-4 h-4" />
@@ -65,7 +65,7 @@ export const BotSetupModal: React.FC<BotSetupModalProps> = ({
 
         {/* Bot Difficulty Selection: Çırak / Şampiyon / Efsane */}
         <div className="mb-4">
-          <label className="block text-[11px] font-black uppercase tracking-wider text-[#A8B3C2] mb-2">
+          <label className="block text-[11px] font-black uppercase tracking-wider text-[#C4D6CA] mb-2">
             Bot Seviyesi
           </label>
           <div className="grid grid-cols-3 gap-2">
@@ -79,15 +79,15 @@ export const BotSetupModal: React.FC<BotSetupModalProps> = ({
                   onClick={() => setDifficulty(tier.id)}
                   className={`p-3 rounded-2xl border text-center transition active:scale-95 cursor-pointer ${
                     active
-                      ? 'bg-[#F97316]/20 border-[#F97316] ring-2 ring-[#F97316]/30 shadow-md'
-                      : 'bg-[#0B1220] border-[#A8B3C2]/20 hover:border-[#F97316]/50'
+                      ? 'bg-[#0F273E] border-[#F97316] ring-2 ring-[#F97316]/40 shadow-md'
+                      : 'bg-[#0E3120] border-[#F5F3EB]/15 hover:border-[#F97316]/55'
                   }`}
                 >
                   <span className="text-2xl block mb-1">{tier.emoji}</span>
                   <span className="block font-display font-extrabold text-base text-[#FFFFFF] uppercase leading-tight">
                     {tier.title}
                   </span>
-                  <span className="block text-[10px] text-[#A8B3C2] mt-0.5 leading-tight">
+                  <span className="block text-[10px] text-[#C4D6CA] mt-0.5 leading-tight">
                     {tier.subtitle}
                   </span>
                 </button>
@@ -98,7 +98,7 @@ export const BotSetupModal: React.FC<BotSetupModalProps> = ({
 
         {/* Minigame Selection */}
         <div className="mb-5">
-          <label className="block text-[11px] font-black uppercase tracking-wider text-[#A8B3C2] mb-2 flex items-center gap-1">
+          <label className="block text-[11px] font-black uppercase tracking-wider text-[#C4D6CA] mb-2 flex items-center gap-1">
             <Sparkles className="w-3.5 h-3.5 text-[#E5B94F]" />
             <span>Oyun Çeşidi (4 Oyun)</span>
           </label>
@@ -113,8 +113,8 @@ export const BotSetupModal: React.FC<BotSetupModalProps> = ({
                   onClick={() => setMinigameType(mg.id)}
                   className={`flex items-center justify-between px-3.5 py-2.5 rounded-xl border text-left transition cursor-pointer ${
                     active
-                      ? 'bg-[#183D2B] border-[#22C55E] text-[#FFFFFF]'
-                      : 'bg-[#0B1220] border-[#A8B3C2]/15 text-[#A8B3C2] hover:border-[#3B82F6]/50 hover:text-[#FFFFFF]'
+                      ? 'bg-[#195E3A] border-[#4ADE80] text-[#FFFFFF]'
+                      : 'bg-[#0E3120] border-[#F5F3EB]/15 text-[#C4D6CA] hover:border-[#E5B94F]/45 hover:text-[#FFFFFF]'
                   }`}
                 >
                   <span className="font-bold text-xs sm:text-sm">{mg.title}</span>
@@ -131,7 +131,7 @@ export const BotSetupModal: React.FC<BotSetupModalProps> = ({
           type="button"
           data-testid="bot-start-match-btn"
           onClick={() => onStart(difficulty, minigameType)}
-          className="w-full py-3.5 rounded-xl bg-[#F97316] hover:bg-[#fb923c] text-[#0B1220] font-display font-extrabold text-xl tracking-wider uppercase flex items-center justify-center gap-2 transition active:scale-95 shadow-lg cursor-pointer"
+          className="w-full py-3.5 rounded-xl bg-[#F97316] hover:bg-[#fb923c] text-[#FFFFFF] font-display font-extrabold text-xl tracking-wider uppercase flex items-center justify-center gap-2 transition active:scale-95 shadow-lg cursor-pointer"
         >
           <Play className="w-4 h-4 fill-current" />
           <span>Antrenmanı Başlat</span>

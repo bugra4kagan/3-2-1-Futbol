@@ -12,6 +12,8 @@ import {
   Crown,
   Sparkles,
   RefreshCw,
+  ShoppingBag,
+  ChevronRight,
 } from 'lucide-react';
 import {
   PlayerProfile,
@@ -90,6 +92,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   onSignOut,
   onOpenAuth,
   onOpenSettings,
+  onOpenStore,
   onPurchaseStoreItem,
   onEquipItem,
   onRestorePurchases,
@@ -188,7 +191,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   return (
     <div
       data-testid="profile-view"
-      className="w-full max-w-xl mx-auto px-3 sm:px-4 pt-3 pb-24 flex flex-col gap-3.5 text-left text-[#F5F3EB]"
+      className="w-full max-w-xl md:max-w-3xl lg:max-w-4xl mx-auto px-3 sm:px-4 pt-3 pb-24 flex flex-col gap-3.5 text-left text-[#F5F3EB]"
     >
       {/* Rename warning when legacy name violates current filter */}
       {needsUsernameRename && (
@@ -218,8 +221,8 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       )}
 
       {/* 1 & 2 & 3 & 4: User Info, Icon + Edit Profile, Cloud Linking, Balance & League Points */}
-      <div className="p-4 sm:p-5 rounded-3xl bg-[#16212E] border border-[#A8B3C2]/20 space-y-4 shadow-lg">
-        <div className="flex items-center justify-between gap-3">
+      <div className="p-3.5 sm:p-5 rounded-3xl bg-[#124029] border border-[#E5B94F]/30 space-y-4 shadow-lg">
+        <div className="flex flex-wrap items-center justify-between gap-2.5 sm:gap-3">
           <div className="flex items-center gap-3 min-w-0">
             <PlayerAvatar
               avatar={activeAvatarId}
@@ -280,7 +283,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             type="button"
             data-testid="profile-edit-btn"
             onClick={() => onOpenAuth('profile')}
-            className="px-3.5 py-2 rounded-xl bg-[#0B1220] hover:bg-[#1E293B] border border-[#E5B94F]/55 text-xs font-black text-[#FFFFFF] flex items-center gap-1.5 shrink-0 cursor-pointer transition active:scale-95"
+            className="px-3.5 py-2 rounded-xl bg-[#0F273E] hover:bg-[#173857] border border-[#E5B94F]/60 text-xs font-black text-[#FFFFFF] flex items-center gap-1.5 shrink-0 cursor-pointer transition active:scale-95"
           >
             <Edit3 className="w-3.5 h-3.5 text-[#E5B94F]" />
             <span>Profil Düzenle</span>
@@ -411,18 +414,48 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         </div>
       </div>
 
+      {/* Mağazaya Git Card (Quick access to full StoreModal + below direct items) */}
+      {onOpenStore && (
+        <button
+          type="button"
+          data-testid="profile-go-to-store-btn"
+          onClick={() => onOpenStore('featured')}
+          className="w-full p-4 rounded-3xl bg-gradient-to-r from-[#1A6B40] to-[#12462B] hover:from-[#1F7C4B] hover:to-[#155233] border-2 border-[#E5B94F]/65 flex items-center justify-between gap-3 text-left shadow-lg transition active:scale-[0.99] cursor-pointer"
+        >
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-11 h-11 rounded-2xl bg-[#0F273E] border border-[#E5B94F]/65 flex items-center justify-center text-[#E5B94F] shrink-0">
+              <ShoppingBag className="w-5 h-5" />
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="font-display font-extrabold text-xl text-[#FFFFFF] uppercase leading-none">
+                  Mağazaya Git
+                </span>
+                <span className="text-[10px] font-black px-2 py-0.5 rounded bg-[#E5B94F] text-[#0D3822]">
+                  TÜM ÖĞELER
+                </span>
+              </div>
+              <span className="block text-[11px] text-[#F5F3EB]/85 mt-1 truncate">
+                Kulüp armaları, rozetler, ünvanlar ve +250 Coin ödülleri
+              </span>
+            </div>
+          </div>
+          <ChevronRight className="w-5 h-5 text-[#E5B94F] shrink-0" />
+        </button>
+      )}
+
       {/* Inline Store Status Banner */}
       {storeFeedback && (
         <div
           data-testid="profile-store-feedback"
           className={`p-3 rounded-2xl border text-xs font-bold flex items-center gap-2 ${
             storeFeedback.type === 'ok'
-              ? 'bg-[#183D2B] border-[#22C55E]/60 text-[#22C55E]'
-              : 'bg-[#DC2626]/15 border-[#DC2626]/65 text-[#FFFFFF]'
+              ? 'bg-[#144D2F] border-[#4ADE80]/60 text-[#4ADE80]'
+              : 'bg-[#C93B32]/20 border-[#C93B32]/70 text-[#FFFFFF]'
           }`}
         >
           {storeFeedback.type === 'err' && (
-            <AlertTriangle className="w-4 h-4 text-[#DC2626] shrink-0" />
+            <AlertTriangle className="w-4 h-4 text-[#F87171] shrink-0" />
           )}
           <span>{storeFeedback.text}</span>
         </div>
@@ -431,7 +464,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       {/* 5. Profil Çerçeveleri (Embedded Direct Store Section) */}
       <section
         data-testid="profile-frames-section"
-        className="p-4 rounded-3xl bg-[#16212E] border border-[#A8B3C2]/20 space-y-3"
+        className="p-4 rounded-3xl bg-[#124029] border border-[#E5B94F]/30 space-y-3"
       >
         <div className="flex items-center justify-between gap-2">
           <div>
@@ -447,7 +480,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           </span>
         </div>
 
-        <div className="grid grid-cols-2 gap-2.5">
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
           {profileFrames.map((frameItem) => {
             const owned = progression.unlockedGiftIds.includes(frameItem.id);
             const selected = owned && progression.equippedFrame === frameItem.value;
@@ -522,7 +555,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       {/* 6. Futbol Unvanları (Embedded Direct Cosmetic Titles) */}
       <section
         data-testid="profile-titles-section"
-        className="p-4 rounded-3xl bg-[#16212E] border border-[#A8B3C2]/20 space-y-3"
+        className="p-4 rounded-3xl bg-[#124029] border border-[#E5B94F]/30 space-y-3"
       >
         <div className="flex items-center justify-between gap-2">
           <div>
@@ -539,7 +572,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           </span>
         </div>
 
-        <div className="space-y-2">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
           {profileTitles.map((titleItem) => {
             const owned = progression.unlockedGiftIds.includes(titleItem.id);
             const selected = owned && progression.equippedTitle === titleItem.value;
@@ -606,7 +639,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       {adFreeItem && (
         <section
           data-testid="profile-remove-ads-section"
-          className="p-4 rounded-3xl bg-[#16212E] border-2 border-[#E5B94F]/55 space-y-3"
+          className="p-4 rounded-3xl bg-[#0F273E] border-2 border-[#E5B94F]/60 space-y-3 shadow-lg"
         >
           <div className="flex items-start justify-between gap-3">
             <div className="flex items-start gap-3 min-w-0">
@@ -685,7 +718,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             type="button"
             data-testid="profile-settings-btn"
             onClick={onOpenSettings}
-            className="py-3 px-4 rounded-2xl bg-[#16212E] hover:bg-[#1E293B] border border-[#A8B3C2]/25 text-[#FFFFFF] font-black text-xs flex items-center justify-center gap-2 cursor-pointer transition active:scale-95"
+            className="py-3 px-4 rounded-2xl bg-[#124029] hover:bg-[#175034] border border-[#E5B94F]/35 text-[#FFFFFF] font-black text-xs flex items-center justify-center gap-2 cursor-pointer transition active:scale-95"
           >
             <Settings className="w-4 h-4 text-[#E5B94F]" />
             <span>Ayarlar</span>
@@ -713,9 +746,9 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                 onExitApp?.();
               }
             }}
-            className="py-3 px-4 rounded-2xl bg-[#16212E] hover:bg-[#1E293B] border border-[#A8B3C2]/25 text-[#F5F3EB] font-black text-xs flex items-center justify-center gap-2 cursor-pointer transition active:scale-95 disabled:opacity-60"
+            className="py-3 px-4 rounded-2xl bg-[#0F273E] hover:bg-[#163654] border border-white/20 text-[#F5F3EB] font-black text-xs flex items-center justify-center gap-2 cursor-pointer transition active:scale-95 disabled:opacity-60"
           >
-            <LogOut className="w-4 h-4 text-[#A8B3C2]" />
+            <LogOut className="w-4 h-4 text-[#C4D6CA]" />
             <span>
               {isSigningOut
                 ? 'Çıkış yapılıyor...'
@@ -729,15 +762,15 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
 
       {/* 10. Hesabımı ve Verilerimi Sil */}
       {onDeleteAccount && (
-        <div className="p-3.5 rounded-2xl bg-[#16212E] border border-[#DC2626]/45 space-y-2.5">
+        <div className="p-3.5 rounded-2xl bg-[#0F273E] border border-[#C93B32]/55 space-y-2.5">
           {!confirmDeleteAccount ? (
             <button
               type="button"
               data-testid="profile-delete-account-btn"
               onClick={() => setConfirmDeleteAccount(true)}
-              className="w-full py-2.5 px-4 rounded-xl bg-[#DC2626]/15 hover:bg-[#DC2626]/25 border border-[#DC2626]/65 text-[#FFFFFF] font-black text-xs flex items-center justify-center gap-2 cursor-pointer transition"
+              className="w-full py-2.5 px-4 rounded-xl bg-[#C93B32]/18 hover:bg-[#C93B32]/30 border border-[#C93B32]/65 text-[#FFFFFF] font-black text-xs flex items-center justify-center gap-2 cursor-pointer transition"
             >
-              <Trash2 className="w-4 h-4 text-[#DC2626]" />
+              <Trash2 className="w-4 h-4 text-[#F87171]" />
               <span>Hesabımı ve Verilerimi Sil</span>
             </button>
           ) : (

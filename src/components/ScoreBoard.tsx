@@ -22,11 +22,12 @@ interface ScoreBoardProps {
   player1Frame?: string;
   player1Crest?: string;
   player1Badge?: string;
+  compact?: boolean;
   onOpenSettings: () => void;
   onExit: () => void;
 }
 
-export const ScoreBoard: React.FC<ScoreBoardProps> = ({
+export const ScoreBoard: React.FC<ScoreBoardProps> = React.memo(({
   player1,
   player2,
   roundNumber,
@@ -39,6 +40,7 @@ export const ScoreBoard: React.FC<ScoreBoardProps> = ({
   player1Frame,
   player1Crest,
   player1Badge,
+  compact = false,
   onOpenSettings,
   onExit,
 }) => {
@@ -65,31 +67,44 @@ export const ScoreBoard: React.FC<ScoreBoardProps> = ({
   const gameMeta = getMinigameMeta(minigameType);
 
   return (
-    <header className="shrink-0 z-30 w-full max-w-4xl mx-auto px-2.5 sm:px-4 pt-[max(0.65rem,calc(env(safe-area-inset-top)+0.4rem))] pb-1 sm:pb-1.5 bg-[#0B1220] border-b border-[#A8B3C2]/20">
+    <header
+      className={`shrink-0 z-30 w-full max-w-4xl lg:max-w-5xl mx-auto px-2 sm:px-4 bg-[#0E3120]/95 border-b border-[#E5B94F]/30 ${
+        compact
+          ? 'pt-[max(0.35rem,calc(env(safe-area-inset-top)+0.2rem))] pb-1'
+          : 'pt-[max(0.65rem,calc(env(safe-area-inset-top)+0.4rem))] pb-1 sm:pb-1.5'
+      }`}
+    >
       {/* Top utility bar */}
-      <div className="flex items-center justify-between gap-1.5 sm:gap-2 text-xs text-[#F5F3EB] font-semibold mb-2 sm:mb-2.5">
+      <div
+        className={`flex items-center justify-between gap-1 sm:gap-2 text-xs text-[#F5F3EB] font-semibold ${
+          compact ? 'mb-1.5' : 'mb-2 sm:mb-2.5'
+        }`}
+      >
         <button
           type="button"
+          data-testid="match-exit-btn"
           onClick={onExit}
-          className="flex items-center gap-1.5 min-h-[42px] px-2.5 sm:px-3 py-1.5 rounded-xl bg-[#16212E] hover:bg-[#1E293B] border border-[#A8B3C2]/25 transition active:scale-95 text-[#FFFFFF] whitespace-nowrap shrink-0 cursor-pointer touch-manipulation"
+          className={`flex items-center gap-1 px-2 sm:px-3 rounded-xl bg-[#0F273E] hover:bg-[#173857] border border-[#F5F3EB]/20 transition active:scale-95 text-[#FFFFFF] whitespace-nowrap shrink-0 cursor-pointer touch-manipulation ${
+            compact ? 'min-h-[34px] py-1' : 'min-h-[38px] sm:min-h-[42px] py-1.5'
+          }`}
           title="Maçtan Çık"
           aria-label="Maçtan Çık"
         >
-          <LogOut className="w-4 h-4 shrink-0 text-[#A8B3C2]" />
-          <span className="font-bold">{t('menu')}</span>
+          <LogOut className="w-4 h-4 shrink-0 text-[#C4D6CA]" />
+          <span className="font-bold hidden min-[350px]:inline">{t('menu')}</span>
         </button>
 
-        <div className="flex items-center justify-center gap-1.5 sm:gap-2 min-w-0">
-          <div className="min-w-0 truncate px-2.5 sm:px-3.5 py-1.5 rounded-full bg-[#183D2B] border border-[#168A52] text-[#22C55E] font-black tracking-wide uppercase text-[11px] sm:text-xs whitespace-nowrap">
+        <div className="flex items-center justify-center gap-1 sm:gap-2 min-w-0">
+          <div className="min-w-0 truncate px-2 sm:px-3.5 py-1 sm:py-1.5 rounded-full bg-[#144D2F] border border-[#4ADE80]/60 text-[#4ADE80] font-black tracking-wide uppercase text-[10px] sm:text-xs whitespace-nowrap">
             <span className="md:hidden">TUR {roundNumber} · {gameMeta.shortTitle}</span>
             <span className="hidden md:inline">İLK 3 KAZANIR • TUR {roundNumber} • {gameMeta.shortTitle}</span>
           </div>
           <div
             data-testid="round-timer-badge"
-            className={`px-2.5 sm:px-3.5 py-1.5 rounded-full border font-score font-extrabold tracking-wider text-xs sm:text-sm transition-colors whitespace-nowrap shrink-0 ${
+            className={`px-2 sm:px-3.5 py-1 sm:py-1.5 rounded-full border font-score font-extrabold tracking-wider text-xs sm:text-sm transition-colors whitespace-nowrap shrink-0 ${
               isLowTime
-                ? 'bg-[#DC2626] border-[#FFFFFF]/60 text-[#FFFFFF] animate-pulse'
-                : 'bg-[#16212E] border-[#E5B94F]/55 text-[#E5B94F]'
+                ? 'bg-[#C93B32] border-[#FFFFFF]/65 text-[#FFFFFF] animate-pulse'
+                : 'bg-[#0F273E] border-[#E5B94F]/60 text-[#E5B94F]'
             }`}
           >
             ⏱ {formattedTime}
@@ -100,7 +115,9 @@ export const ScoreBoard: React.FC<ScoreBoardProps> = ({
           type="button"
           data-testid="header-settings-btn"
           onClick={onOpenSettings}
-          className="min-w-[42px] min-h-[42px] p-2 rounded-xl bg-[#16212E] hover:bg-[#1E293B] border border-[#A8B3C2]/25 transition active:scale-95 text-[#E5B94F] flex items-center justify-center shrink-0 cursor-pointer touch-manipulation"
+          className={`p-2 rounded-xl bg-[#0F273E] hover:bg-[#173857] border border-[#F5F3EB]/20 transition active:scale-95 text-[#E5B94F] flex items-center justify-center shrink-0 cursor-pointer touch-manipulation ${
+            compact ? 'min-w-[34px] min-h-[34px]' : 'min-w-[38px] min-h-[38px] sm:min-w-[42px] sm:min-h-[42px]'
+          }`}
           title={t('settings')}
           aria-label={t('settings')}
         >
@@ -109,7 +126,11 @@ export const ScoreBoard: React.FC<ScoreBoardProps> = ({
       </div>
 
       {/* Main Scoreboard Banner */}
-      <div className="relative overflow-hidden rounded-2xl sm:rounded-3xl bg-[#16212E] border border-[#A8B3C2]/20 p-2.5 sm:p-4">
+      <div
+        className={`relative overflow-hidden rounded-2xl sm:rounded-3xl bg-[#124029] border border-[#E5B94F]/30 ${
+          compact ? 'p-1.5 sm:p-2.5' : 'p-2.5 sm:p-4'
+        }`}
+      >
         {/* MOBILE LAYOUT (< 640px) */}
         <div className="relative z-10 grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-1.5 sm:hidden">
           {/* Mobile Player 1 Card */}
@@ -335,7 +356,11 @@ export const ScoreBoard: React.FC<ScoreBoardProps> = ({
         </div>
 
         {/* Progress Bar for Current Round Time */}
-        <div className="w-full bg-[#080E14] h-1.5 sm:h-2 rounded-full mt-2.5 overflow-hidden border border-white/10">
+        <div
+          className={`w-full bg-[#080E14] h-1.5 sm:h-2 rounded-full overflow-hidden border border-white/10 ${
+            compact ? 'mt-1.5' : 'mt-2.5'
+          }`}
+        >
           <div
             className={`h-full transition-all duration-1000 ease-linear rounded-full ${
               isLowTime ? 'bg-[#EF4444]' : 'bg-[#22C55E]'
@@ -346,4 +371,4 @@ export const ScoreBoard: React.FC<ScoreBoardProps> = ({
       </div>
     </header>
   );
-};
+});

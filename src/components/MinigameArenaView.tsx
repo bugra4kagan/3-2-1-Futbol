@@ -65,6 +65,8 @@ interface MinigameArenaViewProps {
   userCoins?: number;
   freeJokerTickets?: number;
   roundSeed?: string;
+  isKeyboardOpen?: boolean;
+  isCompactViewport?: boolean;
   onSpendCoinsForJoker?: (costCoins: number) => { ok: boolean; reason?: string };
   onUseEnergyDrinkHint?: () => boolean;
   onUseEnergyDrinkPass?: () => void;
@@ -144,6 +146,8 @@ export const MinigameArenaView: React.FC<MinigameArenaViewProps> = ({
   userCoins = 0,
   freeJokerTickets = 0,
   roundSeed,
+  isKeyboardOpen = false,
+  isCompactViewport = false,
   onSpendCoinsForJoker,
   onAnswerWinner,
   onBotWrongAttempt,
@@ -169,6 +173,8 @@ export const MinigameArenaView: React.FC<MinigameArenaViewProps> = ({
   const [showAutocomplete, setShowAutocomplete] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const exhaustTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const focusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastSubmitRef = useRef<{ value: string; at: number }>({ value: '', at: 0 });
   const botAttemptedRoundKeyRef = useRef<string | null>(null);
 
   const isXox = round.minigameType === 'xox';
@@ -198,16 +204,33 @@ export const MinigameArenaView: React.FC<MinigameArenaViewProps> = ({
   useEffect(() => {
     return () => {
       if (exhaustTimerRef.current) clearTimeout(exhaustTimerRef.current);
+      if (focusTimerRef.current) clearTimeout(focusTimerRef.current);
     };
   }, []);
 
   // Focus input when active round begins
   useEffect(() => {
-    if (!disabled && !isXox) {
-      setTimeout(() => {
-        inputRef.current?.focus();
-      }, 100);
+    lastSubmitRef.current = { value: '', at: 0 };
+    if (focusTimerRef.current) {
+      clearTimeout(focusTimerRef.current);
+      focusTimerRef.current = null;
     }
+    if (!disabled && !isXox) {
+      focusTimerRef.current = setTimeout(() => {
+        focusTimerRef.current = null;
+        try {
+          inputRef.current?.focus({ preventScroll: true });
+        } catch {
+          inputRef.current?.focus();
+        }
+      }, 90);
+    }
+    return () => {
+      if (focusTimerRef.current) {
+        clearTimeout(focusTimerRef.current);
+        focusTimerRef.current = null;
+      }
+    };
   }, [roundKey, disabled, isXox]);
 
   // Clear selected cell if it gets claimed
@@ -493,6 +516,11 @@ export const MinigameArenaView: React.FC<MinigameArenaViewProps> = ({
   const submitAnswerValue = (rawVal: string) => {
     if (disabled || !rawVal.trim()) return;
     const val = rawVal.trim();
+    const now = Date.now();
+    if (lastSubmitRef.current.value === val && now - lastSubmitRef.current.at < 280) {
+      return;
+    }
+    lastSubmitRef.current = { value: val, at: now };
 
     if (isSilhouette && round.silhouette) {
       const resolved = resolveGuessedPlayerFromInput(val, round.silhouette.playerId);
@@ -666,14 +694,21 @@ export const MinigameArenaView: React.FC<MinigameArenaViewProps> = ({
   }, [isXox, round.xoxBoard, selectedCell]);
 
   const inputDisabled = disabled || (isXox && !isMyXoxTurn) || isSilhouetteExhausted;
+  const compactLayout = isKeyboardOpen || isCompactViewport;
 
   return (
     <div
       data-testid={`minigame-arena-${round.minigameType}`}
-      className={`w-full flex flex-col items-center flex-1 min-h-0 overflow-y-auto overscroll-contain py-1.5 sm:py-3 px-2.5 sm:px-4 ${
-        isSilhouette ? 'justify-start gap-1 pb-6' : 'justify-between'
-      }`}
+      className={`w-full flex flex-col items-center flex-1 min-h-0 overflow-hidden px-2.5 sm:px-4 ${
+        isKeyboardOpen ? 'pt-1 pb-1' : 'py-1.5 sm:py-3'
+      } ${isSilhouette ? 'justify-start gap-1' : 'justify-between'}`}
     >
+      {/* Top Challenge Stage (scrollable cleanly when keyboard shrinks viewport so input stays anchored flush above keyboard) */}
+      <div
+        className={`w-full flex-1 min-h-0 overflow-y-auto overscroll-contain flex flex-col items-center ${
+          isSilhouette ? 'justify-start' : 'justify-center'
+        }`}
+      >
       {/* 1. FUTBOLCUYU TAHMİN ET (8-ATTEMPT BLURRED PORTRAIT & CLUES) */}
       {isSilhouette && round.silhouette && (
         <div
@@ -871,15 +906,21 @@ export const MinigameArenaView: React.FC<MinigameArenaViewProps> = ({
       {round.minigameType === 'career' && round.career && (
         <div
           key={roundKey}
-          className="w-full max-w-md my-auto flex flex-col items-center animate-card-pop"
+          className="w-full max-w-md md:max-w-xl my-auto flex flex-col items-center animate-card-pop"
         >
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-sky-500/15 border border-sky-400/40 text-sky-300 text-[11px] font-black uppercase tracking-wider mb-3">
-            KARİYER YOLUNDAN FUTBOLCUYU BUL
-          </span>
+          {!isKeyboardOpen && (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-sky-500/15 border border-sky-400/40 text-sky-300 text-[11px] font-black uppercase tracking-wider mb-2 sm:mb-3">
+              KARİYER YOLUNDAN FUTBOLCUYU BUL
+            </span>
+          )}
 
           <div
             data-testid="career-vertical-timeline"
-            className="w-full p-3 sm:p-4 rounded-3xl bg-slate-900/96 border border-slate-700/80 shadow-2xl max-h-[42dvh] sm:max-h-[52dvh] overflow-y-auto"
+            className={`w-full rounded-3xl bg-slate-900/96 border border-slate-700/80 shadow-2xl overflow-y-auto ${
+              isKeyboardOpen
+                ? 'p-2 sm:p-3 max-h-[28dvh]'
+                : 'p-3 sm:p-4 max-h-[42dvh] sm:max-h-[52dvh]'
+            }`}
           >
             <div className="flex flex-col items-stretch gap-1.5">
               {round.career.steps.map((step, idx) => {
@@ -933,50 +974,88 @@ export const MinigameArenaView: React.FC<MinigameArenaViewProps> = ({
       {round.minigameType === 'country_club' && round.countryClub && (
         <div
           key={roundKey}
-          className="w-full max-w-xl my-auto flex flex-col items-center animate-card-pop"
+          className="w-full max-w-xl md:max-w-2xl my-auto flex flex-col items-center animate-card-pop"
         >
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-500/15 border border-rose-400/40 text-rose-300 text-[11px] font-black uppercase tracking-wider mb-3">
-            1 ÜLKE + 1 KULÜP ORTAK FUTBOLCU
-          </span>
+          {!isKeyboardOpen && (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-500/15 border border-rose-400/40 text-rose-300 text-[11px] font-black uppercase tracking-wider mb-2 sm:mb-3">
+              1 ÜLKE + 1 KULÜP ORTAK FUTBOLCU
+            </span>
+          )}
 
-          <div className="w-full flex items-stretch justify-center gap-2 sm:gap-6">
+          <div
+            className={`w-full flex items-stretch justify-center ${
+              compactLayout ? 'gap-1.5 sm:gap-4' : 'gap-2 sm:gap-6'
+            }`}
+          >
             {/* Country Card */}
-            <div className="flex-1 min-w-0 flex flex-col items-center justify-center text-center p-3 sm:p-5 rounded-2xl bg-slate-900/96 border border-slate-700/80 shadow-xl">
-              <div className="w-20 h-20 sm:w-28 sm:h-28 rounded-2xl bg-slate-950 border border-slate-700/80 flex items-center justify-center shadow-inner p-2">
+            <div
+              className={`flex-1 min-w-0 flex flex-col items-center justify-center text-center rounded-2xl bg-slate-900/96 border border-slate-700/80 shadow-xl ${
+                compactLayout ? 'p-2 sm:p-3' : 'p-3 sm:p-5'
+              }`}
+            >
+              <div
+                className={`rounded-2xl bg-slate-950 border border-slate-700/80 flex items-center justify-center shadow-inner p-1.5 sm:p-2 ${
+                  compactLayout ? 'w-12 h-12 sm:w-16 sm:h-16' : 'w-20 h-20 sm:w-28 sm:h-28'
+                }`}
+              >
                 <CountryFlag
                   country={round.countryClub.country}
                   flag={round.countryClub.countryFlag}
-                  size="xl"
+                  size={compactLayout ? 'lg' : 'xl'}
                 />
               </div>
-              <h3 className="mt-2.5 font-black text-sm sm:text-lg text-white leading-tight">
+              <h3
+                className={`font-black text-white leading-tight ${
+                  compactLayout ? 'mt-1 text-xs sm:text-base' : 'mt-2.5 text-sm sm:text-lg'
+                }`}
+              >
                 {round.countryClub.country}
               </h3>
-              <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-rose-300 mt-0.5">
-                MİLLİYET
-              </span>
+              {!isKeyboardOpen && (
+                <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-rose-300 mt-0.5">
+                  MİLLİYET
+                </span>
+              )}
             </div>
 
             {/* Link Badge */}
             <div className="flex flex-col items-center justify-center shrink-0">
-              <div className="w-9 h-9 sm:w-11 sm:h-11 rounded-full bg-rose-500 text-white font-black flex items-center justify-center shadow-lg shadow-rose-500/30 text-base sm:text-lg">
+              <div
+                className={`rounded-full bg-rose-500 text-white font-black flex items-center justify-center shadow-lg shadow-rose-500/30 ${
+                  compactLayout ? 'w-8 h-8 text-sm' : 'w-9 h-9 sm:w-11 sm:h-11 text-base sm:text-lg'
+                }`}
+              >
                 +
               </div>
-              <span className="text-[9px] sm:text-[10px] text-rose-300 font-bold uppercase mt-1">
+              <span className="text-[9px] sm:text-[10px] text-rose-300 font-bold uppercase mt-0.5">
                 YILDIZ
               </span>
             </div>
 
             {/* Club Card */}
             {CLUBS[round.countryClub.clubId] && (
-              <div className="flex-1 min-w-0 flex flex-col items-center justify-center text-center p-3 sm:p-5 rounded-2xl bg-slate-900/96 border border-slate-700/80 shadow-xl">
-                <ClubBadge club={CLUBS[round.countryClub.clubId]} size="lg" />
-                <h3 className="mt-2.5 w-full text-center font-black text-xs sm:text-base text-white line-clamp-2 leading-tight break-words">
+              <div
+                className={`flex-1 min-w-0 flex flex-col items-center justify-center text-center rounded-2xl bg-slate-900/96 border border-slate-700/80 shadow-xl ${
+                  compactLayout ? 'p-2 sm:p-3' : 'p-3 sm:p-5'
+                }`}
+              >
+                <ClubBadge
+                  club={CLUBS[round.countryClub.clubId]}
+                  size={compactLayout ? 'md' : 'lg'}
+                  className={compactLayout ? '!w-12 !h-12 sm:!w-16 sm:!h-16' : ''}
+                />
+                <h3
+                  className={`w-full text-center font-black text-white line-clamp-2 leading-tight break-words ${
+                    compactLayout ? 'mt-1 text-xs sm:text-sm' : 'mt-2.5 text-xs sm:text-base'
+                  }`}
+                >
                   {CLUBS[round.countryClub.clubId].name}
                 </h3>
-                <span className="text-[10px] sm:text-[11px] text-slate-400 font-medium mt-0.5">
-                  {CLUBS[round.countryClub.clubId].country}
-                </span>
+                {!isKeyboardOpen && (
+                  <span className="text-[10px] sm:text-[11px] text-slate-400 font-medium mt-0.5">
+                    {CLUBS[round.countryClub.clubId].country}
+                  </span>
+                )}
               </div>
             )}
           </div>
@@ -987,12 +1066,12 @@ export const MinigameArenaView: React.FC<MinigameArenaViewProps> = ({
       {isXox && round.xoxBoard && xoxState && (
         <div
           key={roundKey}
-          className="w-full max-w-lg my-auto flex flex-col items-center animate-card-pop"
+          className="w-full max-w-lg md:max-w-xl my-auto flex flex-col items-center animate-card-pop"
         >
-          <div className="w-full flex flex-wrap items-center justify-between gap-2 mb-2">
+          <div className="w-full flex flex-wrap items-center justify-between gap-1.5 mb-1.5">
             <div
               data-testid="xox-turn-banner"
-              className={`px-3 py-1.5 rounded-xl border text-xs font-black flex items-center gap-1.5 shadow ${
+              className={`px-2.5 py-1 rounded-xl border text-[11px] sm:text-xs font-black flex items-center gap-1.5 shadow ${
                 isMyXoxTurn
                   ? 'bg-emerald-500/20 border-emerald-400 text-emerald-300'
                   : 'bg-amber-500/15 border-amber-400/50 text-amber-200 animate-pulse'
@@ -1010,12 +1089,12 @@ export const MinigameArenaView: React.FC<MinigameArenaViewProps> = ({
           </div>
 
           {xoxNotice && (
-            <div className="w-full mb-2 px-3 py-1.5 rounded-xl bg-amber-950/75 border border-amber-500/40 text-amber-200 text-xs font-bold text-center">
+            <div className="w-full mb-1.5 px-3 py-1 rounded-xl bg-amber-950/75 border border-amber-500/40 text-amber-200 text-xs font-bold text-center">
               {xoxNotice}
             </div>
           )}
 
-          <div className="w-full grid grid-cols-[84px_repeat(3,minmax(0,1fr))] sm:grid-cols-[120px_repeat(3,minmax(0,1fr))] gap-1.5 sm:gap-2">
+          <div className="w-full grid grid-cols-[72px_repeat(3,minmax(0,1fr))] min-[360px]:grid-cols-[84px_repeat(3,minmax(0,1fr))] sm:grid-cols-[120px_repeat(3,minmax(0,1fr))] gap-1 sm:gap-2">
             <div className="flex flex-col items-center justify-center rounded-xl bg-slate-950/90 border border-slate-800 p-1 text-center">
               <span className="text-xs sm:text-sm font-black text-purple-300">XOX</span>
               <span className="text-[9px] text-slate-500 font-bold">3'lü Yap!</span>
@@ -1107,8 +1186,17 @@ export const MinigameArenaView: React.FC<MinigameArenaViewProps> = ({
         </div>
       )}
 
-      {/* Answer Input Section (placed cleanly above Who Are Ya guess rows in Silhouette mode) */}
-      <div className={`w-full max-w-lg ${isSilhouette ? 'mt-3 mb-2' : 'max-w-md mt-auto mb-1.5 pt-2'}`}>
+      </div>
+
+      {/* Answer Input Section — Input anchored flush at bottom right above soft keyboard */}
+      <div
+        data-testid="match-answer-dock"
+        className={`w-full shrink-0 ${
+          isSilhouette
+            ? 'max-w-lg md:max-w-xl mt-2 mb-1'
+            : `max-w-md md:max-w-xl mt-auto ${isKeyboardOpen ? 'mb-0 pt-1' : 'mb-1.5 pt-1.5'}`
+        }`}
+      >
         {selectedXoxPrompt && (
           <div className="mb-1.5 px-3 py-1 rounded-xl bg-purple-950/80 border border-purple-400/50 text-purple-200 text-xs font-bold flex items-center justify-center gap-1.5">
             <CheckCircle2 className="w-3.5 h-3.5 text-purple-300 shrink-0" />
@@ -1117,8 +1205,17 @@ export const MinigameArenaView: React.FC<MinigameArenaViewProps> = ({
         )}
 
         {showOpponentMissed && (
-          <div className="mb-1.5 px-3 py-1.5 rounded-xl bg-amber-950/80 border border-amber-500/40 text-amber-300 text-xs font-bold flex items-center justify-center gap-1.5 animate-in fade-in">
+          <div className="mb-1.5 px-3 py-1 rounded-xl bg-amber-950/80 border border-amber-500/40 text-amber-300 text-xs font-bold flex items-center justify-center gap-1.5 animate-in fade-in">
             <span>⚡ {player2.name} yanlış tahmin yaptı! Sıra sende!</span>
+          </div>
+        )}
+
+        {botFeedbackToast && (
+          <div
+            data-testid="bot-wrong-toast"
+            className="mb-1.5 px-3 py-1 rounded-xl bg-[#101B24] border border-amber-400/40 text-amber-300 text-xs font-bold text-center"
+          >
+            {botFeedbackToast}
           </div>
         )}
 
@@ -1132,16 +1229,58 @@ export const MinigameArenaView: React.FC<MinigameArenaViewProps> = ({
           </div>
         )}
 
+        {/* Coin Jokers sit cleanly ABOVE input so ZERO vertical gap remains below input when keyboard opens */}
+        <JokerControlPanel
+          validPlayerIds={
+            isXox
+              ? getRoundValidPlayerIds(round, selectedCell || undefined)
+              : getRoundValidPlayerIds(round)
+          }
+          roundSeed={`${roundSeed || roundKey}${
+            isXox && selectedCell ? `-${selectedCell.row}-${selectedCell.col}` : ''
+          }`}
+          userCoins={userCoins}
+          freeJokerTickets={freeJokerTickets}
+          compact={compactLayout}
+          onSpendCoinsForJoker={onSpendCoinsForJoker}
+          disabled={inputDisabled || (isXox && !selectedCell)}
+        />
+
+        {!isKeyboardOpen && (
+          <div className="mb-1.5 flex flex-wrap items-center justify-between gap-1 text-[10px] sm:text-[11px] text-slate-400 px-1">
+            <span className="flex items-center gap-1 text-slate-400">
+              <Sparkles className="w-3 h-3 text-amber-400 shrink-0" />
+              <span>
+                {isSilhouette
+                  ? 'Her tahminde kulüp, ülke, mevki, yaş & forma ipucu açılır'
+                  : 'Türkçe/İngilizce karakterler otomatik eşleşir'}
+              </span>
+            </span>
+            <span className="font-semibold text-emerald-400 whitespace-nowrap">
+              {isXox ? "3'lü Sıra Kur: +1 Galibiyet" : 'Doğru Cevap: +1 Galibiyet'}
+            </span>
+          </div>
+        )}
+
         <div className="relative">
           <form onSubmit={handleSubmit} className="relative flex items-center">
             <input
               ref={inputRef}
               type="text"
+              enterKeyHint="send"
+              autoComplete="off"
+              autoCorrect="off"
+              spellCheck={false}
               data-testid="match-answer-input"
               value={answerInput}
               onFocus={() => setShowAutocomplete(true)}
               onBlur={() => {
                 setTimeout(() => setShowAutocomplete(false), 180);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && e.nativeEvent.isComposing) {
+                  e.preventDefault();
+                }
               }}
               onChange={(e) => {
                 setAnswerInput(e.target.value);
@@ -1163,7 +1302,9 @@ export const MinigameArenaView: React.FC<MinigameArenaViewProps> = ({
                   ? 'Futbolcu adı yaz veya listeden seç...'
                   : 'Futbolcunun adını yaz (en az 2 harf)...'
               }
-              className={`w-full bg-slate-900/95 text-white font-bold pl-3.5 sm:pl-4 pr-14 py-3 sm:py-3.5 rounded-2xl border-2 text-sm sm:text-base outline-none transition shadow-xl ${
+              className={`w-full bg-slate-900/95 text-white font-bold pl-3.5 sm:pl-4 pr-14 rounded-2xl border-2 text-sm sm:text-base outline-none transition shadow-xl ${
+                isKeyboardOpen ? 'py-2.5 sm:py-3' : 'py-3 sm:py-3.5'
+              } ${
                 isShake
                   ? 'border-red-500 bg-red-950/40 shadow-[0_0_22px_rgba(239,68,68,0.65)] animate-wrong-shake'
                   : 'border-emerald-500/70 focus:border-emerald-400 focus:ring-4 focus:ring-emerald-500/20'
@@ -1172,19 +1313,19 @@ export const MinigameArenaView: React.FC<MinigameArenaViewProps> = ({
             <button
               type="submit"
               disabled={inputDisabled || !answerInput.trim()}
-              className="absolute right-2 min-w-[42px] min-h-[40px] px-3.5 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 disabled:opacity-40 disabled:cursor-not-allowed text-slate-950 font-black text-sm flex items-center justify-center transition active:scale-95 shadow-md shadow-emerald-500/20"
+              className="absolute right-2 min-w-[42px] min-h-[38px] sm:min-h-[40px] px-3.5 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 disabled:opacity-40 disabled:cursor-not-allowed text-slate-950 font-black text-sm flex items-center justify-center transition active:scale-95 shadow-md shadow-emerald-500/20"
               aria-label="Cevabı Gönder"
             >
               <Send className="w-4 h-4" />
             </button>
           </form>
 
-          {/* Live 2+ char Player Autocomplete Dropdown across all minigames */}
+          {/* Live 2+ char Player Autocomplete Dropdown across all minigames (opens upward above keyboard when open) */}
           {showAutocomplete && !inputDisabled && autocompletePlayers.length > 0 && (
             <div
               data-testid={isSilhouette ? 'silhouette-autocomplete' : 'arena-autocomplete'}
-              className={`absolute left-0 right-0 z-30 rounded-2xl bg-slate-900 border border-emerald-500/45 shadow-2xl overflow-hidden max-h-56 overflow-y-auto divide-y divide-slate-800/80 ${
-                isSilhouette ? 'top-full mt-1.5' : 'bottom-full mb-1.5'
+              className={`absolute left-0 right-0 z-30 rounded-2xl bg-slate-900 border border-emerald-500/45 shadow-2xl overflow-hidden overflow-y-auto divide-y divide-slate-800/80 ${
+                isKeyboardOpen ? 'max-h-40 bottom-full mb-1.5' : isSilhouette ? 'max-h-56 top-full mt-1.5' : 'max-h-56 bottom-full mb-1.5'
               }`}
             >
               {autocompletePlayers.map((p) => {
@@ -1234,45 +1375,6 @@ export const MinigameArenaView: React.FC<MinigameArenaViewProps> = ({
             </div>
           )}
         </div>
-
-        <div className="mt-1.5 flex flex-wrap items-center justify-between gap-1 text-[10px] sm:text-[11px] text-slate-400 px-1">
-          <span className="flex items-center gap-1 text-slate-400">
-            <Sparkles className="w-3 h-3 text-amber-400 shrink-0" />
-            <span>
-              {isSilhouette
-                ? 'Her tahminde kulüp, ülke, mevki, yaş & forma ipucu açılır'
-                : 'Türkçe/İngilizce karakterler otomatik eşleşir'}
-            </span>
-          </span>
-          <span className="font-semibold text-emerald-400 whitespace-nowrap">
-            {isXox ? "3'lü Sıra Kur: +1 Galibiyet" : 'Doğru Cevap: +1 Galibiyet'}
-          </span>
-        </div>
-
-        {/* Coin Jokers (Uyruk & Mevki / Baş Harf Aç) */}
-        <JokerControlPanel
-          validPlayerIds={
-            isXox
-              ? getRoundValidPlayerIds(round, selectedCell || undefined)
-              : getRoundValidPlayerIds(round)
-          }
-          roundSeed={`${roundSeed || roundKey}${
-            isXox && selectedCell ? `-${selectedCell.row}-${selectedCell.col}` : ''
-          }`}
-          userCoins={userCoins}
-          freeJokerTickets={freeJokerTickets}
-          onSpendCoinsForJoker={onSpendCoinsForJoker}
-          disabled={inputDisabled || (isXox && !selectedCell)}
-        />
-
-        {botFeedbackToast && (
-          <div
-            data-testid="bot-wrong-toast"
-            className="mt-2 px-3 py-1.5 rounded-xl bg-[#101B24] border border-amber-400/40 text-amber-300 text-xs font-bold text-center"
-          >
-            {botFeedbackToast}
-          </div>
-        )}
       </div>
 
       {/* WHO ARE YA GUESS COMPARISON ROWS */}

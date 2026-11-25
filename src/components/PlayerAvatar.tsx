@@ -43,7 +43,7 @@ function adjustHex(hex: string, factor: number, lift = 0): string {
     .padStart(2, '0')}`;
 }
 
-export const PlayerAvatar: React.FC<PlayerAvatarProps> = ({
+export const PlayerAvatar: React.FC<PlayerAvatarProps> = React.memo(({
   player = null,
   appearance,
   avatar = DEFAULT_STARTER_AVATAR,
@@ -935,4 +935,4 @@ export const PlayerAvatar: React.FC<PlayerAvatarProps> = ({
       )}
     </div>
   );
-};
+});

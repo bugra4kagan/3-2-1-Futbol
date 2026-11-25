@@ -129,20 +129,20 @@ export const StoreModal: React.FC<StoreModalProps> = ({
   return (
     <div
       data-testid="store-modal"
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 pt-[max(0.75rem,env(safe-area-inset-top))] bg-[#080E14]/92 overflow-y-auto animate-screen-fade"
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 pt-[max(0.75rem,env(safe-area-inset-top))] bg-[#092316]/88 overflow-y-auto animate-screen-fade"
     >
-      <div className="relative w-full max-w-2xl bg-[#101B24] border border-white/10 rounded-3xl p-4 sm:p-6 shadow-2xl text-left my-auto max-h-[92dvh] flex flex-col overflow-hidden">
+      <div className="relative w-full max-w-2xl lg:max-w-4xl bg-[#124029] border-2 border-[#E5B94F]/45 rounded-3xl p-3.5 sm:p-6 shadow-2xl text-left my-auto max-h-[92dvh] flex flex-col overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between gap-2 pb-3 border-b border-white/10 shrink-0">
+        <div className="flex items-center justify-between gap-2 pb-3 border-b border-[#F5F3EB]/15 shrink-0">
           <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-10 h-10 rounded-2xl bg-[#123D2B] border border-[#22C55E]/40 text-[#22C55E] flex items-center justify-center shrink-0">
+            <div className="w-10 h-10 rounded-2xl bg-[#0F273E] border border-[#E5B94F]/55 text-[#E5B94F] flex items-center justify-center shrink-0">
               <ShoppingBag className="w-5 h-5" />
             </div>
             <div className="min-w-0">
-              <h2 className="text-base sm:text-xl font-black text-[#F8FAFC] leading-tight truncate">
+              <h2 className="font-display text-lg sm:text-xl font-extrabold text-[#FFFFFF] uppercase leading-tight truncate">
                 Mağaza
               </h2>
-              <p className="text-[11px] text-[#94A3B8] font-medium truncate">
+              <p className="text-[11px] text-[#C4D6CA] font-medium truncate">
                 Coinlerinle kulüp arması, çerçeve, rozet ve ünvan aç
               </p>
             </div>
@@ -152,7 +152,7 @@ export const StoreModal: React.FC<StoreModalProps> = ({
             type="button"
             data-testid="store-close-btn"
             onClick={onClose}
-            className="w-9 h-9 rounded-xl bg-[#14232C] hover:bg-[#080E14] border border-white/10 text-[#94A3B8] hover:text-[#F8FAFC] flex items-center justify-center shrink-0 cursor-pointer"
+            className="w-9 h-9 rounded-xl bg-[#0F273E] hover:bg-[#173857] border border-[#F5F3EB]/20 text-[#C4D6CA] hover:text-[#FFFFFF] flex items-center justify-center shrink-0 cursor-pointer"
             aria-label="Mağazayı Kapat"
           >
             <X className="w-5 h-5" />
@@ -161,15 +161,15 @@ export const StoreModal: React.FC<StoreModalProps> = ({
 
         {/* Balance + Free Ad Coins Row */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 py-3 shrink-0">
-          <div className="px-3 py-2.5 rounded-2xl bg-[#14232C] border border-white/10 flex items-center gap-2.5">
+          <div className="px-3 py-2.5 rounded-2xl bg-[#0F273E] border border-[#E5B94F]/40 flex items-center gap-2.5">
             <CoinIcon size="sm" />
             <div className="min-w-0">
-              <span className="block text-[9px] font-black uppercase text-[#94A3B8]">
+              <span className="block text-[9px] font-black uppercase text-[#C4D6CA]">
                 Coin Bakiyesi
               </span>
               <span
                 data-testid="store-coins-balance"
-                className="block text-sm font-black font-mono text-[#FBBF24] truncate"
+                className="block text-sm font-black font-score text-[#E5B94F] truncate"
               >
                 {formatPoints(progression.coins)} Coin
               </span>
@@ -181,20 +181,20 @@ export const StoreModal: React.FC<StoreModalProps> = ({
               type="button"
               data-testid="store-watch-ad-coins-btn"
               onClick={onWatchAdForCoins}
-              className="px-3 py-2.5 rounded-2xl bg-[#123D2B] hover:bg-[#154b35] border border-[#22C55E]/40 text-[#F8FAFC] font-black text-xs flex items-center justify-between gap-2 transition active:scale-[0.99] cursor-pointer"
+              className="px-3 py-2.5 rounded-2xl bg-[#166D3F] hover:bg-[#1B804B] border border-[#4ADE80]/55 text-[#FFFFFF] font-black text-xs flex items-center justify-between gap-2 transition active:scale-[0.99] cursor-pointer"
             >
               <div className="flex items-center gap-2 min-w-0 text-left">
-                <Film className="w-4 h-4 text-[#22C55E] shrink-0" />
+                <Film className="w-4 h-4 text-[#E5B94F] shrink-0" />
                 <div className="min-w-0">
                   <span className="block text-xs font-black truncate">
                     Reklam İzle (+250 Coin)
                   </span>
-                  <span className="block text-[10px] font-semibold text-[#94A3B8] truncate">
+                  <span className="block text-[10px] font-semibold text-[#D7E6DC] truncate">
                     Kısa ödüllü reklam ile ücretsiz Coin
                   </span>
                 </div>
               </div>
-              <span className="px-2 py-1 rounded-lg bg-[#080E14] text-[#22C55E] text-[10px] font-black shrink-0">
+              <span className="px-2 py-1 rounded-lg bg-[#0F273E] text-[#E5B94F] text-[10px] font-black shrink-0">
                 +250
               </span>
             </button>
@@ -229,8 +229,8 @@ export const StoreModal: React.FC<StoreModalProps> = ({
             data-testid="store-feedback"
             className={`mb-2 px-3 py-2 rounded-xl border text-xs font-bold shrink-0 ${
               feedback.type === 'ok'
-                ? 'bg-[#123D2B] border-[#22C55E]/50 text-[#22C55E]'
-                : 'bg-red-950/75 border-[#EF4444]/60 text-[#EF4444]'
+                ? 'bg-[#144D2F] border-[#4ADE80]/55 text-[#4ADE80]'
+                : 'bg-[#C93B32]/20 border-[#C93B32]/65 text-[#F87171]'
             }`}
           >
             {feedback.text}
@@ -238,7 +238,7 @@ export const StoreModal: React.FC<StoreModalProps> = ({
         )}
 
         {/* Items Grid */}
-        <div className="flex-1 min-h-0 overflow-y-auto pr-1 grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+        <div className="flex-1 min-h-0 overflow-y-auto pr-1 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
           {visibleItems.map((item) => {
             const owned = isPermanentOwned(item);
             const equipped = owned && isItemEquipped(item);

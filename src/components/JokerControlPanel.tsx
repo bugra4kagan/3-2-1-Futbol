@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { AlertCircle, Compass, Sparkles, Type, X } from 'lucide-react';
 import { CoinIcon } from './CoinIcon';
@@ -17,6 +17,7 @@ interface JokerControlPanelProps {
   roundSeed: string;
   userCoins?: number;
   freeJokerTickets?: number;
+  compact?: boolean;
   onSpendCoinsForJoker?: (costCoins: number) => { ok: boolean; reason?: string };
   disabled?: boolean;
 }
@@ -26,6 +27,7 @@ export const JokerControlPanel: React.FC<JokerControlPanelProps> = ({
   roundSeed,
   userCoins = 0,
   freeJokerTickets = 0,
+  compact = false,
   onSpendCoinsForJoker,
   disabled = false,
 }) => {
@@ -33,13 +35,24 @@ export const JokerControlPanel: React.FC<JokerControlPanelProps> = ({
   const [initialsHint, setInitialsHint] = useState<InitialsHint | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState<boolean>(false);
+  const errorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     setNatPosHint(null);
     setInitialsHint(null);
     setErrorMsg(null);
     setModalOpen(false);
+    if (errorTimerRef.current) {
+      clearTimeout(errorTimerRef.current);
+      errorTimerRef.current = null;
+    }
   }, [roundSeed]);
+
+  useEffect(() => {
+    return () => {
+      if (errorTimerRef.current) clearTimeout(errorTimerRef.current);
+    };
+  }, []);
 
   if (!onSpendCoinsForJoker) return null;
 
@@ -47,7 +60,9 @@ export const JokerControlPanel: React.FC<JokerControlPanelProps> = ({
 
   const showTempError = (msg: string) => {
     setErrorMsg(msg);
-    setTimeout(() => {
+    if (errorTimerRef.current) clearTimeout(errorTimerRef.current);
+    errorTimerRef.current = setTimeout(() => {
+      errorTimerRef.current = null;
       setErrorMsg((prev) => (prev === msg ? null : prev));
     }, 3200);
   };
@@ -99,11 +114,11 @@ export const JokerControlPanel: React.FC<JokerControlPanelProps> = ({
   };
 
   return (
-    <div className="w-full mt-2">
-      {hasFreeTicket && (
+    <div className={compact ? 'w-full mb-1.5' : 'w-full mb-2'}>
+      {hasFreeTicket && !compact && (
         <div
           data-testid="joker-free-tickets-badge"
-          className="mb-1.5 text-center text-[11px] font-black text-emerald-300"
+          className="mb-1 text-center text-[11px] font-black text-emerald-300"
         >
           🎡 Çark Hediyesi: {freeJokerTickets} Ücretsiz İpucu Hakkın Var!
         </div>
@@ -114,7 +129,9 @@ export const JokerControlPanel: React.FC<JokerControlPanelProps> = ({
           data-testid="joker-nat-pos-btn"
           disabled={disabled || validPlayerIds.length === 0}
           onClick={handleNatPosClick}
-          className={`px-2.5 sm:px-3 py-1.5 rounded-xl border font-black text-[11px] flex items-center gap-1.5 transition active:scale-95 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
+          className={`${
+            compact ? 'px-2 py-1 text-[10px]' : 'px-2.5 sm:px-3 py-1.5 text-[11px]'
+          } rounded-xl border font-black flex items-center gap-1 transition active:scale-95 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
             natPosHint
               ? 'bg-cyan-500/25 border-cyan-300 text-cyan-100 shadow-[0_0_14px_rgba(34,211,238,0.28)]'
               : hasFreeTicket
@@ -139,7 +156,9 @@ export const JokerControlPanel: React.FC<JokerControlPanelProps> = ({
           data-testid="joker-initials-btn"
           disabled={disabled || validPlayerIds.length === 0}
           onClick={handleInitialsClick}
-          className={`px-2.5 sm:px-3 py-1.5 rounded-xl border font-black text-[11px] flex items-center gap-1.5 transition active:scale-95 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
+          className={`${
+            compact ? 'px-2 py-1 text-[10px]' : 'px-2.5 sm:px-3 py-1.5 text-[11px]'
+          } rounded-xl border font-black flex items-center gap-1 transition active:scale-95 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
             initialsHint
               ? 'bg-fuchsia-500/25 border-fuchsia-300 text-fuchsia-100 shadow-[0_0_14px_rgba(232,121,249,0.28)]'
               : hasFreeTicket

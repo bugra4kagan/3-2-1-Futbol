@@ -141,7 +141,7 @@ export const LeagueView: React.FC<LeagueViewProps> = ({
   return (
     <div
       data-testid="league-view"
-      className="w-full max-w-xl mx-auto px-3 sm:px-4 pt-3 pb-24 flex flex-col"
+      className="w-full max-w-xl md:max-w-3xl lg:max-w-4xl mx-auto px-3 sm:px-4 pt-3 pb-24 flex flex-col"
     >
       {/* Season Reset Reward / Promotion Banner */}
       {seasonNotice && seasonNoticeNewTier && (
@@ -193,7 +193,7 @@ export const LeagueView: React.FC<LeagueViewProps> = ({
       {/* 5-Tier Weekly League Hero & Progression Ladder */}
       <div
         data-testid="weekly-league-tier-card"
-        className="mb-3 p-3.5 rounded-2xl bg-gradient-to-br from-slate-900 via-slate-900 to-emerald-950/50 border border-amber-400/35 shadow-xl"
+        className="mb-3 p-3.5 rounded-2xl bg-gradient-to-br from-[#124029] via-[#134A2D] to-[#0F273E] border border-[#E5B94F]/45 shadow-xl"
       >
         <div className="flex items-center justify-between gap-2 mb-3">
           <div className="flex items-center gap-2.5 min-w-0">

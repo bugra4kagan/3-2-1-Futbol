@@ -138,7 +138,12 @@ export function generateUniqueUsernameSuggestions(
     const num = Math.floor(100 + Math.random() * 899);
     const candidate = `${root.slice(0, 13)}_${num}`;
     const k = normalizeUsernameKey(candidate);
-    if (k.length >= 3 && !used.has(k) && !RESERVED_PLACEHOLDER_KEYS.has(k)) {
+    if (
+      k.length >= 3 &&
+      !used.has(k) &&
+      !RESERVED_PLACEHOLDER_KEYS.has(k) &&
+      validateUsername(candidate).ok
+    ) {
       used.add(k);
       results.push(candidate);
     }
@@ -166,11 +171,15 @@ export function generateRandomUniqueStarterName(takenKeys: Set<string>): string 
     const num = Math.floor(100 + Math.random() * 899);
     const candidate = `${prefix}_${num}`.slice(0, 18);
     const key = normalizeUsernameKey(candidate);
-    if (!takenKeys.has(key) && !RESERVED_PLACEHOLDER_KEYS.has(key)) {
+    if (
+      !takenKeys.has(key) &&
+      !RESERVED_PLACEHOLDER_KEYS.has(key) &&
+      validateUsername(candidate).ok
+    ) {
       return candidate;
     }
   }
-  return `Yıldız_${Date.now().toString().slice(-5)}`;
+  return `Yıldız_${Date.now().toString().replace(/31/g, '42').slice(-5)}`;
 }
 
 const RECOVERY_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';

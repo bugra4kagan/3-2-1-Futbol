@@ -99,9 +99,9 @@ export const RoundResultSheet: React.FC<RoundResultSheetProps> = ({
   return (
     <div
       data-testid="round-result-sheet"
-      className="fixed inset-0 z-40 flex items-center justify-center p-3 sm:p-4 bg-[#0B1220]/90 overflow-y-auto animate-in fade-in duration-150"
+      className="fixed inset-0 z-40 flex items-center justify-center p-3 sm:p-4 bg-[#092316]/88 overflow-y-auto animate-in fade-in duration-150"
     >
-      <div className="relative w-full max-w-lg bg-[#16212E] border-2 border-[#E5B94F]/50 rounded-3xl p-4 sm:p-6 shadow-2xl text-center max-h-[92dvh] overflow-y-auto my-auto text-[#F5F3EB]">
+      <div className="relative w-full max-w-lg bg-[#124029] border-2 border-[#E5B94F]/60 rounded-3xl p-4 sm:p-6 shadow-2xl text-center max-h-[92dvh] overflow-y-auto my-auto text-[#F5F3EB]">
         {/* Banner based on outcome */}
         {winnerPlayer ? (
           <div className="flex flex-col items-center">

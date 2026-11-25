@@ -7,8 +7,8 @@ android {
         applicationId "com.futbol321.challenge"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 3
-        versionName "1.0.2"
+        versionCode 4
+        versionName "1.1.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -32,12 +32,18 @@ android {
             minifyEnabled true
             shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            manifestPlaceholders = [
+                admobAppId: System.getenv('ADMOB_APP_ID') ?: 'ca-app-pub-3940256099942544~3347511713'
+            ]
             if (file('release.jks').exists()) {
                 signingConfig signingConfigs.release
             }
         }
         debug {
             minifyEnabled false
+            manifestPlaceholders = [
+                admobAppId: 'ca-app-pub-3940256099942544~3347511713'
+            ]
         }
     }
     lint {

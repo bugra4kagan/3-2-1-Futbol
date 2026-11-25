@@ -72,7 +72,7 @@ function getShapePaths(shape: BadgeShape): { outer: string; recess: string; inne
   }
 }
 
-export const ClubBadge: React.FC<ClubBadgeProps> = ({
+export const ClubBadge: React.FC<ClubBadgeProps> = React.memo(({
   club = null,
   clubId,
   clubName,
@@ -168,7 +168,7 @@ export const ClubBadge: React.FC<ClubBadgeProps> = ({
           </clipPath>
         </defs>
 
-        <g filter={`url(#cb-shadow-${uid})`}>
+        <g filter={size === 'lg' || size === 'xl' ? `url(#cb-shadow-${uid})` : undefined}>
           {/* Top Emblem: Crown or Stars */}
           {meta.emblem === 'crown' && (
             <g transform="translate(0, -2)">
@@ -322,7 +322,7 @@ export const ClubBadge: React.FC<ClubBadgeProps> = ({
             textAnchor="middle"
             dominantBaseline="central"
             fill={textFill}
-            filter={`url(#cb-text-shadow-${uid})`}
+            filter={size === 'lg' || size === 'xl' ? `url(#cb-text-shadow-${uid})` : undefined}
             style={{
               fontFamily: "'Inter', 'Arial Black', system-ui, sans-serif",
               fontWeight: 900,
@@ -336,4 +336,4 @@ export const ClubBadge: React.FC<ClubBadgeProps> = ({
       </svg>
     </div>
   );
-};
+});

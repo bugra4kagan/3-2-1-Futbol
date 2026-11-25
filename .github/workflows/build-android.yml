@@ -37,10 +37,39 @@ jobs:
       - name: Install dependencies
         run: npm ci --legacy-peer-deps
 
-      - name: Build web bundle
+      - name: Run TypeScript & Unit Tests
+        run: |
+          npx tsc --noEmit
+          node --import tsx --test src/game/*.test.ts src/services/*.test.ts src/utils/*.test.ts
+
+      - name: Build Debug Web Bundle (Official AdMob Test IDs)
         run: npm run build
 
-      - name: Sync Capacitor Android
+      - name: Sync Capacitor Android (Debug)
+        run: npx cap sync android
+
+      - name: Prepare Gradle wrapper
+        run: |
+          sed -i 's/\r$//' android/gradlew
+          chmod +x android/gradlew
+
+      - name: Build Debug APK
+        working-directory: android
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Build Release Web Bundle (Production AdMob Env if configured)
+        env:
+          VITE_ADMOB_APP_ID: ${{ secrets.ADMOB_APP_ID }}
+          VITE_ADMOB_REWARDED_ID: ${{ secrets.ADMOB_REWARDED_ID }}
+          VITE_ADMOB_INTERSTITIAL_ID: ${{ secrets.ADMOB_INTERSTITIAL_ID }}
+          VITE_ADMOB_BANNER_ID: ${{ secrets.ADMOB_BANNER_ID }}
+        run: |
+          if [ -z "$VITE_ADMOB_APP_ID" ] || [ -z "$VITE_ADMOB_REWARDED_ID" ] || [ -z "$VITE_ADMOB_INTERSTITIAL_ID" ]; then
+            echo "::warning::Production AdMob secrets (ADMOB_APP_ID / ADMOB_REWARDED_ID / ADMOB_INTERSTITIAL_ID) eksik; release pakette Test ID fallback kullanilacak!"
+          fi
+          npm run build
+
+      - name: Sync Capacitor Android (Release)
         run: npx cap sync android
 
       - name: Decode Release Keystore
@@ -53,24 +82,21 @@ jobs:
           fi
           echo "$KEYSTORE_BASE64" | tr -d '\n\r ' | base64 --decode > android/app/release.jks
 
-      - name: Prepare Gradle wrapper
-        run: |
-          sed -i 's/\r$//' android/gradlew
-          chmod +x android/gradlew
-
-      - name: Build Debug APK and Signed Release AAB
+      - name: Build Signed Release AAB & Verify Signature
         working-directory: android
         env:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          ADMOB_APP_ID: ${{ secrets.ADMOB_APP_ID }}
         run: |
           if [ -z "$KEYSTORE_PASSWORD" ] || [ -z "$KEY_ALIAS" ] || [ -z "$KEY_PASSWORD" ]; then
             echo "Hata: KEYSTORE_PASSWORD, KEY_ALIAS veya KEY_PASSWORD GitHub Secret eksik!"
             exit 1
           fi
-          ./gradlew assembleDebug --no-daemon --stacktrace
           ./gradlew bundleRelease --no-daemon --stacktrace
+          jarsigner -verify -verbose -certs app/build/outputs/bundle/release/app-release.aab | tail -n 20
+          rm -f app/release.jks
 
       - name: Upload Debug APK artifact
         uses: actions/upload-artifact@v4

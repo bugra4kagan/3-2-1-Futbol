@@ -437,9 +437,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   return (
     <div
       data-testid="auth-modal"
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-[#0B1220]/92 overflow-y-auto animate-screen-fade"
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-[#092316]/88 overflow-y-auto animate-screen-fade"
     >
-      <div className="relative w-full max-w-md bg-[#16212E] border border-[#A8B3C2]/25 rounded-3xl p-5 sm:p-6 shadow-2xl text-left my-auto max-h-[92dvh] overflow-y-auto animate-screen-slide-up">
+      <div className="relative w-full max-w-md bg-[#124029] border-2 border-[#E5B94F]/45 rounded-3xl p-5 sm:p-6 shadow-2xl text-left my-auto max-h-[92dvh] overflow-y-auto animate-screen-slide-up">
         {/* Modal Header */}
         <div className="relative text-center mb-3.5">
           {progression && (
@@ -461,7 +461,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             />
           </div>
 
-          <span className="text-[11px] font-black tracking-widest text-[#E5B94F] uppercase px-3 py-0.5 rounded-full bg-[#0B1220] border border-[#168A52]">
+          <span className="text-[11px] font-black tracking-widest text-[#E5B94F] uppercase px-3 py-0.5 rounded-full bg-[#0F273E] border border-[#4ADE80]/55">
             OYUNCU PROFİLİ
           </span>
           <h2 className="font-display font-extrabold text-2xl sm:text-3xl text-[#FFFFFF] mt-1.5 tracking-wide uppercase">

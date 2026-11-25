@@ -42,14 +42,14 @@ function getStepStyle(value: number | 'go'): {
     return {
       label: '1',
       colorClass: 'text-[#F5F3EB]',
-      ringColor: 'border-[#F5F3EB]/60',
+      ringColor: 'border-[#F5F3EB]/65',
       badgeText: 'ODAKLAN!',
     };
   }
   return {
     label: 'BAŞLA!',
-    colorClass: 'text-[#22C55E]',
-    ringColor: 'border-[#22C55E]/70',
+    colorClass: 'text-[#4ADE80]',
+    ringColor: 'border-[#4ADE80]/75',
     badgeText: 'MAÇ BAŞLADI',
   };
 }
@@ -115,15 +115,15 @@ export const CountdownOverlay: React.FC<CountdownOverlayProps> = ({
   return (
     <div
       data-testid="countdown-overlay"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-[#0B1220]/90 pointer-events-none select-none"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-[#092818]/88 pointer-events-none select-none"
     >
       <div className="relative flex flex-col items-center justify-center px-4 text-center">
-        {/* Minimal GPU Circle Rings (No blur, no heavy shadows) */}
+        {/* Lightweight GPU Circle Rings (No blur, no heavy shadows) */}
         <div
-          className={`absolute w-56 h-56 sm:w-68 sm:h-68 rounded-full border-2 ${step.ringColor} opacity-40 transition-colors duration-150`}
+          className={`absolute w-56 h-56 sm:w-68 sm:h-68 rounded-full border-2 ${step.ringColor} opacity-45 transition-colors duration-150`}
         />
         <div
-          className={`absolute w-44 h-44 sm:w-56 sm:h-56 rounded-full border ${step.ringColor} opacity-70 transition-colors duration-150`}
+          className={`absolute w-44 h-44 sm:w-56 sm:h-56 rounded-full border ${step.ringColor} opacity-75 transition-colors duration-150`}
         />
 
         <div
@@ -137,12 +137,12 @@ export const CountdownOverlay: React.FC<CountdownOverlayProps> = ({
           >
             {step.label}
           </span>
-          <span className="mt-3 text-xs sm:text-sm font-black tracking-widest text-[#F5F3EB] uppercase px-4 py-1.5 rounded-full bg-[#16212E] border border-[#A8B3C2]/30">
+          <span className="mt-3 text-xs sm:text-sm font-black tracking-widest text-[#F5F3EB] uppercase px-4 py-1.5 rounded-full bg-[#134A2D] border border-[#E5B94F]/45">
             {step.badgeText}
           </span>
         </div>
 
-        <p className="mt-8 text-xs sm:text-sm font-semibold text-[#A8B3C2] tracking-wide max-w-xs">
+        <p className="mt-8 text-xs sm:text-sm font-semibold text-[#D7E6DC] tracking-wide max-w-xs">
           {COUNTDOWN_SUBTITLES[minigameType] || COUNTDOWN_SUBTITLES.two_clubs}
         </p>
       </div>

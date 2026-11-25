@@ -1,5 +1,6 @@
 import {
   RewardedPlacement,
+  getAdMobEnvConfig,
   showNativeInterstitialAd,
   showNativeRewardedAd,
 } from './admobService';
@@ -122,6 +123,8 @@ export function shouldTriggerInterstitialForMatchCount(
 }
 
 export function getInterstitialAdUnitId(): string {
+  const envCfg = getAdMobEnvConfig();
+  if (envCfg.interstitialId) return envCfg.interstitialId;
   const win = typeof window !== 'undefined' ? (window as CapacitorWindow) : null;
   const platform = win?.Capacitor?.getPlatform?.() === 'ios' ? 'ios' : 'android';
   return ADMOB_UNIT_IDS[platform].interstitial;
@@ -144,15 +147,11 @@ export function setInterstitialPresenter(presenter: InterstitialPresenter | null
   activeInterstitialPresenter = presenter;
 }
 
-export function getAdUnitIdForPlatform(purpose: AdRewardPurpose): string {
+export function getAdUnitIdForPlatform(_purpose: AdRewardPurpose): string {
+  const envCfg = getAdMobEnvConfig();
+  if (envCfg.rewardedId) return envCfg.rewardedId;
   const win = typeof window !== 'undefined' ? (window as CapacitorWindow) : null;
   const platform = win?.Capacitor?.getPlatform?.() === 'ios' ? 'ios' : 'android';
-  if (purpose === 'rematch_unlock') {
-    return ADMOB_UNIT_IDS[platform].rewardedRematch;
-  }
-  if (purpose === 'energy_refill_2') {
-    return ADMOB_UNIT_IDS[platform].rewardedEnergy;
-  }
   return ADMOB_UNIT_IDS[platform].rewardedCoins;
 }
 

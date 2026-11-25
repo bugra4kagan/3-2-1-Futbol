@@ -18,22 +18,22 @@ interface PitchPalette {
 }
 
 function resolvePitchPalette(_theme?: string): PitchPalette {
-  // Deep navy & pitch green stadium arena (#0B1220, #16212E, #183D2B, #168A52)
+  // Lush stadium pitch green + subtle navy floodlight rim
   return {
-    skyTop: '#0B1220',
-    turfDark: '#121D2B',
-    turfMid: '#183D2B',
-    stripeA: 'rgba(22, 138, 82, 0.12)',
-    stripeB: 'rgba(11, 18, 32, 0.25)',
-    glowPrimary: 'rgba(22, 138, 82, 0.14)',
-    glowSecondary: 'rgba(59, 130, 246, 0.08)',
-    lineColor: 'rgba(245, 243, 235, 0.34)',
-    lineGlow: 'rgba(229, 185, 79, 0.22)',
-    floodlightColor: 'rgba(255, 255, 255, 0.07)',
+    skyTop: '#0B2D1B',
+    turfDark: '#0F3D24',
+    turfMid: '#175936',
+    stripeA: 'rgba(255, 255, 255, 0.045)',
+    stripeB: 'rgba(9, 34, 21, 0.22)',
+    glowPrimary: 'rgba(34, 197, 94, 0.16)',
+    glowSecondary: 'rgba(229, 185, 79, 0.10)',
+    lineColor: 'rgba(245, 243, 235, 0.36)',
+    lineGlow: 'rgba(229, 185, 79, 0.20)',
+    floodlightColor: 'rgba(255, 255, 255, 0.09)',
   };
 }
 
-export const NightMatchPitchBackground: React.FC<NightMatchPitchBackgroundProps> = ({ theme }) => {
+export const NightMatchPitchBackground: React.FC<NightMatchPitchBackgroundProps> = React.memo(({ theme }) => {
   const uid = useId().replace(/:/g, '');
   const palette = resolvePitchPalette(theme);
 
@@ -99,14 +99,6 @@ export const NightMatchPitchBackground: React.FC<NightMatchPitchBackgroundProps>
             />
           </pattern>
 
-          <filter id={`neon-${uid}`} x="-20%" y="-20%" width="140%" height="140%">
-            <feGaussianBlur stdDeviation="4.5" result="blur" />
-            <feMerge>
-              <feMergeNode in="blur" />
-              <feMergeNode in="SourceGraphic" />
-            </feMerge>
-          </filter>
-
           <radialGradient id={`center-aura-${uid}`} cx="50%" cy="50%" r="50%">
             <stop offset="0%" stopColor={palette.lineGlow} stopOpacity="0.22" />
             <stop offset="65%" stopColor={palette.glowSecondary} stopOpacity="0.08" />
@@ -122,14 +114,13 @@ export const NightMatchPitchBackground: React.FC<NightMatchPitchBackgroundProps>
         {/* Center Pitch Neon Glow Disc */}
         <circle cx="500" cy="800" r="280" fill={`url(#center-aura-${uid})`} />
 
-        {/* Glowing Pitch Markings */}
+        {/* Crisp Vector Pitch Markings (60fps GPU-friendly, zero blur filter overdraw) */}
         <g
           fill="none"
           stroke={palette.lineColor}
           strokeWidth="3.2"
           strokeLinecap="round"
           strokeLinejoin="round"
-          filter={`url(#neon-${uid})`}
         >
           {/* Outer Touchline & Goal Lines */}
           <rect x="75" y="75" width="850" height="1450" rx="6" />
@@ -220,4 +211,4 @@ export const NightMatchPitchBackground: React.FC<NightMatchPitchBackgroundProps>
       />
     </div>
   );
-};
+});
