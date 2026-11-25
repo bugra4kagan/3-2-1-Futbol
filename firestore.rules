@@ -254,6 +254,7 @@ service cloud.firestore {
         && isValidUserBackup(incoming(), userId)
         && isValidUserUpdateBounds()
         && incoming().userId == existing().userId
+        && (!('adFree' in existing()) || existing().adFree == false || incoming().adFree == true)
         && (!('email' in existing()) || !('email' in incoming()) || incoming().email == existing().email || existing().email == '')
         && incoming().diff(existing()).affectedKeys().hasOnly([
           'displayName',
@@ -502,6 +503,25 @@ service cloud.firestore {
         );
 
       allow delete: if isSignedIn() && existing().uid == request.auth.uid;
+    }
+
+    // ── Kullanıcı şikayetleri (Google Play UGC güvenliği: yalnızca ekleme serbest, okuma/silme kapalı) ──
+    match /userReports/{reportId} {
+      allow read, update, delete: if false;
+      allow create: if isSignedIn()
+        && isValidId(reportId)
+        && incoming().keys().hasAll(['reporterUid', 'targetId', 'targetName', 'reason', 'createdAt'])
+        && incoming().keys().hasOnly(['reporterUid', 'targetId', 'targetName', 'reason', 'details', 'createdAt'])
+        && incoming().reporterUid == request.auth.uid
+        && incoming().targetId is string
+        && incoming().targetId.size() >= 1
+        && incoming().targetId.size() <= 128
+        && incoming().targetName is string
+        && incoming().targetName.size() >= 1
+        && incoming().targetName.size() <= 64
+        && incoming().reason in ['inappropriate_name', 'cheating', 'harassment', 'other']
+        && (!('details' in incoming()) || (incoming().details is string && incoming().details.size() <= 300))
+        && incoming().createdAt == request.time;
     }
   }
 }

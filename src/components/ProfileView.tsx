@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Settings,
   Edit3,
@@ -42,6 +42,10 @@ import { ClubBadge } from './ClubBadge';
 import { CoinIcon } from './CoinIcon';
 import { PlayerAvatar } from './PlayerAvatar';
 import { sounds } from '../utils/audio';
+import {
+  fetchGooglePlayPrices,
+  PlayStoreProductPriceInfo,
+} from '../services/playBillingService';
 
 export interface ProfileCloudUserSummary {
   uid: string;
@@ -75,7 +79,9 @@ interface ProfileViewProps {
   onPurchaseStoreItem?: (
     itemId: string,
     method: 'coins' | 'money'
-  ) => { ok: boolean; reason?: string; gift?: ShopGiftItem };
+  ) =>
+    | Promise<{ ok: boolean; reason?: string; gift?: ShopGiftItem }>
+    | { ok: boolean; reason?: string; gift?: ShopGiftItem };
   onOpenStore?: (category?: StoreCategory) => void;
   onEquipItem?: (itemId: string) => { ok: boolean; reason?: string };
   onRestorePurchases?: () => Promise<{ ok: boolean; message: string }>;
@@ -104,6 +110,20 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const [isGoogleLinking, setIsGoogleLinking] = useState(false);
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [isRestoringPurchases, setIsRestoringPurchases] = useState(false);
+  const [isPurchasingItem, setIsPurchasingItem] = useState(false);
+  const [playPrices, setPlayPrices] = useState<Record<string, PlayStoreProductPriceInfo>>({});
+
+  useEffect(() => {
+    let active = true;
+    void fetchGooglePlayPrices().then((prices) => {
+      if (active && prices && Object.keys(prices).length > 0) {
+        setPlayPrices(prices);
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
   const [accountLinkFeedback, setAccountLinkFeedback] = useState<{
     type: 'ok' | 'err';
     text: string;
@@ -171,21 +191,26 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     setPendingConfirmItem({ item, method: 'coins' });
   };
 
-  const executeConfirmedPurchase = () => {
-    if (!pendingConfirmItem || !onPurchaseStoreItem) {
-      setPendingConfirmItem(null);
+  const executeConfirmedPurchase = async () => {
+    if (isPurchasingItem || !pendingConfirmItem || !onPurchaseStoreItem) {
+      if (!isPurchasingItem) setPendingConfirmItem(null);
       return;
     }
     const { item, method } = pendingConfirmItem;
-    const res = onPurchaseStoreItem(item.id, method);
-    if (res.ok) {
-      sounds.playVictory();
-      showStoreFeedback('ok', `${item.title} satın alındı ve kullanılıyor!`);
-    } else {
-      sounds.playWrong();
-      showStoreFeedback('err', res.reason || 'Satın alma tamamlanamadı.');
+    setIsPurchasingItem(true);
+    try {
+      const res = await Promise.resolve(onPurchaseStoreItem(item.id, method));
+      if (res.ok) {
+        sounds.playVictory();
+        showStoreFeedback('ok', `${item.title} satın alındı ve kullanılıyor!`);
+      } else {
+        sounds.playWrong();
+        showStoreFeedback('err', res.reason || 'Satın alma tamamlanamadı.');
+      }
+    } finally {
+      setIsPurchasingItem(false);
+      setPendingConfirmItem(null);
     }
-    setPendingConfirmItem(null);
   };
 
   return (
@@ -675,11 +700,15 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               <button
                 type="button"
                 data-testid="profile-ad-free-buy-btn"
+                disabled={isPurchasingItem}
                 onClick={() => setPendingConfirmItem({ item: adFreeItem, method: 'money' })}
-                className="flex-1 py-2.5 px-4 rounded-xl bg-[#E5B94F] hover:bg-[#f0ca6b] text-[#0B1220] font-black text-xs flex items-center justify-center gap-1.5 transition active:scale-95 cursor-pointer"
+                className="flex-1 py-2.5 px-4 rounded-xl bg-[#E5B94F] hover:bg-[#f0ca6b] text-[#0B1220] font-black text-xs flex items-center justify-center gap-1.5 transition active:scale-95 cursor-pointer disabled:opacity-60"
               >
                 <Sparkles className="w-4 h-4" />
-                <span>Reklamları Kaldır • {formatTry(adFreeItem.priceTry)}</span>
+                <span>
+                  Reklamları Kaldır •{' '}
+                  {playPrices[adFreeItem.id]?.formattedPrice || formatTry(adFreeItem.priceTry)}
+                </span>
               </button>
             )}
 
@@ -836,7 +865,10 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               ) : (
                 <>
                   <strong className="text-[#FFFFFF]">{pendingConfirmItem.item.title}</strong>{' '}
-                  ({formatTry(pendingConfirmItem.item.priceTry)}) Google Play üzerinden açılsın mı?
+                  (
+                  {playPrices[pendingConfirmItem.item.id]?.formattedPrice ||
+                    formatTry(pendingConfirmItem.item.priceTry)}
+                  ) Google Play üzerinden açılsın mı?
                 </>
               )}
             </p>
@@ -844,18 +876,22 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               <button
                 type="button"
                 data-testid="profile-purchase-cancel-btn"
+                disabled={isPurchasingItem}
                 onClick={() => setPendingConfirmItem(null)}
-                className="flex-1 py-2.5 rounded-xl bg-[#0B1220] hover:bg-[#1E293B] border border-[#A8B3C2]/25 text-[#F5F3EB] font-bold text-xs cursor-pointer"
+                className="flex-1 py-2.5 rounded-xl bg-[#0B1220] hover:bg-[#1E293B] border border-[#A8B3C2]/25 text-[#F5F3EB] font-bold text-xs cursor-pointer disabled:opacity-60"
               >
                 Vazgeç
               </button>
               <button
                 type="button"
                 data-testid="profile-purchase-confirm-btn"
-                onClick={executeConfirmedPurchase}
-                className="flex-1 py-2.5 rounded-xl bg-[#168A52] hover:bg-[#22C55E] text-[#FFFFFF] font-black text-xs cursor-pointer"
+                disabled={isPurchasingItem}
+                onClick={() => {
+                  void executeConfirmedPurchase();
+                }}
+                className="flex-1 py-2.5 rounded-xl bg-[#168A52] hover:bg-[#22C55E] text-[#FFFFFF] font-black text-xs cursor-pointer disabled:opacity-60"
               >
-                Satın Al
+                {isPurchasingItem ? 'İşleniyor...' : 'Satın Al'}
               </button>
             </div>
           </div>

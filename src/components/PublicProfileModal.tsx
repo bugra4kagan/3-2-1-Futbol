@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import {
   Award,
+  Ban,
   Check,
   Clock,
   Crown,
+  Flag,
   Flame,
   Gamepad2,
   Loader2,
@@ -20,7 +22,7 @@ import { CLUBS } from '../game/database';
 import { MINIGAME_OPTIONS } from '../game/minigameEngine';
 import { formatPoints } from '../game/retentionEngine';
 import { getCrestBadgeInfo } from '../game/storeCatalog';
-import { MinigameType, PublicPlayerProfile } from '../game/types';
+import { MinigameType, PublicPlayerProfile, UserReportReason } from '../game/types';
 import { sanitizePublicDisplayName } from '../game/usernameFilter';
 import { ClubBadge } from './ClubBadge';
 import { PlayerAvatar } from './PlayerAvatar';
@@ -32,6 +34,7 @@ interface PublicProfileModalProps {
   isSelf?: boolean;
   isFriend?: boolean;
   isPendingFriend?: boolean;
+  isBlocked?: boolean;
   currentUserStats?: {
     matchesPlayed: number;
     wins: number;
@@ -43,6 +46,12 @@ interface PublicProfileModalProps {
     targetOrCode: string | PublicPlayerProfile
   ) => { ok: boolean; pendingConfirmation?: boolean; error?: string };
   onChallengePlayer?: (minigameType: MinigameType) => void;
+  onReportPlayer?: (
+    target: PublicPlayerProfile,
+    reason: UserReportReason,
+    details?: string
+  ) => Promise<{ ok: boolean; message: string }>;
+  onToggleBlockPlayer?: (target: PublicPlayerProfile) => void;
   onClose: () => void;
 }
 
@@ -53,9 +62,12 @@ export const PublicProfileModal: React.FC<PublicProfileModalProps> = ({
   isSelf = false,
   isFriend = false,
   isPendingFriend = false,
+  isBlocked = false,
   currentUserStats,
   onAddFriend,
   onChallengePlayer,
+  onReportPlayer,
+  onToggleBlockPlayer,
   onClose,
 }) => {
   const [friendToast, setFriendToast] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
@@ -499,6 +511,54 @@ export const PublicProfileModal: React.FC<PublicProfileModalProps> = ({
                 </button>
               )}
             </div>
+
+            {(onReportPlayer || onToggleBlockPlayer) && (
+              <div className="pt-2 border-t border-slate-800/70 space-y-2">
+                <div className="flex items-center gap-2">
+                  {onReportPlayer && (
+                    <button
+                      type="button"
+                      data-testid="public-profile-report-toggle-btn"
+                      onClick={async () => {
+                        const res = await onReportPlayer(profile, 'inappropriate_name');
+                        setFriendToast({
+                          type: res.ok ? 'ok' : 'err',
+                          text: res.message,
+                        });
+                      }}
+                      className="flex-1 py-2 px-3 rounded-xl bg-slate-900 hover:bg-rose-950/50 border border-slate-700 hover:border-rose-500/45 text-slate-300 hover:text-rose-200 font-bold text-[11px] flex items-center justify-center gap-1.5 transition cursor-pointer"
+                    >
+                      <Flag className="w-3.5 h-3.5 text-rose-400" />
+                      <span>Oyuncuyu Şikayet Et</span>
+                    </button>
+                  )}
+
+                  {onToggleBlockPlayer && (
+                    <button
+                      type="button"
+                      data-testid="public-profile-block-btn"
+                      onClick={() => {
+                        onToggleBlockPlayer(profile);
+                        setFriendToast({
+                          type: 'ok',
+                          text: isBlocked
+                            ? `${safeProfileName} engeli kaldırıldı.`
+                            : `${safeProfileName} engellendi ve listelerden gizlendi.`,
+                        });
+                      }}
+                      className={`flex-1 py-2 px-3 rounded-xl border font-bold text-[11px] flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                        isBlocked
+                          ? 'bg-amber-500/15 border-amber-400/50 text-amber-300'
+                          : 'bg-slate-900 hover:bg-slate-800 border-slate-700 text-slate-300'
+                      }`}
+                    >
+                      <Ban className="w-3.5 h-3.5 text-amber-400" />
+                      <span>{isBlocked ? 'Engeli Kaldır' : 'Oyuncuyu Engelle'}</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>

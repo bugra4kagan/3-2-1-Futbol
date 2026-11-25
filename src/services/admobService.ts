@@ -26,6 +26,19 @@ export const ADMOB_OFFICIAL_TEST_IDS = {
   },
 } as const;
 
+const GOOGLE_TEST_PUBLISHER_PREFIX = 'ca-app-pub-3940256099942544';
+
+export interface ResolvedAdMobConfig {
+  mode: 'debug_test' | 'production';
+  isProductionReady: boolean;
+  isUsingTestIds: boolean;
+  missingProductionKeys: string[];
+  appId: string;
+  rewardedId: string;
+  interstitialId: string;
+  bannerId: string;
+}
+
 function getEnvString(key: string): string | undefined {
   try {
     const env = (import.meta as unknown as { env?: Record<string, string | undefined> }).env;
@@ -36,15 +49,96 @@ function getEnvString(key: string): string | undefined {
   }
 }
 
-export function getAdMobEnvConfig() {
-  const platform = getPlatformKey();
+function isProductionEnv(): boolean {
+  try {
+    const env = (import.meta as unknown as { env?: { PROD?: boolean } }).env;
+    return Boolean(env?.PROD);
+  } catch {
+    return false;
+  }
+}
+
+export function isOfficialAdMobTestId(adUnitOrAppId?: string | null): boolean {
+  if (!adUnitOrAppId) return false;
+  return adUnitOrAppId.trim().startsWith(GOOGLE_TEST_PUBLISHER_PREFIX);
+}
+
+/**
+ * Debug ve Production AdMob yapılandırmalarını kesin olarak ayırır.
+ * Production (release) derlemelerde VITE_ADMOB_* değerleri eksikse veya yanlışlıkla test ID'si
+ * taşıyorsa sessizce Google Test ID'sine düşmez; eksik anahtarları raporlayıp başlatmayı engeller.
+ */
+export function resolveAdMobConfig(overrides?: {
+  platform?: 'android' | 'ios';
+  isProductionBuild?: boolean;
+  allowTestFallback?: boolean;
+  appId?: string;
+  rewardedId?: string;
+  interstitialId?: string;
+  bannerId?: string;
+}): ResolvedAdMobConfig {
+  const platform = overrides?.platform ?? getPlatformKey();
   const defaults = ADMOB_OFFICIAL_TEST_IDS[platform];
+  const isProd = overrides?.isProductionBuild ?? isProductionEnv();
+  const allowTestFallback =
+    overrides?.allowTestFallback ?? getEnvString('VITE_ADMOB_ALLOW_TEST_FALLBACK') === 'true';
+
+  const rawAppId = overrides?.appId ?? getEnvString('VITE_ADMOB_APP_ID');
+  const rawRewarded = overrides?.rewardedId ?? getEnvString('VITE_ADMOB_REWARDED_ID');
+  const rawInterstitial = overrides?.interstitialId ?? getEnvString('VITE_ADMOB_INTERSTITIAL_ID');
+  const rawBanner = overrides?.bannerId ?? getEnvString('VITE_ADMOB_BANNER_ID');
+
+  // Debug / Dev veya açıkça test fallback istenen Debug APK derlemeleri
+  if (!isProd || allowTestFallback) {
+    const appId = rawAppId ?? defaults.appId;
+    const rewardedId = rawRewarded ?? defaults.rewarded;
+    const interstitialId = rawInterstitial ?? defaults.interstitial;
+    const bannerId = rawBanner ?? defaults.banner;
+    const isUsingTestIds =
+      isOfficialAdMobTestId(appId) ||
+      isOfficialAdMobTestId(rewardedId) ||
+      isOfficialAdMobTestId(interstitialId) ||
+      isOfficialAdMobTestId(bannerId);
+
+    return {
+      mode: 'debug_test',
+      isProductionReady: !isUsingTestIds,
+      isUsingTestIds,
+      missingProductionKeys: [],
+      appId,
+      rewardedId,
+      interstitialId,
+      bannerId,
+    };
+  }
+
+  // Production / Release derleme: kesinlikle test ID fallback YOKTUR
+  const missingProductionKeys: string[] = [];
+  const validAppId = rawAppId && !isOfficialAdMobTestId(rawAppId) ? rawAppId : '';
+  const validRewarded = rawRewarded && !isOfficialAdMobTestId(rawRewarded) ? rawRewarded : '';
+  const validInterstitial =
+    rawInterstitial && !isOfficialAdMobTestId(rawInterstitial) ? rawInterstitial : '';
+  const validBanner = rawBanner && !isOfficialAdMobTestId(rawBanner) ? rawBanner : '';
+
+  if (!validAppId) missingProductionKeys.push('VITE_ADMOB_APP_ID');
+  if (!validRewarded) missingProductionKeys.push('VITE_ADMOB_REWARDED_ID');
+  if (!validInterstitial) missingProductionKeys.push('VITE_ADMOB_INTERSTITIAL_ID');
+
+  const isProductionReady = Boolean(validAppId && validRewarded && validInterstitial);
   return {
-    appId: getEnvString('VITE_ADMOB_APP_ID') ?? defaults.appId,
-    rewardedId: getEnvString('VITE_ADMOB_REWARDED_ID') ?? defaults.rewarded,
-    interstitialId: getEnvString('VITE_ADMOB_INTERSTITIAL_ID') ?? defaults.interstitial,
-    bannerId: getEnvString('VITE_ADMOB_BANNER_ID') ?? defaults.banner,
+    mode: 'production',
+    isProductionReady,
+    isUsingTestIds: false,
+    missingProductionKeys,
+    appId: validAppId,
+    rewardedId: validRewarded,
+    interstitialId: validInterstitial,
+    bannerId: validBanner,
   };
+}
+
+export function getAdMobEnvConfig() {
+  return resolveAdMobConfig();
 }
 
 let admobInitialized = false;
@@ -80,21 +174,29 @@ export async function initializeAdMob(): Promise<boolean> {
   if (admobInitialized) return true;
   if (!isNativeCapacitorRuntime()) return false;
 
+  const config = getAdMobEnvConfig();
+  if (config.mode === 'production' && !config.isProductionReady) {
+    logTelemetryEvent(
+      'admob_production_config_missing',
+      { missing: config.missingProductionKeys.join(',') },
+      'warning'
+    );
+    return false;
+  }
+
   const plugin = await getAdMobPlugin();
   if (!plugin) return false;
 
   try {
-    const { rewardedId, interstitialId, bannerId } = getAdMobEnvConfig();
-    const isUsingTestIds =
-      rewardedId === ADMOB_OFFICIAL_TEST_IDS.android.rewarded ||
-      interstitialId === ADMOB_OFFICIAL_TEST_IDS.android.interstitial ||
-      bannerId === ADMOB_OFFICIAL_TEST_IDS.android.banner;
-
     await plugin.initialize({
-      initializeForTesting: isUsingTestIds,
+      initializeForTesting: config.isUsingTestIds,
     });
     admobInitialized = true;
-    logTelemetryEvent('admob_initialized', { platform: getPlatformKey() });
+    logTelemetryEvent('admob_initialized', {
+      platform: getPlatformKey(),
+      mode: config.mode,
+      testing: config.isUsingTestIds,
+    });
     return true;
   } catch (err) {
     captureError(err, { stage: 'admob_initialize' });
@@ -123,10 +225,25 @@ export function resolveBannerAdUnitId(overrideAdId?: string): string {
 export async function showNativeRewardedAd(
   placement: RewardedPlacement,
   overrideAdId?: string
-): Promise<{ shown: boolean; rewarded: boolean; adUnitId: string }> {
+): Promise<{
+  shown: boolean;
+  rewarded: boolean;
+  adUnitId: string;
+  blockedReason?: 'missing_production_config';
+}> {
+  const config = getAdMobEnvConfig();
   const adUnitId = resolveRewardedAdUnitId(placement, overrideAdId);
   if (!isNativeCapacitorRuntime()) {
     return { shown: false, rewarded: false, adUnitId };
+  }
+
+  if (config.mode === 'production' && !adUnitId) {
+    return {
+      shown: false,
+      rewarded: false,
+      adUnitId: '',
+      blockedReason: 'missing_production_config',
+    };
   }
 
   const plugin = await getAdMobPlugin();
@@ -139,14 +256,23 @@ export async function showNativeRewardedAd(
   let shown = false;
 
   try {
-    await initializeAdMob();
+    const initialized = await initializeAdMob();
+    if (!initialized) {
+      return {
+        shown: false,
+        rewarded: false,
+        adUnitId,
+        blockedReason: config.mode === 'production' ? 'missing_production_config' : undefined,
+      };
+    }
+
     listenerHandle = await plugin.addListener(RewardAdPluginEvents.Rewarded, () => {
       rewardedByListener = true;
     });
 
     await plugin.prepareRewardVideoAd({
       adId: adUnitId,
-      isTesting: adUnitId === ADMOB_OFFICIAL_TEST_IDS[getPlatformKey()].rewarded,
+      isTesting: isOfficialAdMobTestId(adUnitId),
     });
     const rewardItem = await plugin.showRewardVideoAd();
     shown = true;
@@ -161,20 +287,27 @@ export async function showNativeRewardedAd(
     return { shown: true, rewarded: granted, adUnitId };
   } catch (err) {
     captureError(err, { stage: 'admob_rewarded', placement });
-    return { shown, rewarded: false, adUnitId };
+    return { shown, rewarded: rewardedByListener, adUnitId };
   } finally {
-    if (listenerHandle) {
-      await listenerHandle.remove().catch(() => {});
-    }
+    await listenerHandle?.remove().catch(() => {});
   }
 }
 
 export async function showNativeInterstitialAd(
   overrideAdId?: string
-): Promise<{ shown: boolean; adUnitId: string }> {
+): Promise<{
+  shown: boolean;
+  adUnitId: string;
+  blockedReason?: 'missing_production_config';
+}> {
+  const config = getAdMobEnvConfig();
   const adUnitId = resolveInterstitialAdUnitId(overrideAdId);
   if (!isNativeCapacitorRuntime()) {
     return { shown: false, adUnitId };
+  }
+
+  if (config.mode === 'production' && !adUnitId) {
+    return { shown: false, adUnitId: '', blockedReason: 'missing_production_config' };
   }
 
   const plugin = await getAdMobPlugin();
@@ -183,13 +316,20 @@ export async function showNativeInterstitialAd(
   }
 
   try {
-    await initializeAdMob();
+    const initialized = await initializeAdMob();
+    if (!initialized) {
+      return {
+        shown: false,
+        adUnitId,
+        blockedReason: config.mode === 'production' ? 'missing_production_config' : undefined,
+      };
+    }
     await plugin.prepareInterstitial({
       adId: adUnitId,
-      isTesting: adUnitId === ADMOB_OFFICIAL_TEST_IDS[getPlatformKey()].interstitial,
+      isTesting: isOfficialAdMobTestId(adUnitId),
     });
     await plugin.showInterstitial();
-    logTelemetryEvent('admob_interstitial_shown', { platform: getPlatformKey() });
+    logTelemetryEvent('admob_interstitial_shown', { adUnitId });
     return { shown: true, adUnitId };
   } catch (err) {
     captureError(err, { stage: 'admob_interstitial' });
@@ -197,23 +337,30 @@ export async function showNativeInterstitialAd(
   }
 }
 
-export async function showNativeBannerAd(overrideAdId?: string): Promise<boolean> {
-  if (!isNativeCapacitorRuntime()) return false;
+export async function showNativeBannerAd(
+  adFree: boolean,
+  overrideAdId?: string
+): Promise<boolean> {
+  if (adFree || !isNativeCapacitorRuntime()) return false;
+  const config = getAdMobEnvConfig();
+  const adUnitId = resolveBannerAdUnitId(overrideAdId);
+  if (config.mode === 'production' && !adUnitId) return false;
+
   const plugin = await getAdMobPlugin();
   if (!plugin) return false;
 
-  const adUnitId = resolveBannerAdUnitId(overrideAdId);
   try {
-    await initializeAdMob();
+    const initialized = await initializeAdMob();
+    if (!initialized) return false;
     await plugin.showBanner({
       adId: adUnitId,
       adSize: BannerAdSize.ADAPTIVE_BANNER,
       position: BannerAdPosition.BOTTOM_CENTER,
-      isTesting: adUnitId === ADMOB_OFFICIAL_TEST_IDS[getPlatformKey()].banner,
+      margin: 0,
+      isTesting: isOfficialAdMobTestId(adUnitId),
     });
     return true;
-  } catch (err) {
-    captureError(err, { stage: 'admob_banner_show' });
+  } catch {
     return false;
   }
 }
@@ -225,6 +372,6 @@ export async function hideNativeBannerAd(): Promise<void> {
   try {
     await plugin.hideBanner();
   } catch {
-    // ignore hide errors
+    // ignore
   }
 }

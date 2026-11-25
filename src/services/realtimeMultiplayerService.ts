@@ -3,8 +3,8 @@
  *
  * 1v1 rooms and quick-match live in Cloud Firestore — see firestoreRoomService.ts.
  */
-import { get, onValue, ref, set } from 'firebase/database';
-import { rtdb } from '../firebase';
+import { get, onValue, ref, remove, set } from 'firebase/database';
+import { auth, ensureAnonymousFirebaseSession, rtdb } from '../firebase';
 import { sanitizeRtdbKey } from '../game/realtimeSyncHelpers';
 import { LeaguePlayerEntry, MinigameType, PlayerProfile, UserProgression } from '../game/types';
 
@@ -16,9 +16,13 @@ export async function syncPlayerToRtdbLeaderboard(
 ): Promise<void> {
   if (!profile?.id) return;
   try {
+    const firebaseUser = auth.currentUser || (await ensureAnonymousFirebaseSession());
+    if (!firebaseUser?.uid) return;
+
     const key = sanitizeRtdbKey(profile.id);
-    const payload: LeaguePlayerEntry & { updatedAt: number } = {
+    const payload: LeaguePlayerEntry & { ownerUid: string; updatedAt: number } = {
       id: profile.id,
+      ownerUid: firebaseUser.uid,
       friendCode: prog.friendCode,
       name: profile.name,
       avatar: profile.avatar,
@@ -48,6 +52,16 @@ export async function syncPlayerToRtdbLeaderboard(
     await set(ref(rtdb, `leaderboard/${key}`), payload);
   } catch {
     // Graceful offline / rules fallback: localStorage remains source of truth for UX
+  }
+}
+
+export async function deletePlayerFromRtdbLeaderboard(playerId: string): Promise<void> {
+  if (!playerId) return;
+  try {
+    const key = sanitizeRtdbKey(playerId);
+    await remove(ref(rtdb, `leaderboard/${key}`));
+  } catch {
+    // Ignore cleanup errors if entry doesn't exist or user is already unauthenticated
   }
 }
 

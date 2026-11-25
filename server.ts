@@ -22,6 +22,11 @@ import {
   applySecurityHeaders,
   sanitizeLeaderboardNumbers,
 } from './src/game/serverSecurity.js';
+import {
+  findGooglePlaySkuByItemId,
+  findGooglePlaySkuByProductId,
+} from './src/game/billingCatalog.js';
+import { verifyGooglePlayProductReceipt } from './src/game/googlePlayVerifier.js';
 
 const VALID_MINIGAMES: MinigameType[] = ['two_clubs', 'xox', 'career', 'country_club'];
 
@@ -250,6 +255,7 @@ app.post('/api/accounts/sync', (req, res) => {
     profile,
     progression,
     googleUid: googleUid ? String(googleUid) : undefined,
+    strictActionVerification: true,
   });
   if (!syncRes.ok || !syncRes.account) {
     return res.json({ ok: false });
@@ -300,7 +306,14 @@ app.post('/api/leaderboard/sync', (req, res) => {
   if (!id || !name) {
     return res.status(400).json({ error: 'Missing player identity' });
   }
-  const cleanId = String(id).slice(0, 64);
+  const cleanId = String(id).trim().slice(0, 64);
+  const storedAccount = accountStore.getByAccountId(cleanId);
+  if (storedAccount) {
+    const token = readAccountToken(req);
+    if (!accountStore.verifyAccountSession(cleanId, token)) {
+      return res.status(401).json({ ok: false, error: 'Liderlik tablosu güncelleme yetkisi doğrulanamadı.' });
+    }
+  }
   const existing = liveLeaderboard.get(cleanId);
   const prevWeekly = existing?.weeklyPoints ?? 0;
   let prevTopWeekly = 0;
@@ -510,6 +523,123 @@ app.post('/api/validate', (req, res) => {
   }
   const result = validateAnswerForPairing(answer.slice(0, 120), pairing);
   res.json(result);
+});
+
+// ── Google Play Billing v7 Sunucu Doğrulaması ──
+app.post('/api/billing/verify-google-play', async (req, res) => {
+  if (!enforceRateLimit(accountWriteLimiter, req, res)) return;
+  const { accountId, itemId, productId, purchaseToken, orderId } = req.body || {};
+  const cleanId = String(accountId || '').trim().slice(0, 64);
+  if (!cleanId || !itemId || !productId || !purchaseToken) {
+    return res.status(400).json({
+      ok: false,
+      verified: false,
+      error: 'Eksik satın alma doğrulama bilgisi.',
+    });
+  }
+
+  const existing = accountStore.getByAccountId(cleanId);
+  if (existing) {
+    const token = readAccountToken(req);
+    if (!accountStore.verifyAccountSession(cleanId, token)) {
+      return res.status(401).json({
+        ok: false,
+        verified: false,
+        error: 'Hesap oturumu doğrulanamadı.',
+      });
+    }
+  }
+
+  const verification = await verifyGooglePlayProductReceipt({
+    itemId: String(itemId),
+    productId: String(productId),
+    purchaseToken: String(purchaseToken),
+  });
+
+  if (!verification.verified) {
+    return res.status(verification.statusCode).json({
+      ok: false,
+      verified: false,
+      error: verification.error || 'Google Play makbuzu doğrulanamadı.',
+    });
+  }
+
+  const sku = findGooglePlaySkuByItemId(String(itemId)) || findGooglePlaySkuByProductId(String(productId));
+  if (!sku) {
+    return res.status(400).json({ ok: false, verified: false, error: 'Geçersiz ürün SKU.' });
+  }
+
+  if (existing) {
+    const applied = accountStore.applyVerifiedPurchase({
+      accountId: cleanId,
+      itemId: sku.itemId,
+      productId: sku.productId,
+      purchaseToken: String(purchaseToken),
+      orderId: verification.orderId || (orderId ? String(orderId) : undefined),
+      coinGrant: sku.coinGrant,
+      grantAdFree: sku.grantAdFree,
+      vipFrame: sku.vipFrame,
+    });
+    if (!applied.ok) {
+      return res.status(409).json({
+        ok: false,
+        verified: false,
+        error: 'Bu satın alma jetonu başka bir hesapta zaten kullanılmış.',
+      });
+    }
+    return res.json({
+      ok: true,
+      verified: true,
+      alreadyCredited: Boolean(applied.alreadyCredited),
+      progression: applied.account?.progression,
+    });
+  }
+
+  return res.json({
+    ok: true,
+    verified: true,
+    alreadyCredited: false,
+  });
+});
+
+// ── Google Play UGC Güvenliği: Kullanıcı Şikayet / Raporlama Uç Noktası ──
+const userModerationReports: Array<{
+  id: string;
+  reporterId: string;
+  targetId: string;
+  targetName: string;
+  reason: string;
+  details: string;
+  createdAt: number;
+}> = [];
+
+app.post('/api/moderation/report', (req, res) => {
+  if (!enforceRateLimit(socialLimiter, req, res)) return;
+  const { reporterId, targetId, targetName, reason, details } = req.body || {};
+  const cleanTargetId = String(targetId || '').trim().slice(0, 128);
+  const cleanTargetName = String(targetName || 'Oyuncu').trim().slice(0, 64);
+  const cleanReason = String(reason || '').trim();
+  if (
+    !cleanTargetId ||
+    !['inappropriate_name', 'cheating', 'harassment', 'other'].includes(cleanReason)
+  ) {
+    return res.status(400).json({ ok: false, error: 'Geçersiz şikayet verisi.' });
+  }
+
+  const report = {
+    id: `rep_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    reporterId: String(reporterId || 'anon').trim().slice(0, 64),
+    targetId: cleanTargetId,
+    targetName: cleanTargetName,
+    reason: cleanReason,
+    details: String(details || '').trim().slice(0, 300),
+    createdAt: Date.now(),
+  };
+  userModerationReports.push(report);
+  if (userModerationReports.length > 500) {
+    userModerationReports.splice(0, userModerationReports.length - 500);
+  }
+  res.json({ ok: true, reportId: report.id });
 });
 
 // Server-Backed 8-Player Friend Tournaments

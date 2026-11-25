@@ -1,0 +1,39 @@
+name: Firebase Emulator Security Rules Tests
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'firebase.json'
+      - 'firestore.rules'
+      - 'database.rules.json'
+      - 'tests/firebase-emulator.rules.test.ts'
+      - 'package.json'
+      - '.github/workflows/firebase-emulator-tests.yml'
+  workflow_dispatch:
+
+jobs:
+  emulator-rules-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Setup Java 21 (Required by Firebase Emulators)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+
+      - name: Run Firestore & RTDB Rules Tests on Firebase Emulator Suite
+        run: npx -y firebase-tools emulators:exec --project futbol-9013e --only auth,firestore,database "node --import tsx --test tests/firebase-emulator.rules.test.ts"

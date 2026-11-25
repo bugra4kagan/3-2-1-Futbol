@@ -30,6 +30,7 @@ import {
   ToastItem,
   DailyChallengeRecord,
   WheelSliceDefinition,
+  UserReportReason,
 } from './game/types';
 import { CLUBS, PLAYERS_LIST } from './game/database';
 import {
@@ -179,6 +180,10 @@ import { SpecialEventModal } from './components/SpecialEventModal';
 import { OnboardingModal, ONBOARDING_STORAGE_KEY } from './components/OnboardingModal';
 import { CoinIcon } from './components/CoinIcon';
 import { initializeAdMob } from './services/admobService';
+import {
+  executeGooglePlayPurchase,
+  restoreGooglePlayPurchases,
+} from './services/playBillingService';
 import { logTelemetryEvent } from './services/telemetryService';
 import {
   fetchRtdbLeaderboard,
@@ -299,6 +304,7 @@ import {
   deleteCloudAccountData,
   ensureAnonymousFirebaseSession,
   fetchPublicProfileFromFirestore,
+  initializeFirebaseAppCheck,
   loadUserBackupFromFirestore,
   processAuthRedirectResult,
   publishActivityToFirestore,
@@ -307,6 +313,7 @@ import {
   sendVerificationEmailToCurrentUser,
   signInWithGooglePopup,
   signOutFirebase,
+  submitUserReportToFirestore,
   subscribeFriendProfilesInFirestore,
   subscribeUserAuthoritativeBackup,
   syncServerClockWithFirestore,
@@ -1282,6 +1289,7 @@ export default function App() {
   );
 
   useEffect(() => {
+    initializeFirebaseAppCheck();
     void initializeAdMob();
     void processAuthRedirectResult().then(() => ensureAnonymousFirebaseSession());
     if (typeof window === 'undefined') return;
@@ -1548,7 +1556,7 @@ export default function App() {
         try {
           const res = await fetch('/api/leaderboard/sync', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: buildAccountApiHeaders(profileToSync.id),
             body: JSON.stringify({
               id: profileToSync.id,
               friendCode: progToSync.friendCode,
@@ -3472,6 +3480,12 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
   };
 
   const handlePurchaseStoreItemAction = (itemId: string, method: 'coins' | 'money') => {
+    if (method === 'money') {
+      return {
+        ok: false,
+        reason: 'Gerçek para ödemeleri Google Play üzerinden asenkron doğrulanır.',
+      };
+    }
     const res = purchaseStoreItem(progression, itemId, method);
     if (res.ok) {
       persistProgression(res.progression);
@@ -3481,6 +3495,40 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
         handleUpdateProfile({ avatar: res.gift.value });
       }
       syncServerLeaderboard(res.progression, nextProfile);
+    }
+    return { ok: res.ok, reason: res.reason, gift: res.gift };
+  };
+
+  const handleProfilePurchaseStoreItem = async (itemId: string, method: 'coins' | 'money') => {
+    if (method === 'coins') {
+      return handlePurchaseStoreItemAction(itemId, 'coins');
+    }
+    const billingRes = await executeGooglePlayPurchase({
+      itemId,
+      accountId: sessionPlayerIdRef.current,
+      alreadyOwned: Boolean(
+        progressionRef.current.unlockedGiftIds.includes(itemId) ||
+          (itemId === 'store_ad_free' && progressionRef.current.adFree)
+      ),
+    });
+    if (!billingRes.ok) {
+      return {
+        ok: false,
+        reason: billingRes.reason || 'Google Play ödemesi tamamlanamadı.',
+      };
+    }
+    const res = purchaseStoreItem(progressionRef.current, itemId, 'money');
+    if (res.ok) {
+      persistProgression(res.progression);
+      syncServerLeaderboard(res.progression, player1Ref.current);
+      if (firebaseUser) {
+        void saveUserBackupToFirestore({
+          user: firebaseUser,
+          profile: player1Ref.current,
+          progression: res.progression,
+          favoriteClubId: player1Ref.current.favoriteClubId,
+        }).catch(() => {});
+      }
     }
     return { ok: res.ok, reason: res.reason, gift: res.gift };
   };
@@ -3893,6 +3941,19 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
       let mergedProg = progressionRef.current;
       let restoredSources = 0;
 
+      const playRestore = await restoreGooglePlayPurchases({
+        accountId: sessionPlayerIdRef.current,
+      }).catch(() => ({ restoredItemIds: [] as string[], hadNativeStore: false }));
+      if (playRestore.restoredItemIds.length > 0) {
+        restoredSources += 1;
+        for (const restoredId of playRestore.restoredItemIds) {
+          const applied = purchaseStoreItem(mergedProg, restoredId, 'money');
+          if (applied.ok) {
+            mergedProg = applied.progression;
+          }
+        }
+      }
+
       if (firebaseUser) {
         const remote = await loadUserBackupFromFirestore(firebaseUser.uid).catch(() => null);
         if (remote?.progression) {
@@ -3950,6 +4011,7 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
     const cloudRes = await deleteCloudAccountData({
       user: firebaseUser,
       displayName: player1Ref.current.name,
+      sessionPlayerId: sessionPlayerIdRef.current,
     });
 
     await fetch(`/api/accounts/by-id/${encodeURIComponent(sessionPlayerIdRef.current)}`, {
@@ -4708,7 +4770,7 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
                         syncServerLeaderboard(progression, { ...player1, avatar: av });
                       }}
                       onOpenStore={handleOpenStore}
-                      onPurchaseStoreItem={handlePurchaseStoreItemAction}
+                      onPurchaseStoreItem={handleProfilePurchaseStoreItem}
                       onEquipItem={handleEquipStoreItemAction}
                       onRestorePurchases={handleRestorePurchases}
                       onDeleteAccount={handleDeleteAccount}
@@ -5209,6 +5271,10 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
         isPendingFriend={Boolean(
           inspectedProfile && hasPendingOutgoingRequest(progression, inspectedProfile)
         )}
+        isBlocked={Boolean(
+          inspectedProfile &&
+            (progression.blockedPlayerIds || []).includes(inspectedProfile.id)
+        )}
         currentUserStats={{
           matchesPlayed: progression.matchesPlayed,
           wins: progression.wins,
@@ -5223,6 +5289,54 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
         onChallengePlayer={(mg) => {
           setInspectedProfile(null);
           handleSelectOnlineMode('online_room', { minigameType: mg });
+        }}
+        onReportPlayer={async (target, reason, details) => {
+          const serverRes = await fetch('/api/moderation/report', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              reporterId: sessionPlayerIdRef.current,
+              targetId: target.id,
+              targetName: target.name,
+              reason,
+              details: details || 'Profil modalından bildirildi',
+            }),
+          })
+            .then((r) => r.ok)
+            .catch(() => false);
+
+          const fbRes = firebaseUser?.uid
+            ? await submitUserReportToFirestore({
+                reporterUid: firebaseUser.uid,
+                targetId: target.id,
+                targetName: target.name,
+                reason,
+                details: details || 'Profil modalından bildirildi',
+              })
+            : { ok: false };
+
+          if (serverRes || fbRes.ok) {
+            return {
+              ok: true,
+              message: `${target.name} hakkında şikayet iletildi. İnceleme ekibimiz değerlendirecektir.`,
+            };
+          }
+          return {
+            ok: false,
+            message: 'Şikayet şu anda iletilemedi; lütfen bağlantını kontrol et.',
+          };
+        }}
+        onToggleBlockPlayer={(target) => {
+          const prevBlocked = progressionRef.current.blockedPlayerIds || [];
+          const exists = prevBlocked.includes(target.id);
+          const nextBlocked = exists
+            ? prevBlocked.filter((id) => id !== target.id)
+            : Array.from(new Set([...prevBlocked, target.id]));
+          const nextProg: UserProgression = {
+            ...progressionRef.current,
+            blockedPlayerIds: nextBlocked,
+          };
+          persistProgression(nextProg);
         }}
         onClose={() => setInspectedProfile(null)}
       />

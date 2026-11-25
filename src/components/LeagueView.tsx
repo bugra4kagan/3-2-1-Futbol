@@ -62,18 +62,28 @@ export const LeagueView: React.FC<LeagueViewProps> = ({
     return () => clearInterval(interval);
   }, []);
 
+  const blockedIds = useMemo(
+    () => new Set(progression.blockedPlayerIds || []),
+    [progression.blockedPlayerIds]
+  );
+
+  const visibleLivePlayers = useMemo(
+    () => liveServerPlayers.filter((p) => !blockedIds.has(p.id)),
+    [liveServerPlayers, blockedIds]
+  );
+
   const weeklyDivision = useMemo(
     () =>
-      buildWeeklyLeagueDivisionStandings(progression, playerProfile, liveServerPlayers),
-    [progression, playerProfile, liveServerPlayers]
+      buildWeeklyLeagueDivisionStandings(progression, playerProfile, visibleLivePlayers),
+    [progression, playerProfile, visibleLivePlayers]
   );
 
   const nonWeeklyStandings = useMemo(
     () =>
       activeTab === 'weekly'
         ? { entries: weeklyDivision.entries, userRank: weeklyDivision.userRank }
-        : buildLeagueStandings(progression, playerProfile, activeTab, liveServerPlayers),
-    [activeTab, weeklyDivision, progression, playerProfile, liveServerPlayers]
+        : buildLeagueStandings(progression, playerProfile, activeTab, visibleLivePlayers),
+    [activeTab, weeklyDivision, progression, playerProfile, visibleLivePlayers]
   );
 
   const entries = nonWeeklyStandings.entries;
@@ -120,7 +130,9 @@ export const LeagueView: React.FC<LeagueViewProps> = ({
     if (q.length < 2) return [];
     const byId = new Map<string, LeaguePlayerEntry | PublicPlayerProfile>();
     for (const r of remoteResults) {
-      byId.set(r.id, r);
+      if (!blockedIds.has(r.id)) {
+        byId.set(r.id, r);
+      }
     }
     for (const e of entries) {
       if (

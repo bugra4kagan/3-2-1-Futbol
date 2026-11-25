@@ -103,30 +103,37 @@
           (<code>localStorage</code>) hızlı ve çevrimdışı erişim için saklar.
         </p>
 
-        <h2>2. Anonim Firebase Realtime Database &amp; Liderlik Verileri</h2>
+        <h2>2. Firebase Bulut Veritabanı (Firestore &amp; Realtime Database)</h2>
         <ul>
           <li>
-            <strong>Çevrim İçi 1v1 ve Özel Odalar:</strong> Arkadaşla özel oda kodları
-            (<code>rooms/{roomCode}</code>) ve hızlı eşleşme kuyrukları
-            (<code>matchmaking_queue</code>), canlı maç senkronizasyonu amacıyla geçici olarak
-            Firebase Realtime Database üzerinde tutulur ve maç sonrasında temizlenir.
+            <strong>Çevrim İçi 1v1 ve Özel Odalar (Cloud Firestore):</strong> Arkadaşla özel oda
+            kodları (<code>rooms/{roomCode}</code>) ve hızlı eşleşme kuyrukları
+            (<code>matchmaking/{minigameType}/queue</code>), canlı maç senkronizasyonu amacıyla
+            geçici olarak Google Cloud Firestore üzerinde tutulur ve maç sonrasında temizlenir.
           </li>
           <li>
             <strong>Liderlik Tablosu &amp; Profil:</strong> Seçtiğiniz takma ad, avatar seçimi,
-            haftalık lig puanı ve kazanılan maç istatistikleri küresel sıralama için anonim
-            oyuncu kimliği (<code>leaderboard/{playerId}</code>) altında paylaşılır.
+            haftalık lig puanı ve kazanılan maç istatistikleri küresel sıralama ve arkadaş incelemesi
+            için Firebase Realtime Database (<code>leaderboard/{playerId}</code>) ve Cloud Firestore
+            (<code>publicProfiles/{usernameKey}</code>) üzerinde paylaşılır.
           </li>
           <li>
-            <strong>İsteğe Bağlı Bulut Yedekleme:</strong> Google ile giriş yapmanız halinde,
-            profil ve ilerlemenizi cihazlar arasında kurtarmak için e-posta doğrulamalı hesap
-            yedeklemesi kullanılır.
+            <strong>İsteğe Bağlı Bulut Yedekleme &amp; Satın Alım Doğrulaması:</strong> Google ile
+            giriş yapmanız halinde profil ve ilerlemeniz <code>users/{uid}</code> dokümanında
+            saklanır. Uygulama içi satın alımlar (Reklamları Kaldır / VIP) Google Play Billing
+            üzerinden doğrulanır; ödeme kartı bilgileriniz tarafımızca görülmez ve saklanmaz.
+          </li>
+          <li>
+            <strong>Topluluk Güvenliği (Şikayet &amp; Engelleme):</strong> Uygunsuz kullanıcı adı
+            veya davranış bildirimleri moderasyon amacıyla <code>userReports</code> kaydı olarak
+            iletilebilir; engellediğiniz oyuncular kendi listelerinizden gizlenir.
           </li>
         </ul>
 
         <h2>3. Reklamlar (Google AdMob) ve Analitik</h2>
         <p>
-          Uygulama içi isteğe bağlı ödüllü reklamlar (+250 Coin, ekstra enerji vb.) ve temel
-          hata/performans telemetrileri için Google AdMob SDK ve Firebase servisleri kullanılabilir.
+          Uygulama içi isteğe bağlı ödüllü reklamlar (+250 Coin, ekstra enerji vb.) ve VIP olmayan
+          hesaplardaki geçiş reklamları için Google AdMob SDK ve Firebase servisleri kullanılabilir.
           AdMob, reklam gösterimi ve sahtekarlık önleme için cihaz reklam kimliğini ve temel teknik
           tanı verilerini işleyebilir.
         </p>
@@ -135,6 +142,8 @@
           <strong>Hesap ve Veri Silme:</strong> Bulut yedeğinizi veya profil verilerinizi silmek
           için uygulama içi <em>Profil → Hesabımı Sil</em> seçeneğini veya
           <a href="./hesap-sil.html">Hesap Silme Sayfasını</a> kullanabilirsiniz.
+          <br />
+          İletişim: <strong>321futboloyunu@gmail.com</strong>
         </div>
       </section>
 
@@ -150,31 +159,37 @@
           60 FPS performance and offline Solo Bot play.
         </p>
 
-        <h2>2. Anonymous Firebase Match &amp; Leaderboard Data</h2>
+        <h2>2. Firebase Cloud Firestore, Realtime Database &amp; Billing</h2>
         <ul>
           <li>
-            <strong>Real-Time 1v1 &amp; Private Friend Rooms:</strong> Temporary room state
-            (<code>rooms/{roomCode}</code>) and matchmaking queue entries
-            (<code>matchmaking_queue</code>) are stored in Google Firebase Realtime Database
-            (Europe-West1) solely to synchronize live gameplay and are automatically cleaned up.
+            <strong>Real-Time 1v1 &amp; Private Friend Rooms (Cloud Firestore):</strong> Temporary
+            room state (<code>rooms/{roomCode}</code>) and matchmaking queue entries
+            (<code>matchmaking/{minigameType}/queue</code>) are stored in Google Cloud Firestore
+            solely to synchronize live gameplay and are automatically cleaned up.
           </li>
           <li>
-            <strong>Global Leaderboard:</strong> Your chosen display nickname, avatar identifier,
-            league points, and match win totals may appear on the public leaderboard under an
-            anonymous player ID (<code>leaderboard/{playerId}</code>).
+            <strong>Global Leaderboard &amp; Public Profile:</strong> Your chosen display nickname,
+            avatar identifier, league points, and match statistics may appear on the leaderboard in
+            Firebase Realtime Database (<code>leaderboard/{playerId}</code>) and Cloud Firestore
+            (<code>publicProfiles/{usernameKey}</code>).
           </li>
           <li>
-            <strong>Optional Account Backup:</strong> If you choose to sign in with Google, your
-            UID/email is used exclusively to back up and restore your progression across devices.
+            <strong>Optional Account Backup &amp; Google Play Billing:</strong> If you sign in with
+            Google, your UID/email backs up progression across devices in <code>users/{uid}</code>.
+            In-app purchases (such as Remove Ads / VIP) are processed and verified exclusively via
+            Google Play Billing; we never access or store your payment card details.
+          </li>
+          <li>
+            <strong>User Safety (Report &amp; Block):</strong> Abuse reports are stored write-only for
+            moderation review, and blocked players are hidden from your views.
           </li>
         </ul>
 
         <h2>3. Advertising (Google AdMob) &amp; Diagnostics</h2>
         <p>
-          The Android app integrates Google AdMob for optional rewarded video ads (such as bonus
-          Coins or Energy refills) and basic diagnostics. Google AdMob may collect device
-          advertising identifiers, IP-based approximate region, and ad interaction metrics in
-          accordance with Google&apos;s Privacy Policy.
+          The Android app integrates Google AdMob for optional rewarded video ads and non-VIP
+          interstitial ads. Google AdMob may collect device advertising identifiers, approximate
+          region, and ad interaction metrics in accordance with Google&apos;s Privacy Policy.
         </p>
 
         <h2>4. Data Deletion &amp; Contact</h2>
@@ -183,7 +198,7 @@
           cloud account via <em>Profile → Delete Account</em> inside the app or by visiting
           <a href="./hesap-sil.html">Account Deletion Guide</a>.
           <br />
-          Developer Contact: <strong>bugra4kagan@gmail.com</strong>
+          Developer Contact: <strong>321futboloyunu@gmail.com</strong>
         </p>
       </section>
     </main>

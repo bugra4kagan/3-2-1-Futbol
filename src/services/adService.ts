@@ -53,7 +53,7 @@ export type AdRewardPurpose =
 
 export interface AdWatchResult {
   completed: boolean;
-  provider: 'capacitor_admob' | 'web_simulation' | 'vip_bypass';
+  provider: 'capacitor_admob' | 'web_simulation' | 'vip_bypass' | 'blocked_missing_config';
   adUnitId: string;
   rewardAmountCoins: number;
   rewardAmountEnergy: number;
@@ -62,7 +62,7 @@ export interface AdWatchResult {
 export interface InterstitialAdResult {
   shown: boolean;
   skippedByVip: boolean;
-  provider: 'capacitor_admob' | 'web_simulation' | 'vip_bypass';
+  provider: 'capacitor_admob' | 'web_simulation' | 'vip_bypass' | 'blocked_missing_config';
   adUnitId: string;
 }
 
@@ -209,6 +209,15 @@ class AdService {
       mapPurposeToPlacement(purpose),
       adUnitId
     );
+    if (nativeAttempt.blockedReason === 'missing_production_config') {
+      return {
+        completed: false,
+        provider: 'blocked_missing_config',
+        adUnitId: '',
+        rewardAmountCoins: 0,
+        rewardAmountEnergy: 0,
+      };
+    }
     if (nativeAttempt.shown && nativeAttempt.rewarded) {
       return {
         completed: true,
@@ -278,6 +287,14 @@ class AdService {
 
     // @capacitor-community/admob native interstitial path (Android / iOS)
     const nativeInterstitial = await showNativeInterstitialAd(adUnitId);
+    if (nativeInterstitial.blockedReason === 'missing_production_config') {
+      return {
+        shown: false,
+        skippedByVip: false,
+        provider: 'blocked_missing_config',
+        adUnitId: '',
+      };
+    }
     if (nativeInterstitial.shown) {
       return {
         shown: true,

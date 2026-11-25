@@ -43,6 +43,8 @@ jobs:
           node --import tsx --test src/game/*.test.ts src/services/*.test.ts src/utils/*.test.ts
 
       - name: Build Debug Web Bundle (Official AdMob Test IDs)
+        env:
+          VITE_ADMOB_ALLOW_TEST_FALLBACK: "true"
         run: npm run build
 
       - name: Sync Capacitor Android (Debug)
@@ -57,7 +59,7 @@ jobs:
         working-directory: android
         run: ./gradlew assembleDebug --no-daemon --stacktrace
 
-      - name: Build Release Web Bundle (Production AdMob Env if configured)
+      - name: Build Release Web Bundle (Strict Production AdMob Env)
         env:
           VITE_ADMOB_APP_ID: ${{ secrets.ADMOB_APP_ID }}
           VITE_ADMOB_REWARDED_ID: ${{ secrets.ADMOB_REWARDED_ID }}
@@ -65,7 +67,7 @@ jobs:
           VITE_ADMOB_BANNER_ID: ${{ secrets.ADMOB_BANNER_ID }}
         run: |
           if [ -z "$VITE_ADMOB_APP_ID" ] || [ -z "$VITE_ADMOB_REWARDED_ID" ] || [ -z "$VITE_ADMOB_INTERSTITIAL_ID" ]; then
-            echo "::warning::Production AdMob secrets (ADMOB_APP_ID / ADMOB_REWARDED_ID / ADMOB_INTERSTITIAL_ID) eksik; release pakette Test ID fallback kullanilacak!"
+            echo "::warning::Production AdMob secrets (ADMOB_APP_ID / VITE_ADMOB_REWARDED_ID / VITE_ADMOB_INTERSTITIAL_ID) eksik! Release JS paketi Test ID fallback yapmayacak; gercek reklam ID'leri girilene kadar AdMob reklam birimleri devre disi kalacaktir."
           fi
           npm run build
 

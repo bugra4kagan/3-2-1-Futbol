@@ -137,16 +137,17 @@ export const FriendsView: React.FC<FriendsViewProps> = ({
     }
   };
 
+  const blockedIds = new Set(progression.blockedPlayerIds || []);
   const addedIds = new Set(progression.friends.map((f) => f.id));
   const incomingRequests = (progression.incomingFriendRequests ?? []).filter(
-    (r) => r.status === 'pending'
+    (r) => r.status === 'pending' && !blockedIds.has(r.fromPlayerId)
   );
   const outgoingRequests = (progression.outgoingFriendRequests ?? []).filter(
     (r) => r.status === 'pending'
   );
 
   const realOnlinePlayers = liveServerPlayers
-    .filter((p) => p.id !== selfPlayerId && !addedIds.has(p.id))
+    .filter((p) => p.id !== selfPlayerId && !addedIds.has(p.id) && !blockedIds.has(p.id))
     .slice(0, 6);
 
   return (
@@ -418,7 +419,9 @@ export const FriendsView: React.FC<FriendsViewProps> = ({
             ) : searchResults.length === 0 ? (
               <p className="text-xs text-slate-400 px-1">Eşleşen oyuncu bulunamadı.</p>
             ) : (
-              searchResults.map((p) => {
+              searchResults
+                .filter((p) => !blockedIds.has(p.id))
+                .map((p) => {
                 const safeName = sanitizePublicDisplayName(p.name, p.id);
                 const alreadyFriend = addedIds.has(p.id);
                 const isSelfRow = p.id === selfPlayerId;

@@ -73,6 +73,15 @@ export function buildPublicProfileFromRecord(
   };
 }
 
+export interface VerifiedPurchaseRecord {
+  productId: string;
+  itemId: string;
+  purchaseToken: string;
+  orderId?: string;
+  verifiedAt: number;
+  source: 'google_play' | 'legacy_migration';
+}
+
 export interface PersistentAccountRecord {
   accountId: string;
   username: string;
@@ -80,6 +89,7 @@ export interface PersistentAccountRecord {
   recoveryCode: string;
   sessionSecret?: string;
   googleUid?: string;
+  verifiedPurchases?: VerifiedPurchaseRecord[];
   profile: PlayerProfile;
   progression: UserProgression;
   createdAt: number;
@@ -283,6 +293,7 @@ export class AccountStore {
     profile?: Partial<PlayerProfile>;
     progression: UserProgression;
     googleUid?: string;
+    strictActionVerification?: boolean;
   }): { ok: boolean; account?: PersistentAccountRecord } {
     const cleanId = String(params.accountId || '').trim().slice(0, 64);
     if (!cleanId) return { ok: false };
@@ -326,7 +337,9 @@ export class AccountStore {
       sessionSecret: existing.sessionSecret || generateAccountAuthSecret(),
       googleUid: params.googleUid || existing.googleUid,
       profile: nextProfile,
-      progression: sanitizeProgressionUpdate(existing.progression, params.progression),
+      progression: sanitizeProgressionUpdate(existing.progression, params.progression, {
+        strictActionVerification: Boolean(params.strictActionVerification),
+      }),
       updatedAt: Date.now(),
     };
 
@@ -386,6 +399,87 @@ export class AccountStore {
     }
     this.saveToDisk();
     return true;
+  }
+
+  public hasPurchaseToken(purchaseToken: string): boolean {
+    const cleanToken = String(purchaseToken || '').trim();
+    if (!cleanToken) return false;
+    for (const rec of this.byId.values()) {
+      if ((rec.verifiedPurchases || []).some((p) => p.purchaseToken === cleanToken)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  public applyVerifiedPurchase(params: {
+    accountId: string;
+    itemId: string;
+    productId: string;
+    purchaseToken: string;
+    orderId?: string;
+    coinGrant?: number;
+    grantAdFree?: boolean;
+    vipFrame?: boolean;
+  }): { ok: boolean; alreadyCredited?: boolean; account?: PersistentAccountRecord } {
+    const cleanId = String(params.accountId || '').trim().slice(0, 64);
+    const cleanToken = String(params.purchaseToken || '').trim();
+    if (!cleanId || !cleanToken) return { ok: false };
+
+    const existing = this.byId.get(cleanId);
+    if (!existing) return { ok: false };
+
+    const priorPurchases = existing.verifiedPurchases || [];
+    if (priorPurchases.some((p) => p.purchaseToken === cleanToken)) {
+      return { ok: true, alreadyCredited: true, account: existing };
+    }
+
+    // Replayed token across another account is strictly rejected
+    if (this.hasPurchaseToken(cleanToken)) {
+      return { ok: false };
+    }
+
+    const coinDelta = Math.max(0, Math.min(25_000, Math.round(Number(params.coinGrant) || 0)));
+    const unlockedSet = new Set(existing.progression.unlockedGiftIds || []);
+    unlockedSet.add(params.itemId);
+    if (params.vipFrame) {
+      unlockedSet.add('store_ad_free');
+    }
+
+    const nextProg = sanitizeProgressionUpdate(
+      existing.progression,
+      {
+        ...existing.progression,
+        coins: existing.progression.coins + coinDelta,
+        adFree: Boolean(existing.progression.adFree || params.grantAdFree),
+        equippedFrame: params.vipFrame ? 'vip' : existing.progression.equippedFrame,
+        unlockedGiftIds: Array.from(unlockedSet),
+      },
+      {
+        allowVerifiedIapGrant: Boolean(params.grantAdFree),
+        verifiedCoinCredit: coinDelta,
+      }
+    );
+
+    const updated: PersistentAccountRecord = {
+      ...existing,
+      verifiedPurchases: [
+        ...priorPurchases,
+        {
+          productId: params.productId,
+          itemId: params.itemId,
+          purchaseToken: cleanToken,
+          orderId: params.orderId,
+          verifiedAt: Date.now(),
+          source: 'google_play',
+        },
+      ],
+      progression: nextProg,
+      updatedAt: Date.now(),
+    };
+    this.indexRecord(updated);
+    this.saveToDisk();
+    return { ok: true, alreadyCredited: false, account: updated };
   }
 
   public getByGoogleUid(googleUid: string): PersistentAccountRecord | null {

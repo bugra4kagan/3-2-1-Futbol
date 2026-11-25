@@ -482,7 +482,10 @@ export interface UserProgression {
   extraTimeCards?: number;
   leagueTierId?: WeeklyLeagueTierId;
   lastSeasonResetNotice?: LeagueSeasonResetNotice | null;
+  blockedPlayerIds?: string[];
 }
+
+export type UserReportReason = 'inappropriate_name' | 'cheating' | 'harassment' | 'other';
 
 export type WheelRewardType = 'coins' | 'energy' | 'joker';
 

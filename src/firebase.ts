@@ -33,9 +33,17 @@ import {
   Timestamp,
   updateDoc,
 } from 'firebase/firestore';
-import { getDatabase } from 'firebase/database';
+import { getDatabase, ref as rtdbRef, remove as rtdbRemove } from 'firebase/database';
 import { getAnalytics, isSupported, logEvent, Analytics } from 'firebase/analytics';
+import {
+  CustomProvider,
+  initializeAppCheck,
+  ReCaptchaV3Provider,
+  type AppCheck,
+} from 'firebase/app-check';
+import { Capacitor } from '@capacitor/core';
 import { normalizeUsernameKey } from './game/accountEngine';
+import { sanitizeRtdbKey } from './game/realtimeSyncHelpers';
 import { calibrateServerTimeOffset } from './game/serverTime';
 import {
   FriendActivityEvent,
@@ -45,6 +53,7 @@ import {
   PlayerProfile,
   PublicPlayerProfile,
   UserProgression,
+  UserReportReason,
 } from './game/types';
 
 export const firebaseConfig = {
@@ -62,6 +71,97 @@ export const app = initializeApp(firebaseConfig);
 export const rtdb = getDatabase(app);
 export const db = getFirestore(app);
 export const auth = getAuth(app);
+
+let appCheckInstance: AppCheck | null = null;
+
+function readEnvFlag(key: string): string | undefined {
+  try {
+    const env = (import.meta as unknown as { env?: Record<string, string | undefined> }).env;
+    const raw = env?.[key];
+    return typeof raw === 'string' && raw.trim().length > 0 ? raw.trim() : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Firebase App Check + Google Play Integrity entegrasyon hazırlığı.
+ * ÖNEMLİ: Firebase Console'da App Check enforcement henüz açılmamışken
+ * istemci yalnızca geçerli bir anahtar/proje numarası tanımlıysa App Check başlatır.
+ */
+export function initializeFirebaseAppCheck(): {
+  initialized: boolean;
+  provider: 'play_integrity_ready' | 'recaptcha_v3' | 'not_configured';
+  enforcementEnabled: false;
+} {
+  if (appCheckInstance) {
+    return {
+      initialized: true,
+      provider: Capacitor.isNativePlatform() ? 'play_integrity_ready' : 'recaptcha_v3',
+      enforcementEnabled: false,
+    };
+  }
+  if (typeof window === 'undefined') {
+    return { initialized: false, provider: 'not_configured', enforcementEnabled: false };
+  }
+
+  try {
+    if (Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android') {
+      const appCheckEnabled = readEnvFlag('VITE_FIREBASE_APPCHECK_ENABLED') === 'true';
+      const cloudProjectNumber = readEnvFlag('VITE_PLAY_INTEGRITY_CLOUD_PROJECT_NUMBER');
+      const win = window as unknown as {
+        Capacitor?: {
+          Plugins?: {
+            PlayIntegrity?: {
+              requestIntegrityToken: (opts: {
+                nonce: string;
+                cloudProjectNumber?: string;
+              }) => Promise<{ ok: boolean; token?: string; error?: string }>;
+            };
+          };
+        };
+      };
+      const plugin = win.Capacitor?.Plugins?.PlayIntegrity;
+      if (appCheckEnabled && cloudProjectNumber && plugin?.requestIntegrityToken) {
+        appCheckInstance = initializeAppCheck(app, {
+          provider: new CustomProvider({
+            getToken: async () => {
+              const nonce = `appcheck_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+              const res = await plugin.requestIntegrityToken({ nonce, cloudProjectNumber });
+              if (!res.ok || !res.token) {
+                throw new Error(res.error || 'Play Integrity token unavailable');
+              }
+              return {
+                token: res.token,
+                expireTimeMillis: Date.now() + 50 * 60 * 1000,
+              };
+            },
+          }),
+          isTokenAutoRefreshEnabled: true,
+        });
+        return {
+          initialized: true,
+          provider: 'play_integrity_ready',
+          enforcementEnabled: false,
+        };
+      }
+      return { initialized: false, provider: 'not_configured', enforcementEnabled: false };
+    }
+
+    const recaptchaKey = readEnvFlag('VITE_FIREBASE_APPCHECK_RECAPTCHA_KEY');
+    if (recaptchaKey) {
+      appCheckInstance = initializeAppCheck(app, {
+        provider: new ReCaptchaV3Provider(recaptchaKey),
+        isTokenAutoRefreshEnabled: true,
+      });
+      return { initialized: true, provider: 'recaptcha_v3', enforcementEnabled: false };
+    }
+  } catch {
+    // Enforcement kapalı olduğu için yapılandırma eksikliği akışı kesmez
+  }
+
+  return { initialized: false, provider: 'not_configured', enforcementEnabled: false };
+}
 
 let analyticsInstance: Analytics | null = null;
 
@@ -375,12 +475,19 @@ export async function sendPasswordResetForEmail(email: string): Promise<{
 export async function deleteCloudAccountData(params: {
   user: User | null;
   displayName?: string;
+  sessionPlayerId?: string;
 }): Promise<{ ok: boolean; warning?: string }> {
-  const { user, displayName } = params;
+  const { user, displayName, sessionPlayerId } = params;
   if (!user) return { ok: true };
 
   const key = displayName ? normalizeUsernameKey(displayName) : '';
   try {
+    if (sessionPlayerId) {
+      await rtdbRemove(rtdbRef(rtdb, `leaderboard/${sanitizeRtdbKey(sessionPlayerId)}`)).catch(
+        () => {}
+      );
+    }
+    await rtdbRemove(rtdbRef(rtdb, `leaderboard/${sanitizeRtdbKey(user.uid)}`)).catch(() => {});
     await deleteDoc(doc(db, 'users', user.uid)).catch(() => {});
     if (key.length >= 3 && key.length <= 32) {
       const pubRef = doc(db, 'publicProfiles', key);
@@ -1012,5 +1119,33 @@ export async function fetchPublicProfileFromFirestore(
       handleFirestoreError(error, OperationType.GET, path);
     }
     return null;
+  }
+}
+
+export async function submitUserReportToFirestore(params: {
+  reporterUid: string;
+  targetId: string;
+  targetName: string;
+  reason: UserReportReason;
+  details?: string;
+}): Promise<{ ok: boolean }> {
+  try {
+    const cleanTargetId = String(params.targetId || '').trim().slice(0, 128);
+    const cleanTargetName = String(params.targetName || 'Oyuncu').trim().slice(0, 64);
+    const reportId = `rep_${params.reporterUid.slice(0, 16)}_${Date.now()}_${Math.random()
+      .toString(36)
+      .slice(2, 8)}`.replace(/[^a-zA-Z0-9_-]/g, '_');
+
+    await setDoc(doc(db, 'userReports', reportId), {
+      reporterUid: params.reporterUid,
+      targetId: cleanTargetId,
+      targetName: cleanTargetName,
+      reason: params.reason,
+      details: String(params.details || '').trim().slice(0, 300),
+      createdAt: serverTimestamp(),
+    });
+    return { ok: true };
+  } catch {
+    return { ok: false };
   }
 }
