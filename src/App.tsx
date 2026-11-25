@@ -262,6 +262,8 @@ import {
   subscribeFriendProfilesInFirestore,
   subscribeUserAuthoritativeBackup,
   syncServerClockWithFirestore,
+  trackGameEvent,
+  trackScreenView,
 } from './firebase';
 
 type AppScreen = 'intro' | 'lobby' | 'room_waiting' | 'playing' | 'game_over';
@@ -875,7 +877,10 @@ export default function App() {
   useEffect(() => {
     screenRef.current = screen;
   }, [screen]);
-
+  useEffect(() => {
+    const viewName = screen === 'lobby' ? `lobby_${activeTab}` : screen;
+    trackScreenView(viewName);
+  }, [screen, activeTab]);
   useEffect(() => {
     minigameTypeRef.current = minigameType;
   }, [minigameType]);
@@ -1525,7 +1530,13 @@ export default function App() {
     const p2Score = player2.score;
     const isDraw = p1Score === p2Score;
     const won = p1Score > p2Score;
-
+trackGameEvent('match_complete', {
+      mode,
+      minigame: minigameType,
+      won,
+      p1_score: p1Score,
+      p2_score: p2Score,
+    });
     const outcome = recordMatchOutcome(progression, {
       won,
       isDraw,
@@ -2076,7 +2087,7 @@ export default function App() {
     setMatchHighlights([]);
     setXoxNotice(null);
     setScreen('playing');
-
+trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficulty: selectedBotDifficulty });
     runRoundCountdown(0, generatedRounds, selectedMinigame);
   };
 
@@ -2690,7 +2701,7 @@ export default function App() {
           setRematchState('idle');
           setCurrentRoundIndex(room.currentRoundIndex || 0);
           setScreen('playing');
-
+trackGameEvent('match_start', { mode: 'online', minigame: room.minigameType });
           if (isHost) {
             let countVal = 3;
             rtdbCountdownStartedAtRef.current = Date.now();

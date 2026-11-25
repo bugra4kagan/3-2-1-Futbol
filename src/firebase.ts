@@ -34,6 +34,7 @@ import {
   updateDoc,
 } from 'firebase/firestore';
 import { getDatabase } from 'firebase/database';
+import { getAnalytics, isSupported, logEvent, Analytics } from 'firebase/analytics';
 import { normalizeUsernameKey } from './game/accountEngine';
 import { calibrateServerTimeOffset } from './game/serverTime';
 import {
@@ -61,6 +62,40 @@ export const app = initializeApp(firebaseConfig);
 export const rtdb = getDatabase(app);
 export const db = getFirestore(app);
 export const auth = getAuth(app);
+
+let analyticsInstance: Analytics | null = null;
+
+void isSupported()
+  .then((supported) => {
+    if (supported) {
+      analyticsInstance = getAnalytics(app);
+    }
+  })
+  .catch(() => {});
+
+export function trackScreenView(screenName: string): void {
+  if (!analyticsInstance) return;
+  try {
+    logEvent(analyticsInstance, 'screen_view', {
+      firebase_screen: screenName,
+      firebase_screen_class: screenName,
+    });
+  } catch {
+    // ignore analytics errors
+  }
+}
+
+export function trackGameEvent(
+  eventName: string,
+  params?: Record<string, string | number | boolean>
+): void {
+  if (!analyticsInstance) return;
+  try {
+    logEvent(analyticsInstance, eventName, params);
+  } catch {
+    // ignore analytics errors
+  }
+}
 
 export const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: 'select_account' });
