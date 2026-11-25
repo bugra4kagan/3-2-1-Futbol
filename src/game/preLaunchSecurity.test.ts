@@ -5,14 +5,16 @@ import path from 'node:path';
 import { AccountStore } from './accountStore';
 import { verifyGooglePlayProductReceipt } from './googlePlayVerifier';
 import { createInitialProgression } from './retentionEngine';
-import { sanitizeProgressionUpdate } from './serverSecurity';
+import { ServerMatchLedger, sanitizeProgressionUpdate } from './serverSecurity';
 
-test('strictActionVerification blocks fabricated coin/point jumps without match/reward activity', () => {
+test('strictActionVerification rejects client-fabricated matchesPlayed/coin/point inflation', () => {
   const prev = createInitialProgression('act_1');
   const forged = sanitizeProgressionUpdate(
     prev,
     {
       ...prev,
+      matchesPlayed: prev.matchesPlayed + 25,
+      wins: prev.wins + 25,
       coins: prev.coins + 20000,
       weeklyPoints: prev.weeklyPoints + 8000,
       totalPoints: prev.totalPoints + 8000,
@@ -22,29 +24,20 @@ test('strictActionVerification blocks fabricated coin/point jumps without match/
     { strictActionVerification: true }
   );
 
-  // Zero real matches/quests/achievements => only small rewarded-ad buffer allowed, NOT +20,000 coins or +8,000 points
-  assert.equal(forged.coins, prev.coins + 500);
-  assert.equal(forged.weeklyPoints, prev.weeklyPoints + 250);
-  assert.equal(forged.totalPoints, prev.totalPoints + 250);
-  // Self-escalation to adFree via unverified sync is blocked
+  // Zero trust on client-sent matchesPlayed/counters: untrusted JSON sync grants 0 extra coins/points!
+  assert.equal(forged.coins, prev.coins);
+  assert.equal(forged.weeklyPoints, prev.weeklyPoints);
+  assert.equal(forged.totalPoints, prev.totalPoints);
   assert.equal(forged.adFree, false);
   assert.equal(forged.unlockedGiftIds.includes('store_ad_free'), false);
 
-  // Legitimate match progression allows earned match coins and points
-  const legit = sanitizeProgressionUpdate(
-    prev,
-    {
-      ...prev,
-      matchesPlayed: prev.matchesPlayed + 2,
-      wins: prev.wins + 2,
-      coins: prev.coins + 1200,
-      weeklyPoints: prev.weeklyPoints + 500,
-      totalPoints: prev.totalPoints + 500,
-    },
+  // Spending coins (e.g., store unlock) is still permitted
+  const spend = sanitizeProgressionUpdate(
+    { ...prev, coins: 2000 },
+    { ...prev, coins: 1000, unlockedGiftIds: [...prev.unlockedGiftIds, 'frame_gold'] },
     { strictActionVerification: true }
   );
-  assert.equal(legit.coins, prev.coins + 1200);
-  assert.equal(legit.weeklyPoints, prev.weeklyPoints + 500);
+  assert.equal(spend.coins, 1000);
 
   // Existing VIP adFree entitlement is ALWAYS preserved
   const existingVip = { ...prev, adFree: true, unlockedGiftIds: [...prev.unlockedGiftIds, 'store_ad_free'] };
@@ -55,6 +48,69 @@ test('strictActionVerification blocks fabricated coin/point jumps without match/
   );
   assert.equal(afterSync.adFree, true);
   assert.ok(afterSync.unlockedGiftIds.includes('store_ad_free'));
+});
+
+test('ServerMatchLedger & AccountStore credit coins/points only from verified one-time server sessions', () => {
+  const store = new AccountStore(null);
+  const ledger = new ServerMatchLedger();
+  const initProg = createInitialProgression('srv_p1');
+  const reg = store.registerOrUpdate({
+    accountId: 'srv_p1',
+    profile: { id: 'srv_p1', name: 'SunucuOyuncusu', avatar: 'ball', score: 0 },
+    progression: initProg,
+  });
+  assert.equal(reg.ok, true);
+
+  const session = ledger.issueSession({
+    accountId: 'srv_p1',
+    minigameType: 'two_clubs',
+    mode: 'solo',
+    now: 1_700_000_000_000,
+  });
+
+  // Too fast (< 3000ms) is rejected
+  const tooFast = ledger.consumeVerifiedMatchSession({
+    sessionId: session.sessionId,
+    accountId: 'srv_p1',
+    playerScore: 3,
+    opponentScore: 0,
+    hasMultiplier2x: false,
+    now: 1_700_000_000_500,
+  });
+  assert.equal(tooFast.ok, false);
+
+  // Valid elapsed duration computes authoritative server reward
+  const valid = ledger.consumeVerifiedMatchSession({
+    sessionId: session.sessionId,
+    accountId: 'srv_p1',
+    playerScore: 3,
+    opponentScore: 1,
+    hasMultiplier2x: false,
+    now: 1_700_000_045_000,
+  });
+  assert.equal(valid.ok, true);
+  if (!valid.ok) return;
+
+  const credited = store.recordVerifiedMatchReward({
+    accountId: 'srv_p1',
+    coinsAwarded: valid.coinsAwarded,
+    pointsAwarded: valid.pointsAwarded,
+    won: valid.won,
+  });
+  assert.equal(credited.ok, true);
+  assert.equal(credited.account?.progression.coins, initProg.coins + valid.coinsAwarded);
+  assert.equal(credited.account?.progression.weeklyPoints, initProg.weeklyPoints + valid.pointsAwarded);
+
+  // Replaying same matchSessionId fails
+  const replay = ledger.consumeVerifiedMatchSession({
+    sessionId: session.sessionId,
+    accountId: 'srv_p1',
+    playerScore: 3,
+    opponentScore: 1,
+    hasMultiplier2x: false,
+    now: 1_700_000_050_000,
+  });
+  assert.equal(replay.ok, false);
 });
 
 test('AccountStore.applyVerifiedPurchase is idempotent and rejects cross-account token replay', () => {
@@ -85,7 +141,6 @@ test('AccountStore.applyVerifiedPurchase is idempotent and rejects cross-account
   assert.equal(firstApply.alreadyCredited, false);
   assert.equal(firstApply.account?.progression.adFree, true);
 
-  // Idempotent repeat for same account
   const repeatSame = store.applyVerifiedPurchase({
     accountId: 'iap_a',
     itemId: 'store_ad_free',
@@ -96,7 +151,6 @@ test('AccountStore.applyVerifiedPurchase is idempotent and rejects cross-account
   assert.equal(repeatSame.ok, true);
   assert.equal(repeatSame.alreadyCredited, true);
 
-  // Replay across another account must fail
   const replayOther = store.applyVerifiedPurchase({
     accountId: 'iap_b',
     itemId: 'store_ad_free',
@@ -107,7 +161,7 @@ test('AccountStore.applyVerifiedPurchase is idempotent and rejects cross-account
   assert.equal(replayOther.ok, false);
 });
 
-test('verifyGooglePlayProductReceipt refuses forged tokens and unconfigured verifier cleanly', async () => {
+test('verifyGooglePlayProductReceipt rejects discontinued SKUs and unconfigured verifier cleanly', async () => {
   const invalidToken = await verifyGooglePlayProductReceipt({
     itemId: 'store_ad_free',
     productId: 'com.futbol321.challenge.ad_free',
@@ -117,14 +171,14 @@ test('verifyGooglePlayProductReceipt refuses forged tokens and unconfigured veri
   assert.equal(invalidToken.verified, false);
   assert.equal(invalidToken.statusCode, 400);
 
-  const mismatchedSku = await verifyGooglePlayProductReceipt({
-    itemId: 'store_ad_free',
+  const closedCoinSku = await verifyGooglePlayProductReceipt({
+    itemId: 'pack_coin_15000',
     productId: 'com.futbol321.challenge.coins_15000',
     purchaseToken: 'valid_looking_token_1234567890',
     serviceAccount: null,
   });
-  assert.equal(mismatchedSku.verified, false);
-  assert.equal(mismatchedSku.statusCode, 400);
+  assert.equal(closedCoinSku.verified, false);
+  assert.equal(closedCoinSku.statusCode, 400);
 
   const missingCreds = await verifyGooglePlayProductReceipt({
     itemId: 'store_ad_free',

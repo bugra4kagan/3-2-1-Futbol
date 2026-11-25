@@ -4,13 +4,6 @@ on:
   push:
     branches:
       - main
-    paths:
-      - 'firebase.json'
-      - 'firestore.rules'
-      - 'database.rules.json'
-      - 'tests/firebase-emulator.rules.test.ts'
-      - 'package.json'
-      - '.github/workflows/firebase-emulator-tests.yml'
   workflow_dispatch:
 
 jobs:

@@ -482,6 +482,57 @@ export class AccountStore {
     return { ok: true, alreadyCredited: false, account: updated };
   }
 
+  /**
+   * Sunucu tarafından doğrulanmış maç sonucunu doğrudan sunucu kaydına işler.
+   * İstemcinin gönderdiği matchesPlayed veya keyfi puan artışlarına asla dayanmaz.
+   */
+  public recordVerifiedMatchReward(params: {
+    accountId: string;
+    coinsAwarded: number;
+    pointsAwarded: number;
+    won: boolean;
+  }): { ok: boolean; account?: PersistentAccountRecord } {
+    const cleanId = String(params.accountId || '').trim().slice(0, 64);
+    const existing = this.byId.get(cleanId);
+    if (!existing) return { ok: false };
+
+    const coinCredit = Math.max(0, Math.round(params.coinsAwarded));
+    const pointCredit = Math.max(0, Math.round(params.pointsAwarded));
+    const prev = existing.progression;
+    const nextMultMatches =
+      !prev.permanentMultiplier2x && (prev.multiplier2xMatches ?? 0) > 0
+        ? (prev.multiplier2xMatches ?? 1) - 1
+        : prev.multiplier2xMatches;
+
+    const nextProg = sanitizeProgressionUpdate(
+      prev,
+      {
+        ...prev,
+        coins: prev.coins + coinCredit,
+        weeklyPoints: prev.weeklyPoints + pointCredit,
+        totalPoints: prev.totalPoints + pointCredit,
+        matchesPlayed: (prev.matchesPlayed ?? 0) + 1,
+        wins: (prev.wins ?? 0) + (params.won ? 1 : 0),
+        losses: (prev.losses ?? 0) + (params.won ? 0 : 1),
+        multiplier2xMatches: nextMultMatches,
+      },
+      {
+        strictActionVerification: true,
+        verifiedCoinCredit: coinCredit,
+        verifiedPointCredit: pointCredit,
+      }
+    );
+
+    const updated: PersistentAccountRecord = {
+      ...existing,
+      progression: nextProg,
+      updatedAt: Date.now(),
+    };
+    this.indexRecord(updated);
+    this.saveToDisk();
+    return { ok: true, account: updated };
+  }
+
   public getByGoogleUid(googleUid: string): PersistentAccountRecord | null {
     return this.byGoogleUid.get(googleUid) || null;
   }

@@ -1,6 +1,11 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
-import { findGooglePlaySkuByItemId, findGooglePlaySkuByProductId } from './billingCatalog.js';
+import {
+  findGooglePlaySkuByItemId,
+  findGooglePlaySkuByProductId,
+  findRestorableGooglePlaySkuByItemId,
+  findRestorableGooglePlaySkuByProductId,
+} from './billingCatalog.js';
 
 export interface GooglePlayServiceAccountCredentials {
   client_email: string;
@@ -75,6 +80,7 @@ export async function verifyGooglePlayProductReceipt(params: {
   productId: string;
   purchaseToken: string;
   packageName?: string;
+  allowLegacyRestore?: boolean;
   serviceAccount?: GooglePlayServiceAccountCredentials | null;
   fetchImpl?: typeof fetch;
 }): Promise<VerifyGooglePlayResult> {
@@ -90,14 +96,18 @@ export async function verifyGooglePlayProductReceipt(params: {
     };
   }
 
-  const byItem = findGooglePlaySkuByItemId(cleanItemId);
-  const byProd = findGooglePlaySkuByProductId(cleanProductId);
+  const byItem = params.allowLegacyRestore
+    ? findRestorableGooglePlaySkuByItemId(cleanItemId)
+    : findGooglePlaySkuByItemId(cleanItemId);
+  const byProd = params.allowLegacyRestore
+    ? findRestorableGooglePlaySkuByProductId(cleanProductId)
+    : findGooglePlaySkuByProductId(cleanProductId);
   const sku = byItem && byProd && byItem.productId === byProd.productId ? byItem : null;
   if (!sku) {
     return {
       verified: false,
       statusCode: 400,
-      error: 'Ürün SKU ve mağaza kimliği eşleşmiyor.',
+      error: 'Ürün aktif Play Store kataloğunda yer almıyor veya SKU eşleşmiyor.',
     };
   }
 

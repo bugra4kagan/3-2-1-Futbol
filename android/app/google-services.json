@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "895309340693",
+    "firebase_url": "https://futbol-9013e-default-rtdb.europe-west1.firebasedatabase.app",
+    "project_id": "futbol-9013e",
+    "storage_bucket": "futbol-9013e.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:895309340693:android:68cb5a0560587cb26f2e1c",
+        "android_client_info": {
+          "package_name": "com.futbol321.challenge"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCNjT36dfe4gNxjTIVdxpsbDJDfqh3wtp4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

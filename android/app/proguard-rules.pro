@@ -13,8 +13,9 @@
 -keep class com.google.firebase.** { *; }
 -dontwarn com.google.firebase.**
 
-# Google Play Billing Library v7 & Play Integrity
+# Google Play Billing Library v9.1.0 & Firebase App Check Play Integrity
 -keep class com.android.billingclient.** { *; }
+-keep class com.google.firebase.appcheck.** { *; }
 -keep class com.google.android.play.core.integrity.** { *; }
 -keep class com.futbol321.challenge.PlayBillingPlugin { *; }
 -keep class com.futbol321.challenge.PlayIntegrityPlugin { *; }

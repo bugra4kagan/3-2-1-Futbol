@@ -2,6 +2,8 @@ import { Capacitor } from '@capacitor/core';
 import {
   findGooglePlaySkuByItemId,
   findGooglePlaySkuByProductId,
+  findRestorableGooglePlaySkuByProductId,
+  getActiveGooglePlayProductMappings,
   GOOGLE_PLAY_PRODUCT_MAPPINGS,
   type GooglePlaySkuMapping,
 } from '../game/billingCatalog';
@@ -12,6 +14,17 @@ export {
   GOOGLE_PLAY_PRODUCT_MAPPINGS,
   type GooglePlaySkuMapping,
 };
+
+function resolveBackendApiUrl(path: string): string {
+  try {
+    const env = (import.meta as unknown as { env?: Record<string, string | undefined> }).env;
+    const base = env?.VITE_API_BASE_URL?.trim().replace(/\/+$/, '');
+    if (base) return `${base}${path}`;
+  } catch {
+    // ignore in Node
+  }
+  return path;
+}
 
 function readLocalAccountSessionToken(accountId: string): string | null {
   if (typeof window === 'undefined' || !accountId) return null;
@@ -101,7 +114,7 @@ export async function fetchGooglePlayPrices(): Promise<Record<string, PlayStoreP
   if (!bridge) return {};
 
   try {
-    const productIds = GOOGLE_PLAY_PRODUCT_MAPPINGS.map((m) => m.productId);
+    const productIds = getActiveGooglePlayProductMappings().map((m) => m.productId);
     const res = await bridge.queryProducts({ productIds });
     if (!res.ok || !Array.isArray(res.products)) return {};
 
@@ -129,6 +142,7 @@ export async function verifyGooglePlayPurchaseWithServer(params: {
   productId: string;
   purchaseToken: string;
   orderId?: string;
+  isRestore?: boolean;
   fetchImpl?: typeof fetch;
 }): Promise<{
   verified: boolean;
@@ -147,7 +161,7 @@ export async function verifyGooglePlayPurchaseWithServer(params: {
     if (token) {
       headers['X-Account-Token'] = token;
     }
-    const res = await fetcher('/api/billing/verify-google-play', {
+    const res = await fetcher(resolveBackendApiUrl('/api/billing/verify-google-play'), {
       method: 'POST',
       headers,
       body: JSON.stringify({
@@ -156,6 +170,7 @@ export async function verifyGooglePlayPurchaseWithServer(params: {
         productId: params.productId,
         purchaseToken: params.purchaseToken,
         orderId: params.orderId,
+        isRestore: Boolean(params.isRestore),
       }),
     });
     const data = (await res.json().catch(() => null)) as {
@@ -365,7 +380,7 @@ export async function restoreGooglePlayPurchases(params: {
     for (const p of res.purchases) {
       if (!p.purchaseToken || !Array.isArray(p.productIds)) continue;
       for (const productId of p.productIds) {
-        const mapping = findGooglePlaySkuByProductId(productId);
+        const mapping = findRestorableGooglePlaySkuByProductId(productId);
         if (!mapping || mapping.consumable) continue;
         const verifyRes = await verifyGooglePlayPurchaseWithServer({
           accountId: params.accountId,
@@ -373,6 +388,7 @@ export async function restoreGooglePlayPurchases(params: {
           productId: mapping.productId,
           purchaseToken: p.purchaseToken,
           orderId: p.orderId,
+          isRestore: true,
           fetchImpl: params.fetchImpl,
         });
         if (verifyRes.verified) {

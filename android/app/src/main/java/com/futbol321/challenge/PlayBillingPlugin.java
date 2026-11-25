@@ -26,13 +26,11 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Gerçek Android Google Play Billing Library v7 (com.android.billingclient:billing:7.1.1)
- * Capacitor eklentisi.
- * Desteklenen işlemler:
- *  - queryProducts: Google Play Console'daki gerçek INAPP fiyatları ve para birimini çeker
- *  - launchBillingFlow: Play Store ödeme penceresini açar ve PURCHASED / PENDING / CANCELED durumlarını döner
- *  - acknowledgeOrConsumePurchase: Sunucu doğrulamasından sonra satın alımı onaylar (acknowledge/consume)
- *  - queryOwnedPurchases: Satın Alımları Geri Yükle (Restore Purchases) için aktif INAPP sahipliklerini listeler
+ * Google Play Billing Library 9.1.0 (com.android.billingclient:billing:9.1.0)
+ * Capacitor native eklentisi.
+ *  - enableAutoServiceReconnection() ile otomatik bağlantı kurtarma
+ *  - QueryProductDetailsResult (Billing 8+/9.x API sözleşmesi)
+ *  - Yalnızca aktif satışta olan Reklamları Kaldır INAPP ürünü + mevcut satın alım geri yükleme
  */
 @CapacitorPlugin(name = "PlayBilling")
 public class PlayBillingPlugin extends Plugin implements PurchasesUpdatedListener {
@@ -50,6 +48,7 @@ public class PlayBillingPlugin extends Plugin implements PurchasesUpdatedListene
         if (billingClient == null) {
             billingClient = BillingClient.newBuilder(getContext())
                 .setListener(this)
+                .enableAutoServiceReconnection()
                 .enablePendingPurchases(
                     PendingPurchasesParams.newBuilder().enableOneTimeProducts().build()
                 )
@@ -58,7 +57,7 @@ public class PlayBillingPlugin extends Plugin implements PurchasesUpdatedListene
         return billingClient;
     }
 
-    private void withConnectedClient(Runnable onReady, PluginCall callToReject) {
+    private void withConnectedClient(Runnable onReady, PluginCall callToResolveOnError) {
         BillingClient client = ensureBillingClient();
         if (client.isReady()) {
             onReady.run();
@@ -69,21 +68,19 @@ public class PlayBillingPlugin extends Plugin implements PurchasesUpdatedListene
             public void onBillingSetupFinished(@NonNull BillingResult result) {
                 if (result.getResponseCode() == BillingClient.BillingResponseCode.OK) {
                     onReady.run();
-                } else {
-                    if (callToReject != null) {
-                        JSObject err = new JSObject();
-                        err.put("ok", false);
-                        err.put("status", "SERVICE_UNAVAILABLE");
-                        err.put("responseCode", result.getResponseCode());
-                        err.put("message", result.getDebugMessage());
-                        callToReject.resolve(err);
-                    }
+                } else if (callToResolveOnError != null) {
+                    JSObject err = new JSObject();
+                    err.put("ok", false);
+                    err.put("status", "SERVICE_UNAVAILABLE");
+                    err.put("responseCode", result.getResponseCode());
+                    err.put("message", result.getDebugMessage());
+                    callToResolveOnError.resolve(err);
                 }
             }
 
             @Override
             public void onBillingServiceDisconnected() {
-                // Bir sonraki çağrıda startConnection otomatik yeniden bağlanır
+                // enableAutoServiceReconnection() ile sonraki API çağrılarında otomatik yeniden bağlanır
             }
         });
     }
@@ -124,9 +121,13 @@ public class PlayBillingPlugin extends Plugin implements PurchasesUpdatedListene
             QueryProductDetailsParams params = QueryProductDetailsParams.newBuilder()
                 .setProductList(productList)
                 .build();
-            ensureBillingClient().queryProductDetailsAsync(params, (result, productDetailsList) -> {
+
+            ensureBillingClient().queryProductDetailsAsync(params, (result, queryResult) -> {
                 JSObject response = new JSObject();
                 JSArray items = new JSArray();
+                List<ProductDetails> productDetailsList =
+                    queryResult != null ? queryResult.getProductDetailsList() : Collections.emptyList();
+
                 if (result.getResponseCode() == BillingClient.BillingResponseCode.OK && productDetailsList != null) {
                     for (ProductDetails pd : productDetailsList) {
                         cachedProductDetails.put(pd.getProductId(), pd);
@@ -144,6 +145,12 @@ public class PlayBillingPlugin extends Plugin implements PurchasesUpdatedListene
                     }
                     response.put("ok", true);
                     response.put("products", items);
+                    response.put(
+                        "unfetchedCount",
+                        queryResult != null && queryResult.getUnfetchedProductList() != null
+                            ? queryResult.getUnfetchedProductList().size()
+                            : 0
+                    );
                 } else {
                     response.put("ok", false);
                     response.put("responseCode", result.getResponseCode());
@@ -185,7 +192,10 @@ public class PlayBillingPlugin extends Plugin implements PurchasesUpdatedListene
             Runnable startFlowWithDetails = () -> {
                 ProductDetails pd = cachedProductDetails.get(productId);
                 if (pd == null) {
-                    resolvePendingPurchaseError("ITEM_UNAVAILABLE", "Ürün Google Play Console'da bulunamadı veya aktif değil.");
+                    resolvePendingPurchaseError(
+                        "ITEM_UNAVAILABLE",
+                        "Ürün Google Play Console'da bulunamadı veya aktif değil (" + productId + ")."
+                    );
                     return;
                 }
                 BillingFlowParams.ProductDetailsParams pdParams = BillingFlowParams.ProductDetailsParams.newBuilder()
@@ -201,7 +211,8 @@ public class PlayBillingPlugin extends Plugin implements PurchasesUpdatedListene
                     return;
                 }
                 getActivity().runOnUiThread(() -> {
-                    BillingResult launchResult = ensureBillingClient().launchBillingFlow(getActivity(), flowBuilder.build());
+                    BillingResult launchResult =
+                        ensureBillingClient().launchBillingFlow(getActivity(), flowBuilder.build());
                     if (launchResult.getResponseCode() != BillingClient.BillingResponseCode.OK) {
                         resolvePendingPurchaseError(
                             mapResponseCode(launchResult.getResponseCode()),
@@ -224,7 +235,9 @@ public class PlayBillingPlugin extends Plugin implements PurchasesUpdatedListene
                         )
                     )
                     .build();
-                ensureBillingClient().queryProductDetailsAsync(queryParams, (result, list) -> {
+                ensureBillingClient().queryProductDetailsAsync(queryParams, (result, queryResult) -> {
+                    List<ProductDetails> list =
+                        queryResult != null ? queryResult.getProductDetailsList() : Collections.emptyList();
                     if (result.getResponseCode() == BillingClient.BillingResponseCode.OK && list != null) {
                         for (ProductDetails pd : list) {
                             cachedProductDetails.put(pd.getProductId(), pd);

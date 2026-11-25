@@ -1,5 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
 import {
   ADMOB_OFFICIAL_TEST_IDS,
   isOfficialAdMobTestId,
@@ -78,4 +80,23 @@ test('AdMob Production rejects accidental Google Test IDs and accepts real publi
   assert.equal(realProd.isProductionReady, true);
   assert.equal(realProd.isUsingTestIds, false);
   assert.deepEqual(realProd.missingProductionKeys, []);
+});
+
+test('CI workflow and Android build.gradle consistently map ADMOB_APP_ID and VITE_ADMOB_* variables', () => {
+  const workflow = fs.readFileSync(
+    path.resolve(process.cwd(), '.github/workflows/build-android.yml'),
+    'utf8'
+  );
+  const gradle = fs.readFileSync(
+    path.resolve(process.cwd(), 'android/app/build.gradle'),
+    'utf8'
+  );
+
+  assert.ok(workflow.includes('ADMOB_APP_ID: ${{ secrets.ADMOB_APP_ID || secrets.VITE_ADMOB_APP_ID }}'));
+  assert.ok(workflow.includes('VITE_ADMOB_APP_ID: ${{ secrets.ADMOB_APP_ID || secrets.VITE_ADMOB_APP_ID }}'));
+  assert.ok(workflow.includes('VITE_ADMOB_REWARDED_ID: ${{ secrets.ADMOB_REWARDED_ID || secrets.VITE_ADMOB_REWARDED_ID }}'));
+  assert.ok(workflow.includes('VITE_ADMOB_INTERSTITIAL_ID: ${{ secrets.ADMOB_INTERSTITIAL_ID || secrets.VITE_ADMOB_INTERSTITIAL_ID }}'));
+  assert.ok(workflow.includes('VITE_ADMOB_BANNER_ID: ${{ secrets.ADMOB_BANNER_ID || secrets.VITE_ADMOB_BANNER_ID }}'));
+  assert.ok(gradle.includes("System.getenv('ADMOB_APP_ID')"));
+  assert.ok(gradle.includes("System.getenv('VITE_ADMOB_APP_ID')"));
 });

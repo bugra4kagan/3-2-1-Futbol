@@ -162,3 +162,49 @@ test('Play Billing grants right and acknowledges only after backend verification
   assert.equal(restored.hadNativeStore, true);
   assert.deepEqual(restored.restoredItemIds, ['store_ad_free']);
 });
+
+test('Only existing store_ad_free SKU is actively for sale; legacy VIP bundle still restores cleanly', async () => {
+  assert.ok(findGooglePlaySkuByItemId('store_ad_free'));
+  assert.equal(findGooglePlaySkuByItemId('bundle_vip_adfree_frame'), null);
+  assert.equal(findGooglePlaySkuByItemId('pack_coin_1500'), null);
+  assert.equal(findGooglePlaySkuByItemId('pack_coin_15000'), null);
+
+  const rejectedCoinPack = await executeGooglePlayPurchase({
+    itemId: 'pack_coin_1500',
+    accountId: 'player_1',
+    bridgeOverride: null,
+  });
+  assert.equal(rejectedCoinPack.ok, false);
+  assert.equal(rejectedCoinPack.status, 'INVALID_PRODUCT');
+
+  let requestedRestoreFlag = false;
+  const legacyRestoreBridge: NativeBillingBridge = {
+    queryProducts: async () => ({ ok: true, products: [] }),
+    launchBillingFlow: async () => ({ ok: false, status: 'USER_CANCELED' }),
+    acknowledgeOrConsumePurchase: async () => ({ ok: true }),
+    queryOwnedPurchases: async () => ({
+      ok: true,
+      purchases: [
+        {
+          purchaseToken: 'tok_legacy_vip_1234567890',
+          acknowledged: true,
+          productIds: ['com.futbol321.challenge.vip_bundle'],
+        },
+      ],
+    }),
+  };
+
+  const legacyRestore = await restoreGooglePlayPurchases({
+    accountId: 'player_1',
+    bridgeOverride: legacyRestoreBridge,
+    fetchImpl: async (_url, init) => {
+      const parsed = JSON.parse(String(init?.body || '{}'));
+      requestedRestoreFlag = Boolean(parsed.isRestore);
+      return new Response(JSON.stringify({ ok: true, verified: true, alreadyCredited: true }), {
+        status: 200,
+      });
+    },
+  });
+  assert.equal(requestedRestoreFlag, true);
+  assert.deepEqual(legacyRestore.restoredItemIds, ['bundle_vip_adfree_frame']);
+});

@@ -37,6 +37,7 @@ import { getDatabase, ref as rtdbRef, remove as rtdbRemove } from 'firebase/data
 import { getAnalytics, isSupported, logEvent, Analytics } from 'firebase/analytics';
 import {
   CustomProvider,
+  getToken as getFirebaseAppCheckJwtToken,
   initializeAppCheck,
   ReCaptchaV3Provider,
   type AppCheck,
@@ -85,19 +86,20 @@ function readEnvFlag(key: string): string | undefined {
 }
 
 /**
- * Firebase App Check + Google Play Integrity entegrasyon hazırlığı.
- * ÖNEMLİ: Firebase Console'da App Check enforcement henüz açılmamışken
- * istemci yalnızca geçerli bir anahtar/proje numarası tanımlıysa App Check başlatır.
+ * Gerçek Firebase App Check + Google Play Integrity token üreteci.
+ * PlayIntegrity.getFirebaseAppCheckToken native FirebaseAppCheck + PlayIntegrityAppCheckProviderFactory
+ * ile gerçek Firebase App Check JWT token'ı üretir; ham Play Integrity yanıtını token gibi geçmez.
+ * ÖNEMLİ: Firebase Console'da App Check enforcement KAPALI tutulur; yapılandırma eksikse akışı kesmez.
  */
 export function initializeFirebaseAppCheck(): {
   initialized: boolean;
-  provider: 'play_integrity_ready' | 'recaptcha_v3' | 'not_configured';
+  provider: 'firebase_appcheck_play_integrity' | 'recaptcha_v3' | 'not_configured';
   enforcementEnabled: false;
 } {
   if (appCheckInstance) {
     return {
       initialized: true,
-      provider: Capacitor.isNativePlatform() ? 'play_integrity_ready' : 'recaptcha_v3',
+      provider: Capacitor.isNativePlatform() ? 'firebase_appcheck_play_integrity' : 'recaptcha_v3',
       enforcementEnabled: false,
     };
   }
@@ -107,33 +109,48 @@ export function initializeFirebaseAppCheck(): {
 
   try {
     if (Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android') {
-      const appCheckEnabled = readEnvFlag('VITE_FIREBASE_APPCHECK_ENABLED') === 'true';
-      const cloudProjectNumber = readEnvFlag('VITE_PLAY_INTEGRITY_CLOUD_PROJECT_NUMBER');
+      const appCheckEnabled = readEnvFlag('VITE_FIREBASE_APPCHECK_ENABLED') !== 'false';
+      const androidAppId = readEnvFlag('VITE_FIREBASE_ANDROID_APP_ID');
       const win = window as unknown as {
         Capacitor?: {
           Plugins?: {
             PlayIntegrity?: {
-              requestIntegrityToken: (opts: {
-                nonce: string;
-                cloudProjectNumber?: string;
-              }) => Promise<{ ok: boolean; token?: string; error?: string }>;
+              getFirebaseAppCheckToken: (opts: {
+                forceRefresh?: boolean;
+                projectId: string;
+                apiKey: string;
+                androidAppId?: string;
+              }) => Promise<{
+                ok: boolean;
+                token?: string;
+                expireTimeMillis?: number;
+                status?: string;
+                error?: string;
+              }>;
             };
           };
         };
       };
       const plugin = win.Capacitor?.Plugins?.PlayIntegrity;
-      if (appCheckEnabled && cloudProjectNumber && plugin?.requestIntegrityToken) {
+      if (appCheckEnabled && plugin?.getFirebaseAppCheckToken) {
         appCheckInstance = initializeAppCheck(app, {
           provider: new CustomProvider({
             getToken: async () => {
-              const nonce = `appcheck_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
-              const res = await plugin.requestIntegrityToken({ nonce, cloudProjectNumber });
+              const res = await plugin.getFirebaseAppCheckToken({
+                forceRefresh: false,
+                projectId: firebaseConfig.projectId,
+                apiKey: firebaseConfig.apiKey,
+                androidAppId,
+              });
               if (!res.ok || !res.token) {
-                throw new Error(res.error || 'Play Integrity token unavailable');
+                throw new Error(res.error || res.status || 'Firebase App Check token unavailable');
               }
               return {
                 token: res.token,
-                expireTimeMillis: Date.now() + 50 * 60 * 1000,
+                expireTimeMillis:
+                  typeof res.expireTimeMillis === 'number' && res.expireTimeMillis > Date.now()
+                    ? res.expireTimeMillis
+                    : Date.now() + 50 * 60 * 1000,
               };
             },
           }),
@@ -141,7 +158,7 @@ export function initializeFirebaseAppCheck(): {
         });
         return {
           initialized: true,
-          provider: 'play_integrity_ready',
+          provider: 'firebase_appcheck_play_integrity',
           enforcementEnabled: false,
         };
       }
@@ -161,6 +178,27 @@ export function initializeFirebaseAppCheck(): {
   }
 
   return { initialized: false, provider: 'not_configured', enforcementEnabled: false };
+}
+
+export async function verifyAppCheckTokenGeneration(
+  forceRefresh = false
+): Promise<{ ok: boolean; hasToken: boolean; error?: string }> {
+  if (!appCheckInstance) {
+    initializeFirebaseAppCheck();
+  }
+  if (!appCheckInstance) {
+    return { ok: false, hasToken: false, error: 'App Check yapılandırılmamış.' };
+  }
+  try {
+    const res = await getFirebaseAppCheckJwtToken(appCheckInstance, forceRefresh);
+    return { ok: Boolean(res?.token), hasToken: Boolean(res?.token) };
+  } catch (err) {
+    return {
+      ok: false,
+      hasToken: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
 }
 
 let analyticsInstance: Analytics | null = null;

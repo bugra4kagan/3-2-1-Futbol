@@ -59,15 +59,19 @@ jobs:
         working-directory: android
         run: ./gradlew assembleDebug --no-daemon --stacktrace
 
-      - name: Build Release Web Bundle (Strict Production AdMob Env)
+      - name: Build Release Web Bundle (Strict Production AdMob & Play SKU Env)
         env:
-          VITE_ADMOB_APP_ID: ${{ secrets.ADMOB_APP_ID }}
-          VITE_ADMOB_REWARDED_ID: ${{ secrets.ADMOB_REWARDED_ID }}
-          VITE_ADMOB_INTERSTITIAL_ID: ${{ secrets.ADMOB_INTERSTITIAL_ID }}
-          VITE_ADMOB_BANNER_ID: ${{ secrets.ADMOB_BANNER_ID }}
+          ADMOB_APP_ID: ${{ secrets.ADMOB_APP_ID || secrets.VITE_ADMOB_APP_ID }}
+          VITE_ADMOB_APP_ID: ${{ secrets.ADMOB_APP_ID || secrets.VITE_ADMOB_APP_ID }}
+          VITE_ADMOB_REWARDED_ID: ${{ secrets.ADMOB_REWARDED_ID || secrets.VITE_ADMOB_REWARDED_ID }}
+          VITE_ADMOB_INTERSTITIAL_ID: ${{ secrets.ADMOB_INTERSTITIAL_ID || secrets.VITE_ADMOB_INTERSTITIAL_ID }}
+          VITE_ADMOB_BANNER_ID: ${{ secrets.ADMOB_BANNER_ID || secrets.VITE_ADMOB_BANNER_ID }}
+          VITE_PLAY_BILLING_AD_FREE_SKU: ${{ secrets.PLAY_BILLING_AD_FREE_SKU || secrets.VITE_PLAY_BILLING_AD_FREE_SKU }}
+          VITE_FIREBASE_ANDROID_APP_ID: ${{ secrets.FIREBASE_ANDROID_APP_ID || secrets.VITE_FIREBASE_ANDROID_APP_ID }}
+          VITE_FIREBASE_APPCHECK_ENABLED: "true"
         run: |
           if [ -z "$VITE_ADMOB_APP_ID" ] || [ -z "$VITE_ADMOB_REWARDED_ID" ] || [ -z "$VITE_ADMOB_INTERSTITIAL_ID" ]; then
-            echo "::warning::Production AdMob secrets (ADMOB_APP_ID / VITE_ADMOB_REWARDED_ID / VITE_ADMOB_INTERSTITIAL_ID) eksik! Release JS paketi Test ID fallback yapmayacak; gercek reklam ID'leri girilene kadar AdMob reklam birimleri devre disi kalacaktir."
+            echo "::warning::Production AdMob secrets (ADMOB_APP_ID / VITE_ADMOB_APP_ID, ADMOB_REWARDED_ID / VITE_ADMOB_REWARDED_ID, ADMOB_INTERSTITIAL_ID / VITE_ADMOB_INTERSTITIAL_ID) eksik! Release JS paketi Test ID fallback yapmayacak; gercek reklam ID'leri girilene kadar AdMob reklam birimleri devre disi kalacaktir."
           fi
           npm run build
 
@@ -90,7 +94,8 @@ jobs:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-          ADMOB_APP_ID: ${{ secrets.ADMOB_APP_ID }}
+          ADMOB_APP_ID: ${{ secrets.ADMOB_APP_ID || secrets.VITE_ADMOB_APP_ID }}
+          VITE_ADMOB_APP_ID: ${{ secrets.ADMOB_APP_ID || secrets.VITE_ADMOB_APP_ID }}
         run: |
           if [ -z "$KEYSTORE_PASSWORD" ] || [ -z "$KEY_ALIAS" ] || [ -z "$KEY_PASSWORD" ]; then
             echo "Hata: KEYSTORE_PASSWORD, KEY_ALIAS veya KEY_PASSWORD GitHub Secret eksik!"

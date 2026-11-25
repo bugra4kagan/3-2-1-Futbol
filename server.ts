@@ -18,6 +18,7 @@ import {
   sanitizePublicDisplayName,
 } from './src/game/accountEngine.js';
 import {
+  ServerMatchLedger,
   SlidingRateLimiter,
   applySecurityHeaders,
   sanitizeLeaderboardNumbers,
@@ -25,6 +26,8 @@ import {
 import {
   findGooglePlaySkuByItemId,
   findGooglePlaySkuByProductId,
+  findRestorableGooglePlaySkuByItemId,
+  findRestorableGooglePlaySkuByProductId,
 } from './src/game/billingCatalog.js';
 import { verifyGooglePlayProductReceipt } from './src/game/googlePlayVerifier.js';
 
@@ -49,6 +52,7 @@ app.use(express.json({ limit: '512kb' }));
 const recoverLimiter = new SlidingRateLimiter(10, 5 * 60 * 1000);
 const accountWriteLimiter = new SlidingRateLimiter(45, 60 * 1000);
 const socialLimiter = new SlidingRateLimiter(30, 60 * 1000);
+const serverMatchLedger = new ServerMatchLedger();
 
 function getClientRateKey(req: express.Request): string {
   const fwd = req.header('x-forwarded-for');
@@ -308,6 +312,12 @@ app.post('/api/leaderboard/sync', (req, res) => {
   }
   const cleanId = String(id).trim().slice(0, 64);
   const storedAccount = accountStore.getByAccountId(cleanId);
+  if (!storedAccount && process.env.ALLOW_LEGACY_UNLINKED_LEADERBOARD_SYNC !== 'true') {
+    return res.status(401).json({
+      ok: false,
+      error: 'Liderlik tablosu güncellemesi için kayıtlı hesap oturumu gereklidir.',
+    });
+  }
   if (storedAccount) {
     const token = readAccountToken(req);
     if (!accountStore.verifyAccountSession(cleanId, token)) {
@@ -323,7 +333,13 @@ app.post('/api/leaderboard/sync', (req, res) => {
     }
   }
   const cleanName = sanitizePublicDisplayName(String(name).slice(0, 20), cleanId);
-  const boundedScores = sanitizeLeaderboardNumbers(existing, weeklyPoints, totalPoints);
+  // Kayıtlı hesaplarda sunucunun doğrulanmış puanı esastır; istemciden gelen keyfi puan artırımı kabul edilmez
+  const boundedScores = storedAccount
+    ? {
+        weeklyPoints: storedAccount.progression.weeklyPoints,
+        totalPoints: storedAccount.progression.totalPoints,
+      }
+    : sanitizeLeaderboardNumbers(existing, weeklyPoints, totalPoints);
   const nextWeekly = boundedScores.weeklyPoints;
   const nextAvatar = String(avatar || existing?.avatar || '⚽').slice(0, 64);
   const nextFriendCode = friendCode ? String(friendCode).slice(0, 12) : existing?.friendCode;
@@ -525,10 +541,76 @@ app.post('/api/validate', (req, res) => {
   res.json(result);
 });
 
-// ── Google Play Billing v7 Sunucu Doğrulaması ──
+// ── Sunucu Doğrulamalı Maç Oturumu & Ödül İşlemleri ──
+app.post('/api/matches/start', (req, res) => {
+  if (!enforceRateLimit(accountWriteLimiter, req, res)) return;
+  const { accountId, minigameType, mode } = req.body || {};
+  const cleanId = String(accountId || '').trim().slice(0, 64);
+  if (!cleanId) {
+    return res.status(400).json({ ok: false, error: 'Geçersiz oyuncu kimliği.' });
+  }
+  const existing = accountStore.getByAccountId(cleanId);
+  if (existing && !accountStore.verifyAccountSession(cleanId, readAccountToken(req))) {
+    return res.status(401).json({ ok: false, error: 'Hesap oturumu doğrulanamadı.' });
+  }
+  const session = serverMatchLedger.issueSession({
+    accountId: cleanId,
+    minigameType: String(minigameType || 'two_clubs'),
+    mode: String(mode || 'solo'),
+  });
+  res.json({ ok: true, matchSessionId: session.sessionId, startedAt: session.startedAt });
+});
+
+app.post('/api/matches/complete', (req, res) => {
+  if (!enforceRateLimit(accountWriteLimiter, req, res)) return;
+  const { accountId, matchSessionId, playerScore, opponentScore } = req.body || {};
+  const cleanId = String(accountId || '').trim().slice(0, 64);
+  const existing = accountStore.getByAccountId(cleanId);
+  if (!existing) {
+    return res.status(404).json({ ok: false, error: 'Hesap kaydı bulunamadı.' });
+  }
+  if (!accountStore.verifyAccountSession(cleanId, readAccountToken(req))) {
+    return res.status(401).json({ ok: false, error: 'Hesap oturumu doğrulanamadı.' });
+  }
+
+  const hasMult = Boolean(
+    existing.progression.permanentMultiplier2x || (existing.progression.multiplier2xMatches ?? 0) > 0
+  );
+  const outcome = serverMatchLedger.consumeVerifiedMatchSession({
+    sessionId: String(matchSessionId || ''),
+    accountId: cleanId,
+    playerScore: Number(playerScore) || 0,
+    opponentScore: Number(opponentScore) || 0,
+    hasMultiplier2x: hasMult,
+  });
+
+  if (!outcome.ok) {
+    return res.status(400).json({ ok: false, error: outcome.reason });
+  }
+
+  const applied = accountStore.recordVerifiedMatchReward({
+    accountId: cleanId,
+    coinsAwarded: outcome.coinsAwarded,
+    pointsAwarded: outcome.pointsAwarded,
+    won: outcome.won,
+  });
+  if (!applied.ok || !applied.account) {
+    return res.status(500).json({ ok: false, error: 'Ödül işlenemedi.' });
+  }
+
+  liveLeaderboard.set(applied.account.accountId, buildPublicProfileFromRecord(applied.account));
+  res.json({
+    ok: true,
+    coinsAwarded: outcome.coinsAwarded,
+    pointsAwarded: outcome.pointsAwarded,
+    progression: applied.account.progression,
+  });
+});
+
+// ── Google Play Billing 9.1.0 Sunucu Doğrulaması ──
 app.post('/api/billing/verify-google-play', async (req, res) => {
   if (!enforceRateLimit(accountWriteLimiter, req, res)) return;
-  const { accountId, itemId, productId, purchaseToken, orderId } = req.body || {};
+  const { accountId, itemId, productId, purchaseToken, orderId, isRestore } = req.body || {};
   const cleanId = String(accountId || '').trim().slice(0, 64);
   if (!cleanId || !itemId || !productId || !purchaseToken) {
     return res.status(400).json({
@@ -554,6 +636,7 @@ app.post('/api/billing/verify-google-play', async (req, res) => {
     itemId: String(itemId),
     productId: String(productId),
     purchaseToken: String(purchaseToken),
+    allowLegacyRestore: Boolean(isRestore),
   });
 
   if (!verification.verified) {
@@ -564,9 +647,12 @@ app.post('/api/billing/verify-google-play', async (req, res) => {
     });
   }
 
-  const sku = findGooglePlaySkuByItemId(String(itemId)) || findGooglePlaySkuByProductId(String(productId));
+  const sku = Boolean(isRestore)
+    ? findRestorableGooglePlaySkuByItemId(String(itemId)) ||
+      findRestorableGooglePlaySkuByProductId(String(productId))
+    : findGooglePlaySkuByItemId(String(itemId)) || findGooglePlaySkuByProductId(String(productId));
   if (!sku) {
-    return res.status(400).json({ ok: false, verified: false, error: 'Geçersiz ürün SKU.' });
+    return res.status(400).json({ ok: false, verified: false, error: 'Geçersiz veya satışa kapalı ürün SKU.' });
   }
 
   if (existing) {

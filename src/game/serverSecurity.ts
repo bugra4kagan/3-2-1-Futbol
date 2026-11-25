@@ -13,13 +13,110 @@ export const IAP_ONLY_ITEM_IDS = new Set([
   'bundle_vip_adfree_frame',
   'pack_coin_1500',
   'pack_coin_5000',
+  'pack_coin_6000',
   'pack_coin_15000',
+  'pack_coin_35000',
 ]);
+
+export const MAX_SERVER_MATCH_COINS = 600;
+export const MAX_SERVER_MATCH_POINTS = 350;
+export const MIN_VERIFIED_MATCH_DURATION_MS = 3000;
+export const MAX_VERIFIED_MATCH_AGE_MS = 45 * 60 * 1000;
 
 export interface SanitizeProgressionOptions {
   allowVerifiedIapGrant?: boolean;
   verifiedCoinCredit?: number;
+  verifiedPointCredit?: number;
   strictActionVerification?: boolean;
+}
+
+export interface ServerMatchSession {
+  sessionId: string;
+  accountId: string;
+  minigameType: string;
+  mode: string;
+  startedAt: number;
+  completed: boolean;
+}
+
+export class ServerMatchLedger {
+  private readonly sessions = new Map<string, ServerMatchSession>();
+
+  public issueSession(params: {
+    accountId: string;
+    minigameType: string;
+    mode: string;
+    now?: number;
+  }): ServerMatchSession {
+    const now = params.now ?? Date.now();
+    const sessionId = `match_${crypto.randomBytes(16).toString('hex')}`;
+    const session: ServerMatchSession = {
+      sessionId,
+      accountId: String(params.accountId || '').trim().slice(0, 64),
+      minigameType: String(params.minigameType || 'two_clubs').slice(0, 32),
+      mode: String(params.mode || 'solo').slice(0, 32),
+      startedAt: now,
+      completed: false,
+    };
+    this.sessions.set(sessionId, session);
+
+    if (this.sessions.size > 5000) {
+      for (const [k, s] of this.sessions.entries()) {
+        if (s.completed || now - s.startedAt > MAX_VERIFIED_MATCH_AGE_MS) {
+          this.sessions.delete(k);
+        }
+      }
+    }
+    return session;
+  }
+
+  public consumeVerifiedMatchSession(params: {
+    sessionId: string;
+    accountId: string;
+    playerScore: number;
+    opponentScore: number;
+    hasMultiplier2x: boolean;
+    now?: number;
+    minDurationMs?: number;
+  }):
+    | { ok: true; coinsAwarded: number; pointsAwarded: number; won: boolean }
+    | { ok: false; reason: string } {
+    const cleanSid = String(params.sessionId || '').trim();
+    const cleanId = String(params.accountId || '').trim().slice(0, 64);
+    const session = this.sessions.get(cleanSid);
+    if (!session || session.accountId !== cleanId) {
+      return { ok: false, reason: 'Geçersiz veya eşleşmeyen sunucu maç oturumu.' };
+    }
+    if (session.completed) {
+      return { ok: false, reason: 'Bu maç oturumu daha önce ödüllendirildi.' };
+    }
+    const now = params.now ?? Date.now();
+    const minDuration = params.minDurationMs ?? MIN_VERIFIED_MATCH_DURATION_MS;
+    if (now - session.startedAt < minDuration) {
+      return { ok: false, reason: 'Maç süresi sunucu doğrulaması için çok kısa.' };
+    }
+    if (now - session.startedAt > MAX_VERIFIED_MATCH_AGE_MS) {
+      this.sessions.delete(cleanSid);
+      return { ok: false, reason: 'Maç oturumu zaman aşımına uğradı.' };
+    }
+
+    session.completed = true;
+    const safeP1 = Math.max(0, Math.min(20, Math.round(Number(params.playerScore) || 0)));
+    const safeP2 = Math.max(0, Math.min(20, Math.round(Number(params.opponentScore) || 0)));
+    const won = safeP1 > safeP2;
+    const drew = safeP1 === safeP2;
+
+    const baseCoins = won ? 180 + safeP1 * 35 : drew ? 90 + safeP1 * 20 : 40 + safeP1 * 15;
+    const basePoints = won ? 120 + safeP1 * 20 : drew ? 50 : 15;
+    const mult = params.hasMultiplier2x ? 2 : 1;
+
+    return {
+      ok: true,
+      won,
+      coinsAwarded: Math.min(MAX_SERVER_MATCH_COINS * mult, baseCoins * mult),
+      pointsAwarded: Math.min(MAX_SERVER_MATCH_POINTS * mult, basePoints * mult),
+    };
+  }
 }
 
 const PROCESS_FALLBACK_KEY = crypto.randomBytes(32).toString('hex');
@@ -148,11 +245,15 @@ export function sanitizeProgressionUpdate(
     const safeGifts = options?.allowVerifiedIapGrant
       ? incomingGifts
       : incomingGifts.filter((id) => id !== 'store_ad_free' && id !== 'bundle_vip_adfree_frame');
+    // Strict sunucu doğrulamasında doğrulanmamış yeni kayıt başlangıç bakiyesi starter ile sınırlıdır
+    const initialCoinCap = options?.strictActionVerification ? 1_500 : 50_000;
+    const initialWeeklyCap = options?.strictActionVerification ? 500 : 25_000;
+    const initialTotalCap = options?.strictActionVerification ? 500 : 250_000;
     return {
       ...incoming,
-      coins: Math.min(rawCoins, 50_000),
-      weeklyPoints: Math.min(rawWeekly, 25_000),
-      totalPoints: Math.min(rawTotal, 250_000),
+      coins: Math.min(rawCoins, initialCoinCap),
+      weeklyPoints: Math.min(rawWeekly, initialWeeklyCap),
+      totalPoints: Math.min(rawTotal, initialTotalCap),
       adFree: options?.allowVerifiedIapGrant ? Boolean(incoming.adFree) : false,
       unlockedGiftIds: safeGifts,
     };
@@ -161,8 +262,12 @@ export function sanitizeProgressionUpdate(
   const prevCoins = Math.max(0, Math.round(Number(prev.coins) || 0));
   const prevWeekly = Math.max(0, Math.round(Number(prev.weeklyPoints) || 0));
   const prevTotal = Math.max(0, Math.round(Number(prev.totalPoints) || 0));
+  // Strict sunucu doğrulamasında istemcinin gönderdiği matchesPlayed / sayaçlara ASLA güvenilmez;
+  // yalnızca sunucu tarafından doğrulanmış kredi (verifiedCoinCredit / verifiedPointCredit) eklenebilir.
+  const verifiedCoinDelta = Math.max(0, Math.round(options?.verifiedCoinCredit ?? 0));
+  const verifiedPointDelta = Math.max(0, Math.round(options?.verifiedPointCredit ?? 0));
   const allowances = options?.strictActionVerification
-    ? computeVerifiedActionAllowances(prev, incoming, options?.verifiedCoinCredit ?? 0)
+    ? { maxCoinGain: verifiedCoinDelta, maxPointGain: verifiedPointDelta }
     : { maxCoinGain: MAX_COIN_GAIN_PER_SYNC, maxPointGain: MAX_POINTS_GAIN_PER_SYNC };
 
   const clampedCoins = Math.min(rawCoins, prevCoins + allowances.maxCoinGain);
