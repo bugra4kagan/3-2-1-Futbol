@@ -49,14 +49,10 @@ test('25k compact roster hydrates 25,000 unique verified players & 333 clubs whi
     assert.ok(/^#[0-9a-fA-F]{6}$/.test(badge.primaryColor), `Invalid primary color on club ${cid}`);
   }
 
-  // Verify public/players contains ONLY WebP portraits and zero PNG duplicates
+  // Verify unused real press photos (public/players) are removed and procedural SVG avatar tokens are used
   const playersDir = path.resolve(process.cwd(), 'public', 'players');
-  const files = fs.readdirSync(playersDir);
-  const pngFiles = files.filter((f) => f.toLowerCase().endsWith('.png'));
-  const webpFiles = files.filter((f) => f.toLowerCase().endsWith('.webp'));
-  assert.equal(pngFiles.length, 0, `Expected 0 PNG files remaining in public/players, found ${pngFiles.length}`);
-  assert.equal(webpFiles.length, 256, `Expected 256 WebP files in public/players, found ${webpFiles.length}`);
-  assert.equal(DEFAULT_PLAYER_PHOTO, '/players/default.webp');
+  assert.equal(fs.existsSync(playersDir), false, 'Unused real press photos folder public/players must be removed');
+  assert.equal(DEFAULT_PLAYER_PHOTO, 'svg-avatar:default');
 
   // Verify career repairs & recent transfers were applied strictly cleanly
   assert.ok(status.verifiedCareerRepairsApplied >= 1500, 'Expected >= 1,500 verified career repairs');
@@ -68,7 +64,7 @@ test('25k compact roster hydrates 25,000 unique verified players & 333 clubs whi
   const newPlayers = PLAYERS_LIST.slice(3049);
   for (const np of newPlayers) {
     assert.ok(PLAYER_ASSETS[np.id], `Missing PLAYER_ASSETS entry for ${np.id}`);
-    assert.equal(PLAYER_ASSETS[np.id].photoUrl, '/players/default.webp');
+    assert.equal(PLAYER_ASSETS[np.id].photoUrl, 'svg-avatar:default');
     assert.ok(Array.isArray(np.careerHistory) && np.careerHistory.length >= 1);
     for (const h of np.careerHistory || []) {
       assert.ok(!YOUTH_POLLUTION_RE.test(h.club), `Unexpected youth club on new player ${np.id}: ${h.club}`);

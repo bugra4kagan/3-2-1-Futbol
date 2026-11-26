@@ -32,11 +32,11 @@ test('public/assets/aistudio unused reference folder is completely removed from 
   assert.equal(fs.existsSync(path.join(REPO, 'public', 'assets', 'aistudio')), false);
 });
 
-test('protected creative assets (256 portraits, 333 club SVG component, logo, 10 icons) remain intact', () => {
-  const playersDir = path.join(REPO, 'public', 'players');
-  assert.equal(fs.existsSync(playersDir), true);
-  const portraitCount = fs.readdirSync(playersDir).filter((f) => f.endsWith('.webp')).length;
-  assert.equal(portraitCount, 256);
+test('unused real press photos folder public/players is completely removed while procedural anime SVG & branding assets remain intact', () => {
+  assert.equal(fs.existsSync(path.join(REPO, 'public', 'players')), false);
+  const avatarSrc = fs.readFileSync(path.join(REPO, 'src', 'components', 'PlayerAvatar.tsx'), 'utf8');
+  assert.ok(avatarSrc.includes('viewBox="0 0 220 260"'), 'PlayerAvatar.tsx procedural anime SVG must remain intact');
+  assert.equal(/<img\b/i.test(avatarSrc), false, 'PlayerAvatar.tsx must not render third-party raster photos');
   assert.equal(fs.existsSync(path.join(REPO, 'public', 'icons', 'brand-logo.webp')), true);
   assert.equal(fs.existsSync(path.join(REPO, 'branding', 'google-play-icon-512x512.png')), true);
   assert.equal(fs.existsSync(path.join(REPO, 'src', 'components', 'ClubBadge.tsx')), true);

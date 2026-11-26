@@ -13,6 +13,7 @@ const REPO = path.resolve(__dirname, '..');
  */
 const FORBIDDEN_PATH_PATTERNS = [
   /(^|\/|\\)aistudio(\/|\\|$)/i,
+  /(^|\/|\\)players(\/|\\|$)/i,
   /ekran_g/i,
   /whatsapp[_ -]?image/i,
   /screenshot[_ -]?\d/i,

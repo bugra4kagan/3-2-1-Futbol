@@ -382,17 +382,15 @@ test('all 464+ PLAYERS preserve 314 base players + 50 + 50 + 50 new players with
   }
   assert.equal(KNOWN_WORLD_LEAGUES.length, 15, 'Expected all 15 known world leagues defined');
 
-  const defaultWebpPath = path.resolve(process.cwd(), 'public', 'players', 'default.webp');
-  assert.ok(fs.existsSync(defaultWebpPath), 'Missing public/players/default.webp fallback silhouette');
-  assert.ok(fs.statSync(defaultWebpPath).size > 500, 'default.webp silhouette file looks empty');
-  assert.equal(DEFAULT_PLAYER_PHOTO, '/players/default.webp');
+  assert.equal(fs.existsSync(path.resolve(process.cwd(), 'public', 'players')), false);
+  assert.equal(DEFAULT_PLAYER_PHOTO, 'svg-avatar:default');
 
   for (const pid of playerIds) {
     const player = PLAYERS[pid];
     const asset = PLAYER_ASSETS[pid];
     assert.ok(asset, `Missing PLAYER_ASSETS entry for ${pid}`);
-    assert.equal(asset.photoUrl, `/players/${pid}.webp`, `Expected local photo path for ${pid}`);
-    assert.equal(player.photoUrl, `/players/${pid}.webp`, `Expected local photoUrl on player ${pid}`);
+    assert.equal(asset.photoUrl, `svg-avatar:${pid}`, `Expected procedural SVG avatar token for ${pid}`);
+    assert.equal(player.photoUrl, `svg-avatar:${pid}`, `Expected procedural SVG avatar token on player ${pid}`);
     assert.ok(!/^https?:\/\//i.test(asset.photoUrl), `External URL forbidden on ${pid}`);
 
     assert.ok(asset.age >= 17 && asset.age <= 95, `Invalid age ${asset.age} for ${pid}`);
@@ -524,9 +522,9 @@ test('searchSilhouettePlayers handles Turkish diacritics, aliases, exclusions, a
   assert.ok(getPortraitBlurPx(6, false) < getPortraitBlurPx(3, false));
   assert.equal(getPortraitBlurPx(7, false), 1.2);
   assert.equal(getPortraitBlurPx(3, true), 0);
-  assert.equal(getPlayerAsset('victor_osimhen').photoUrl, '/players/victor_osimhen.webp');
-  assert.equal(getPlayerAsset('michael_olise').photoUrl, '/players/michael_olise.webp');
-  assert.equal(getPlayerAsset('unknown_player_id').photoUrl, '/players/default.webp');
+  assert.equal(getPlayerAsset('victor_osimhen').photoUrl, 'svg-avatar:victor_osimhen');
+  assert.equal(getPlayerAsset('michael_olise').photoUrl, 'svg-avatar:michael_olise');
+  assert.equal(getPlayerAsset('unknown_player_id').photoUrl, 'svg-avatar:default');
 });
 
 import { CAREER_CHALLENGES } from './minigamesData';
