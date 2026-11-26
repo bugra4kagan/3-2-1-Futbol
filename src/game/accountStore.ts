@@ -17,6 +17,7 @@ import { purchaseStoreItem } from './retentionEngine.js';
 import {
   IAP_ONLY_ITEM_IDS,
   createAccountSessionToken,
+  createServerStarterProgression,
   generateAccountAuthSecret,
   sanitizeProgressionUpdate,
   verifyAccountSessionToken,
@@ -343,6 +344,7 @@ export class AccountStore {
     profile: PlayerProfile;
     progression: UserProgression;
     googleUid?: string;
+    strictServerStarter?: boolean;
   }):
     | { ok: true; account: PersistentAccountRecord }
     | {
@@ -357,7 +359,32 @@ export class AccountStore {
       return { ok: false, status: 400, reason: 'Geçersiz hesap kimliği.' };
     }
 
-    const check = this.checkUsername(params.profile.name, cleanId, params.googleUid);
+    const existing = this.byId.get(cleanId);
+    const verifiedGoogleUid = params.googleUid?.trim() || existing?.googleUid;
+    if (
+      existing?.googleUid &&
+      params.googleUid?.trim() &&
+      existing.googleUid !== params.googleUid.trim()
+    ) {
+      return {
+        ok: false,
+        status: 403,
+        reason: 'Bu hesap başka bir Google hesabına bağlıdır.',
+      };
+    }
+
+    if (params.googleUid?.trim()) {
+      const boundToOther = this.byGoogleUid.get(params.googleUid.trim());
+      if (boundToOther && boundToOther.accountId !== cleanId) {
+        return {
+          ok: false,
+          status: 409,
+          reason: 'Bu Google hesabı zaten başka bir oyuncu hesabına bağlıdır.',
+        };
+      }
+    }
+
+    const check = this.checkUsername(params.profile.name, cleanId, verifiedGoogleUid);
     if (!check.ok || !check.available) {
       return {
         ok: false,
@@ -368,7 +395,6 @@ export class AccountStore {
       };
     }
 
-    const existing = this.byId.get(cleanId);
     if (existing && existing.usernameKey !== check.usernameKey) {
       this.byUsernameKey.delete(existing.usernameKey);
     }
@@ -392,7 +418,13 @@ export class AccountStore {
       sessionSecret = generateAccountAuthSecret();
     }
 
-    const sanitizedProg = sanitizeProgressionUpdate(existing?.progression, params.progression);
+    const sanitizedProg = params.strictServerStarter
+      ? existing
+        ? sanitizeProgressionUpdate(existing.progression, params.progression, {
+            strictActionVerification: true,
+          })
+        : createServerStarterProgression(cleanId)
+      : sanitizeProgressionUpdate(existing?.progression, params.progression);
 
     const record: PersistentAccountRecord = {
       accountId: cleanId,
@@ -400,7 +432,8 @@ export class AccountStore {
       usernameKey: check.usernameKey,
       recoveryCode,
       sessionSecret,
-      googleUid: params.googleUid || existing?.googleUid,
+      googleUid: verifiedGoogleUid,
+      verifiedPurchases: existing?.verifiedPurchases,
       profile: cleanedProfile,
       progression: sanitizedProg,
       createdAt: existing?.createdAt ?? now,
@@ -419,6 +452,7 @@ export class AccountStore {
     progression: UserProgression;
     googleUid?: string;
     strictActionVerification?: boolean;
+    strictServerStarter?: boolean;
   }): { ok: boolean; account?: PersistentAccountRecord } {
     const cleanId = String(params.accountId || '').trim().slice(0, 64);
     if (!cleanId) return { ok: false };
@@ -442,6 +476,7 @@ export class AccountStore {
               },
               progression: params.progression,
               googleUid: params.googleUid,
+              strictServerStarter: Boolean(params.strictServerStarter),
             });
             if (reg.ok) return { ok: true, account: reg.account };
           }

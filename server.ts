@@ -19,6 +19,11 @@ import {
 } from './src/game/types.js';
 import { AccountStore, buildPublicProfileFromRecord } from './src/game/accountStore.js';
 import {
+  expressHeaderReader,
+  handleAccountRegisterRequest,
+  handleAccountSyncRequest,
+} from './src/game/accountHttpHandlers.js';
+import {
   isLegacyFlaggedUsername,
   normalizeUsernameKey,
   sanitizePublicDisplayName,
@@ -379,86 +384,47 @@ app.delete('/api/accounts/by-id/:accountId', async (req, res) => {
 });
 
 app.post('/api/accounts/register', async (req, res) => {
-  if (!enforceRateLimit(accountWriteLimiter, req, res)) return;
-  const { accountId, profile, progression, googleUid } = req.body || {};
-  if (!accountId || !profile?.name || !progression) {
-    return res.status(400).json({ ok: false, error: 'Hesap bilgileri eksik.' });
-  }
-  const cleanId = String(accountId).trim().slice(0, 64);
-  const existing = await accountStore.resolveByAccountIdAsync(cleanId);
-  if (existing) {
-    const token = readAccountToken(req);
-    const tokenOk = accountStore.verifyAccountSession(cleanId, token);
-    const sameVerifiedGoogle = Boolean(googleUid && existing.googleUid && existing.googleUid === String(googleUid));
-    if (!tokenOk && !sameVerifiedGoogle) {
-      return res.status(401).json({ ok: false, error: 'Hesap güncelleme yetkisi doğrulanamadı.' });
+  const response = await handleAccountRegisterRequest({
+    deps: {
+      accountStore,
+      verifyFirebaseBearerToken,
+      syncAuthoritativeUserStateAdmin,
+      buildPublicProfileFromRecord,
+      liveLeaderboard,
+      rateLimiter: accountWriteLimiter,
+      clientRateKey: getClientRateKey(req),
+    },
+    body: req.body,
+    getHeader: expressHeaderReader(req),
+  });
+  if (response.headers) {
+    for (const [k, v] of Object.entries(response.headers)) {
+      res.setHeader(k, v);
     }
   }
-  const result = accountStore.registerOrUpdate({
-    accountId: cleanId,
-    profile,
-    progression,
-    googleUid: googleUid ? String(googleUid) : undefined,
-  });
-  if (!result.ok) {
-    return res.status(result.status).json({
-      ok: false,
-      errorCode: result.errorCode,
-      error: result.reason,
-      suggestions: result.suggestions || [],
-    });
-  }
-
-  const acc = result.account;
-  const sessionToken = accountStore.issueSessionTokenForAccount(acc);
-  liveLeaderboard.set(acc.accountId, buildPublicProfileFromRecord(acc));
-
-  res.json({
-    ok: true,
-    sessionToken,
-    requiresUsernameRename: isLegacyFlaggedUsername(acc.profile?.name || acc.username),
-    account: {
-      accountId: acc.accountId,
-      recoveryCode: acc.recoveryCode,
-      profile: acc.profile,
-      progression: acc.progression,
-    },
-  });
+  return res.status(response.status).json(response.body);
 });
 
 app.post('/api/accounts/sync', async (req, res) => {
-  if (!enforceRateLimit(accountWriteLimiter, req, res)) return;
-  const { accountId, profile, progression, googleUid } = req.body || {};
-  if (!accountId || !progression) {
-    return res.status(400).json({ ok: false, error: 'Senkronizasyon verisi eksik.' });
-  }
-  const cleanId = String(accountId).trim().slice(0, 64);
-  const existing = await accountStore.resolveByAccountIdAsync(cleanId);
-  if (existing) {
-    const token = readAccountToken(req);
-    const tokenOk = accountStore.verifyAccountSession(cleanId, token);
-    const sameVerifiedGoogle = Boolean(googleUid && existing.googleUid && existing.googleUid === String(googleUid));
-    if (!tokenOk && !sameVerifiedGoogle) {
-      return res.status(401).json({ ok: false, error: 'Senkronizasyon yetkisi doğrulanamadı.' });
+  const response = await handleAccountSyncRequest({
+    deps: {
+      accountStore,
+      verifyFirebaseBearerToken,
+      syncAuthoritativeUserStateAdmin,
+      buildPublicProfileFromRecord,
+      liveLeaderboard,
+      rateLimiter: accountWriteLimiter,
+      clientRateKey: getClientRateKey(req),
+    },
+    body: req.body,
+    getHeader: expressHeaderReader(req),
+  });
+  if (response.headers) {
+    for (const [k, v] of Object.entries(response.headers)) {
+      res.setHeader(k, v);
     }
   }
-  const syncRes = accountStore.syncProgression({
-    accountId: cleanId,
-    profile,
-    progression,
-    googleUid: googleUid ? String(googleUid) : undefined,
-    strictActionVerification: true,
-  });
-  if (!syncRes.ok || !syncRes.account) {
-    return res.json({ ok: false });
-  }
-  const sessionToken = accountStore.issueSessionTokenForAccount(syncRes.account);
-  liveLeaderboard.set(syncRes.account.accountId, buildPublicProfileFromRecord(syncRes.account));
-  res.json({
-    ok: true,
-    sessionToken,
-    recoveryCode: syncRes.account.recoveryCode,
-  });
+  return res.status(response.status).json(response.body);
 });
 
 app.post('/api/accounts/recover', async (req, res) => {

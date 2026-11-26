@@ -54,7 +54,7 @@ interface AuthModalProps {
   progression?: UserProgression;
   googleUid?: string | null;
   initialTab?: 'profile' | 'email';
-  onSaveProfile: (profile: PlayerProfile) => void;
+  onSaveProfile: (profile: PlayerProfile, authoritativeProgression?: UserProgression) => void;
   onGoogleSignIn?: () => Promise<{
     ok: boolean;
     bonusCoinsAwarded?: number;
@@ -331,6 +331,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       // 2. Register/Update atomically on persistent backend store
       let persistedProfile = updatedProfile;
       let backendVerified = false;
+      let authoritativeProgression: UserProgression | undefined;
 
       try {
         const storedToken =
@@ -339,6 +340,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             : null;
         const regHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
         if (storedToken) regHeaders['X-Account-Token'] = storedToken;
+        const firebaseIdToken = await auth.currentUser?.getIdToken().catch(() => null);
+        if (firebaseIdToken) {
+          regHeaders['X-Firebase-Id-Token'] = firebaseIdToken;
+        }
 
         const regRes = await fetchBackendWithWakeupRetry(
           '/api/accounts/register',
@@ -355,17 +360,18 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           { timeoutMs: 18000, retries: 2, retryDelayMs: 1800 }
         );
         const regData = await regRes.json().catch(() => null);
+        const canonicalId = String(regData?.account?.accountId || currentProfile.id);
         if (regRes.ok && regData?.sessionToken && typeof window !== 'undefined') {
           try {
             window.localStorage.setItem(
-              `321_server_session_token_${currentProfile.id}`,
+              `321_server_session_token_${canonicalId}`,
               String(regData.sessionToken)
             );
           } catch {
             // ignore
           }
         }
-        if (regRes.status === 409 || regRes.status === 400 || (regData && regData.ok === false)) {
+        if (regRes.status === 409 || regRes.status === 403 || regRes.status === 401 || regRes.status === 400 || (regData && regData.ok === false)) {
           sounds.playWrong();
           setNameCheckState(regRes.status === 400 ? 'invalid' : 'taken');
           setNameError(regData?.error || USERNAME_TAKEN_ERROR);
@@ -378,7 +384,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           persistedProfile = {
             ...updatedProfile,
             ...regData.account.profile,
+            id: canonicalId,
           };
+          if (regData.account.progression) {
+            authoritativeProgression = regData.account.progression as UserProgression;
+          }
         }
       } catch {
         backendVerified = false;
@@ -421,7 +431,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       sounds.playCorrect();
       setSavedSuccess(true);
       setTimeout(() => {
-        onSaveProfile(persistedProfile);
+        onSaveProfile(persistedProfile, authoritativeProgression);
         onClose?.();
       }, 300);
     } finally {

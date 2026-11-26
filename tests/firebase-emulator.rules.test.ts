@@ -1103,3 +1103,77 @@ test('Firebase Admin Firestore Emulator persists accounts, coins, purchases & on
   });
   assert.equal(replayRes.ok, false);
 });
+
+test('Server-Authoritative 180 Starter Points Flow Preserves Strict Firestore Rules', async () => {
+  const starterCtx = testEnv.authenticatedContext('uid_starter_180', {
+    email: 'starter180@example.com',
+    email_verified: true,
+  });
+
+  // 1. Direct client create with 180 starter points MUST still FAIL under strict firestore.rules
+  await assertFails(
+    setDoc(
+      doc(starterCtx.firestore(), 'users', 'uid_starter_180'),
+      validStarterUserPayload('uid_starter_180', {
+        email: 'starter180@example.com',
+        coins: 200,
+        weeklyPoints: 180,
+        totalPoints: 180,
+      })
+    )
+  );
+
+  // 2. Server Admin SDK creates initial /users/{uid} with 200 coins and 180 weekly/total points
+  const adminApp = getFirebaseAdminApp();
+  assert.ok(adminApp);
+  const adminDb = getFirestore(adminApp);
+  await adminDb
+    .collection('users')
+    .doc('uid_starter_180')
+    .set({
+      userId: 'uid_starter_180',
+      displayName: 'YeniOyuncu180',
+      usernameKey: 'yenioyuncu180',
+      email: 'starter180@example.com',
+      avatar: '⚽',
+      coins: 200,
+      weeklyPoints: 180,
+      totalPoints: 180,
+      unlockedGiftIds: [],
+      adFree: false,
+      permanentMultiplier2x: false,
+      progressionJson: JSON.stringify({
+        ...createInitialProgression('acc_starter_180'),
+        coins: 200,
+        weeklyPoints: 180,
+        totalPoints: 180,
+      }),
+    });
+
+  // 3. Verified owner can read their Admin-created backup and perform cosmetic updates without changing economy
+  const snap = await assertSucceeds(getDoc(doc(starterCtx.firestore(), 'users', 'uid_starter_180')));
+  assert.equal(snap.data()?.coins, 200);
+  assert.equal(snap.data()?.weeklyPoints, 180);
+  assert.equal(snap.data()?.totalPoints, 180);
+
+  await assertSucceeds(
+    updateDoc(doc(starterCtx.firestore(), 'users', 'uid_starter_180'), {
+      avatar: '🏆',
+      updatedAt: serverTimestamp(),
+    })
+  );
+
+  // 4. Verified owner STILL cannot inflate coins, weeklyPoints, or totalPoints directly from client
+  await assertFails(
+    updateDoc(doc(starterCtx.firestore(), 'users', 'uid_starter_180'), {
+      coins: 201,
+      updatedAt: serverTimestamp(),
+    })
+  );
+  await assertFails(
+    updateDoc(doc(starterCtx.firestore(), 'users', 'uid_starter_180'), {
+      weeklyPoints: 185,
+      updatedAt: serverTimestamp(),
+    })
+  );
+});

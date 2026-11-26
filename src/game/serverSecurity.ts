@@ -8,7 +8,25 @@ import {
   validateMinigameAnswer,
 } from './minigameEngine.js';
 import type { PersistentAccountRecord } from './accountStore.js';
+import { createInitialProgression } from './retentionEngine.js';
 import type { MinigameRoundPayload, MinigameType, UserProgression } from './types';
+
+export const SERVER_STARTER_COINS = 200;
+export const SERVER_STARTER_POINTS = 180;
+
+/**
+ * Yeni hesaplar için sunucunun belirlediği sabit ve manipüle edilemez başlangıç ilerlemesi.
+ * İstemciden gelen sahte coin, puan, maç sayısı veya kupa/ürün verilerini asla devralmaz.
+ */
+export function createServerStarterProgression(accountId?: string): UserProgression {
+  const starter = createInitialProgression(accountId);
+  return {
+    ...starter,
+    coins: SERVER_STARTER_COINS,
+    weeklyPoints: SERVER_STARTER_POINTS,
+    totalPoints: SERVER_STARTER_POINTS,
+  };
+}
 
 export const MAX_COINS = 20_000_000;
 export const MAX_COIN_GAIN_PER_SYNC = 25_000;

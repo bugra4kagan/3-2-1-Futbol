@@ -1673,6 +1673,131 @@ export default function App() {
     };
   }, [firebaseUser, mergeCloudAndLocalProgression, persistProgression]);
 
+  const syncVerifiedGoogleWithServerAndCloud = useCallback(
+    async (user: NonNullable<typeof firebaseUser>) => {
+      const remote = await loadUserBackupFromFirestore(user.uid);
+      let mergedProg = progressionRef.current;
+      let nextProfile = player1Ref.current;
+
+      if (remote) {
+        mergedProg = mergeCloudAndLocalProgression(mergedProg, remote.progression);
+        if (
+          remote.displayName &&
+          (nextProfile.name === 'Futbol Gurmesi' ||
+            (remote.progression.totalPoints ?? 0) > (progressionRef.current.totalPoints ?? 0))
+        ) {
+          nextProfile = {
+            ...nextProfile,
+            name: remote.displayName,
+            avatar: normalizeProfileIconId(remote.avatar || nextProfile.avatar),
+            favoriteClubId: remote.favoriteClubId || nextProfile.favoriteClubId,
+          };
+          setPlayer1(nextProfile);
+          try {
+            localStorage.setItem('football_user_profile', JSON.stringify(nextProfile));
+          } catch {
+            // ignore
+          }
+        }
+      }
+
+      const googleHandle = user.email || user.displayName || 'Google Hesabı';
+      const linkRes = linkSocialAccount(mergedProg, 'google', googleHandle);
+      const bonusCoinsAwarded = linkRes.bonusCoinsAwarded || 0;
+      if (linkRes.ok) {
+        mergedProg = linkRes.progression;
+      }
+
+      // 1. Doğrulanmış Firebase ID Token ile ÖNCE sunucuda kayıt/bağlama + Admin SDK Firestore ilk oluşturmayı yap
+      let cloudReadyInFirestore = Boolean(remote);
+      const signedHeaders = await buildSignedAccountApiHeaders(sessionPlayerIdRef.current);
+      const regData = await fetchBackendWithWakeupRetry(
+        '/api/accounts/register',
+        {
+          method: 'POST',
+          headers: signedHeaders,
+          body: JSON.stringify({
+            accountId: sessionPlayerIdRef.current,
+            profile: nextProfile,
+            progression: mergedProg,
+            googleUid: user.uid,
+          }),
+        },
+        { timeoutMs: 18000, retries: 2, retryDelayMs: 1800 }
+      )
+        .then((r) => (r.ok ? r.json() : null))
+        .catch(() => null);
+
+      if (regData?.ok && regData?.account) {
+        const canonicalId = String(regData.account.accountId || sessionPlayerIdRef.current);
+        const serverProf = regData.account.profile as PlayerProfile | undefined;
+        const adoptedName =
+          nextProfile.name === 'Futbol Gurmesi' && serverProf?.name
+            ? serverProf.name
+            : nextProfile.name;
+        if (canonicalId !== sessionPlayerIdRef.current || adoptedName !== nextProfile.name) {
+          sessionPlayerIdRef.current = canonicalId;
+          nextProfile = {
+            ...nextProfile,
+            ...(serverProf
+              ? {
+                  avatar: normalizeProfileIconId(serverProf.avatar || nextProfile.avatar),
+                  favoriteClubId: serverProf.favoriteClubId || nextProfile.favoriteClubId,
+                }
+              : {}),
+            id: canonicalId,
+            name: adoptedName,
+          };
+          setPlayer1(nextProfile);
+          try {
+            localStorage.setItem('football_user_id', canonicalId);
+            localStorage.setItem('football_account_id', canonicalId);
+            localStorage.setItem('football_user_profile', JSON.stringify(nextProfile));
+          } catch {
+            // ignore
+          }
+        }
+        if (regData.sessionToken) {
+          storeServerSessionToken(canonicalId, regData.sessionToken);
+        }
+        if (regData.account.progression) {
+          mergedProg = remote
+            ? mergeCloudAndLocalProgression(mergedProg, regData.account.progression as UserProgression)
+            : (regData.account.progression as UserProgression);
+        }
+        if (regData.cloudSync?.syncedFirestore) {
+          cloudReadyInFirestore = true;
+        }
+      }
+
+      persistProgression(mergedProg);
+      syncServerLeaderboard(mergedProg, nextProfile);
+
+      if (nextProfile.name && nextProfile.name !== 'Futbol Gurmesi') {
+        await claimUsernameInFirestore({
+          user,
+          displayName: nextProfile.name,
+        }).catch(() => {});
+      }
+      if (cloudReadyInFirestore) {
+        await saveUserBackupToFirestore({
+          user,
+          profile: nextProfile,
+          progression: mergedProg,
+          favoriteClubId: nextProfile.favoriteClubId,
+        }).catch(() => {});
+      }
+      savePublicProfileToFirestore({
+        user,
+        profile: nextProfile,
+        progression: mergedProg,
+      }).catch(() => {});
+
+      return { nextProfile, mergedProg, bonusCoinsAwarded };
+    },
+    [mergeCloudAndLocalProgression, persistProgression]
+  );
+
   // Firebase Auth session listener + initial Firestore cloud backup sync/restore
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
@@ -1686,78 +1811,7 @@ export default function App() {
 
       setIsSyncingCloud(true);
       try {
-        const remote = await loadUserBackupFromFirestore(user.uid);
-        let mergedProg = progressionRef.current;
-        let nextProfile = player1Ref.current;
-
-        if (remote) {
-          mergedProg = mergeCloudAndLocalProgression(mergedProg, remote.progression);
-          if (
-            remote.displayName &&
-            (nextProfile.name === 'Futbol Gurmesi' ||
-              (remote.progression.totalPoints ?? 0) > (progressionRef.current.totalPoints ?? 0))
-          ) {
-            nextProfile = {
-              ...nextProfile,
-              name: remote.displayName,
-              avatar: normalizeProfileIconId(remote.avatar || nextProfile.avatar),
-              favoriteClubId: remote.favoriteClubId || nextProfile.favoriteClubId,
-            };
-            setPlayer1(nextProfile);
-            try {
-              localStorage.setItem('football_user_profile', JSON.stringify(nextProfile));
-            } catch {
-              // ignore
-            }
-          }
-        }
-
-        const googleHandle = user.email || user.displayName || 'Google Hesabı';
-        const linkRes = linkSocialAccount(mergedProg, 'google', googleHandle);
-        if (linkRes.ok) {
-          mergedProg = linkRes.progression;
-        }
-        persistProgression(mergedProg);
-
-        await saveUserBackupToFirestore({
-          user,
-          profile: nextProfile,
-          progression: mergedProg,
-          favoriteClubId: nextProfile.favoriteClubId,
-        });
-        savePublicProfileToFirestore({
-          user,
-          profile: nextProfile,
-          progression: mergedProg,
-        }).catch(() => {});
-
-        if (nextProfile.name && nextProfile.name !== 'Futbol Gurmesi') {
-          await claimUsernameInFirestore({
-            user,
-            displayName: nextProfile.name,
-          }).catch(() => {});
-          fetchBackendWithWakeupRetry(
-            '/api/accounts/register',
-            {
-              method: 'POST',
-              headers: buildAccountApiHeaders(sessionPlayerIdRef.current),
-              body: JSON.stringify({
-                accountId: sessionPlayerIdRef.current,
-                profile: nextProfile,
-                progression: mergedProg,
-                googleUid: user.uid,
-              }),
-            },
-            { timeoutMs: 18000, retries: 2, retryDelayMs: 1800 }
-          )
-            .then((r) => (r.ok ? r.json() : null))
-            .then((data) => {
-              if (data?.sessionToken) {
-                storeServerSessionToken(sessionPlayerIdRef.current, data.sessionToken);
-              }
-            })
-            .catch(() => {});
-        }
+        await syncVerifiedGoogleWithServerAndCloud(user);
       } catch (err) {
         console.warn('Cloud backup sync failed:', err);
       } finally {
@@ -1766,7 +1820,7 @@ export default function App() {
     });
 
     return () => unsubscribe();
-  }, [mergeCloudAndLocalProgression, persistProgression]);
+  }, [syncVerifiedGoogleWithServerAndCloud]);
 
   // Restore saved account from server if local storage missed profile
   useEffect(() => {
@@ -1811,28 +1865,31 @@ export default function App() {
     if (!player1.name || player1.name === 'Futbol Gurmesi') return;
     if (serverAccountSaveTimerRef.current) clearTimeout(serverAccountSaveTimerRef.current);
     serverAccountSaveTimerRef.current = setTimeout(() => {
-      const aid = sessionPlayerIdRef.current;
-      fetchBackendWithWakeupRetry(
-        '/api/accounts/sync',
-        {
-          method: 'POST',
-          headers: buildAccountApiHeaders(aid),
-          body: JSON.stringify({
-            accountId: aid,
-            profile: player1Ref.current,
-            progression: progressionRef.current,
-            googleUid: firebaseUser?.uid,
-          }),
-        },
-        { timeoutMs: 18000, retries: 2, retryDelayMs: 1800 }
-      )
-        .then((r) => (r.ok ? r.json() : null))
-        .then((data) => {
-          if (data?.sessionToken) {
-            storeServerSessionToken(aid, data.sessionToken);
-          }
-        })
-        .catch(() => {});
+      void (async () => {
+        const aid = sessionPlayerIdRef.current;
+        const headers = await buildSignedAccountApiHeaders(aid);
+        fetchBackendWithWakeupRetry(
+          '/api/accounts/sync',
+          {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({
+              accountId: aid,
+              profile: player1Ref.current,
+              progression: progressionRef.current,
+              googleUid: firebaseUser?.uid,
+            }),
+          },
+          { timeoutMs: 18000, retries: 2, retryDelayMs: 1800 }
+        )
+          .then((r) => (r.ok ? r.json() : null))
+          .then((data) => {
+            if (data?.sessionToken) {
+              storeServerSessionToken(aid, data.sessionToken);
+            }
+          })
+          .catch(() => {});
+      })();
     }, 650);
   }, [progression, player1.name, player1.avatar, player1.favoriteClubId, firebaseUser]);
 
@@ -2241,33 +2298,49 @@ trackGameEvent('match_complete', {
     }
   };
 
-  const handleSaveProfile = (newProfile: PlayerProfile) => {
+  const handleSaveProfile = (
+    newProfile: PlayerProfile,
+    authoritativeProgression?: UserProgression
+  ) => {
+    const resolvedId = String(newProfile.id || sessionPlayerIdRef.current).trim() || sessionPlayerIdRef.current;
+    if (resolvedId !== sessionPlayerIdRef.current) {
+      sessionPlayerIdRef.current = resolvedId;
+      try {
+        localStorage.setItem('football_user_id', resolvedId);
+      } catch {
+        // ignore
+      }
+    }
     const withSessionId: PlayerProfile = {
       ...newProfile,
-      id: sessionPlayerIdRef.current,
+      id: resolvedId,
       avatar: normalizeProfileIconId(newProfile.avatar),
     };
     setPlayer1(withSessionId);
     try {
-      localStorage.setItem('football_account_id', sessionPlayerIdRef.current);
+      localStorage.setItem('football_account_id', resolvedId);
       localStorage.setItem('football_user_profile', JSON.stringify(withSessionId));
     } catch {
       // ignore
     }
+    if (authoritativeProgression) {
+      persistProgression(authoritativeProgression);
+    }
+    const activeProgression = authoritativeProgression || progressionRef.current;
     setShowAuthModal(false);
     setScreen('lobby');
-    syncServerLeaderboard(progressionRef.current, withSessionId);
+    syncServerLeaderboard(activeProgression, withSessionId);
     if (firebaseUser && !firebaseUser.isAnonymous) {
       saveUserBackupToFirestore({
         user: firebaseUser,
         profile: withSessionId,
-        progression: progressionRef.current,
+        progression: activeProgression,
         favoriteClubId: withSessionId.favoriteClubId,
       }).catch(() => {});
       savePublicProfileToFirestore({
         user: firebaseUser,
         profile: withSessionId,
-        progression: progressionRef.current,
+        progression: activeProgression,
       }).catch(() => {});
     }
   };
@@ -4469,78 +4542,7 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
       setFirebaseUser(user);
       setIsSyncingCloud(true);
 
-      let mergedProg = progressionRef.current;
-      let nextProfile = player1Ref.current;
-      const remote = await loadUserBackupFromFirestore(user.uid);
-      if (remote) {
-        mergedProg = mergeCloudAndLocalProgression(mergedProg, remote.progression);
-        if (
-          remote.displayName &&
-          (nextProfile.name === 'Futbol Gurmesi' ||
-            (remote.progression.totalPoints ?? 0) > (progressionRef.current.totalPoints ?? 0))
-        ) {
-          nextProfile = {
-            ...nextProfile,
-            name: remote.displayName,
-            avatar: normalizeProfileIconId(remote.avatar || nextProfile.avatar),
-            favoriteClubId: remote.favoriteClubId || nextProfile.favoriteClubId,
-          };
-          setPlayer1(nextProfile);
-          try {
-            localStorage.setItem('football_user_profile', JSON.stringify(nextProfile));
-          } catch {
-            // ignore
-          }
-        }
-      }
-
-      const linkRes = linkSocialAccount(mergedProg, 'google', user.email);
-      const bonusCoinsAwarded = linkRes.bonusCoinsAwarded || 0;
-      if (linkRes.ok) {
-        mergedProg = linkRes.progression;
-      }
-      persistProgression(mergedProg);
-      syncServerLeaderboard(mergedProg, nextProfile);
-
-      await saveUserBackupToFirestore({
-        user,
-        profile: nextProfile,
-        progression: mergedProg,
-        favoriteClubId: nextProfile.favoriteClubId,
-      });
-      savePublicProfileToFirestore({
-        user,
-        profile: nextProfile,
-        progression: mergedProg,
-      }).catch(() => {});
-
-      if (nextProfile.name && nextProfile.name !== 'Futbol Gurmesi') {
-        await claimUsernameInFirestore({
-          user,
-          displayName: nextProfile.name,
-        }).catch(() => {});
-        fetchBackendWithWakeupRetry(
-          '/api/accounts/register',
-          {
-            method: 'POST',
-            headers: buildAccountApiHeaders(sessionPlayerIdRef.current),
-            body: JSON.stringify({
-              accountId: sessionPlayerIdRef.current,
-              profile: nextProfile,
-              progression: mergedProg,
-              googleUid: user.uid,
-            }),
-          },
-          { timeoutMs: 18000, retries: 2, retryDelayMs: 1800 }
-        )
-          .then((r) => (r.ok ? r.json() : null))
-          .then((data) => {
-            if (data?.sessionToken) {
-              storeServerSessionToken(sessionPlayerIdRef.current, data.sessionToken);
-            }
-          })
-          .catch(() => {});
-      }
+      const { bonusCoinsAwarded } = await syncVerifiedGoogleWithServerAndCloud(user);
 
       return {
         ok: true,
