@@ -26,8 +26,8 @@ const VARIANT_CLASSES: Record<GameLogoVariant, string> = {
 };
 
 /**
- * Reusable logo component bound to the official 3-2-1 Futbol artwork (`brand-logo.jpg`).
- * Supports full, compact header, and app-icon variants with crisp 1:1 aspect ratio.
+ * Reusable logo component bound to the official 3-2-1 Futbol artwork (`brand-logo.webp`).
+ * Supports full, compact header, and app-icon variants with crisp 1:1 aspect ratio and zero clipping.
  */
 export const GameLogo: React.FC<GameLogoProps> = ({
   size = 'md',
@@ -38,14 +38,14 @@ export const GameLogo: React.FC<GameLogoProps> = ({
     <div
       data-testid={`game-logo-${size}`}
       data-logo-variant={variant}
-      className={`relative inline-flex items-center justify-center shrink-0 aspect-square overflow-hidden select-none bg-[#061D33] ${SIZE_MAP[size]} ${VARIANT_CLASSES[variant]} ${className}`}
+      className={`relative inline-flex items-center justify-center shrink-0 aspect-square overflow-hidden select-none bg-[#011837] ${SIZE_MAP[size]} ${VARIANT_CLASSES[variant]} ${className}`}
     >
       <img
         src={BRAND_LOGO_SRC}
         alt={BRAND_LOGO_ALT}
         decoding="async"
         draggable={false}
-        className="w-full h-full object-cover object-center block"
+        className="w-full h-full object-contain object-center block"
       />
     </div>
   );
@@ -57,14 +57,14 @@ export const GameLogoAppIconPreview: React.FC<{ className?: string }> = ({
   <div className={`inline-flex items-center gap-3 ${className}`}>
     <div
       data-testid="app-icon-preview"
-      className="w-16 h-16 rounded-2xl bg-[#061D33] border-2 border-[#E5B94F]/85 shadow-lg flex items-center justify-center overflow-hidden shrink-0 aspect-square"
+      className="w-16 h-16 rounded-2xl bg-[#011837] border-2 border-[#E5B94F]/85 shadow-lg flex items-center justify-center overflow-hidden shrink-0 aspect-square"
     >
       <img
         src={BRAND_LOGO_SRC}
         alt={BRAND_LOGO_ALT}
         decoding="async"
         draggable={false}
-        className="w-full h-full object-cover object-center block"
+        className="w-full h-full object-contain object-center block"
       />
     </div>
     <div className="min-w-0 text-left">

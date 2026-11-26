@@ -1,27 +1,39 @@
 {
   "name": "3-2-1 Futbol: Online Düello",
-  "short_name": "3-2-1 Futbol: Online Düello",
+  "short_name": "3-2-1 Futbol",
   "description": "Mobil ve rekabetçi futbol bilgi yarışması. Ortak futbolcuyu geri sayımdan sonra ilk bulan kazanır!",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#020617",
-  "theme_color": "#020617",
+  "background_color": "#011837",
+  "theme_color": "#0D3822",
   "lang": "tr",
   "categories": ["games", "sports", "trivia"],
   "icons": [
     {
-      "src": "./logo.png",
+      "src": "./icons/icon-192.webp",
       "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "any maskable"
+      "type": "image/webp",
+      "purpose": "any"
     },
     {
-      "src": "./logo.png",
+      "src": "./icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./icons/icon-512.webp",
+      "sizes": "512x512",
+      "type": "image/webp",
+      "purpose": "any"
+    },
+    {
+      "src": "./icons/icon-512-maskable.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "maskable"
     }
   ]
 }

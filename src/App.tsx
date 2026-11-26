@@ -246,6 +246,18 @@ const OnboardingModal = lazy(() =>
   import('./components/OnboardingModal').then((m) => ({ default: m.OnboardingModal }))
 );
 const ONBOARDING_STORAGE_KEY = 'hasSeenTutorial_v1';
+
+const BrandLoadingFallback: React.FC = () => (
+  <div
+    data-testid="brand-loading-fallback"
+    className="min-h-[100dvh] w-full flex flex-col items-center justify-center gap-3 pitch-turf-backdrop text-[#F5F3EB]"
+  >
+    <GameLogo size="lg" variant="icon" className="animate-pulse" />
+    <span className="text-xs font-black tracking-[0.18em] uppercase text-[#E5B94F]">
+      3-2-1 FUTBOL YÜKLENİYOR...
+    </span>
+  </div>
+);
 import { CoinIcon } from './components/CoinIcon';
 import { initializeAdMob } from './services/admobService';
 import {
@@ -5437,7 +5449,7 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
       {/* Screen 2: Online Room / Matchmaking Waiting */}
       {screen === 'room_waiting' && (
         <div key="screen-room" className="w-full flex-1 flex flex-col animate-screen-slide">
-          <Suspense fallback={null}>
+          <Suspense fallback={<BrandLoadingFallback />}>
             <OnlineRoomView
               roomCode={roomCode}
               minigameType={minigameType}

@@ -17,6 +17,7 @@ import { MinigameType, PlayerProfile } from '../game/types';
 import { getMinigameMeta } from '../game/minigameEngine';
 import { sanitizePublicDisplayName } from '../game/usernameFilter';
 import { PlayerAvatar } from './PlayerAvatar';
+import { GameLogo } from './GameLogo';
 
 interface OnlineRoomViewProps {
   roomCode?: string;
@@ -74,8 +75,11 @@ export const OnlineRoomView: React.FC<OnlineRoomViewProps> = ({
       className="relative min-h-[100dvh] w-full flex flex-col items-center justify-center p-4 pitch-turf-backdrop text-[#F5F3EB] overflow-x-hidden"
     >
       <div className="w-full max-w-md bg-[#124029] border-2 border-[#E5B94F]/45 rounded-3xl p-5 sm:p-7 text-center shadow-2xl">
-        <div className="w-14 h-14 mx-auto mb-3.5 rounded-2xl bg-[#0F273E] border border-[#4ADE80]/55 flex items-center justify-center text-[#4ADE80]">
-          <Users className="w-7 h-7" />
+        <div className="mx-auto mb-3.5 flex items-center justify-center gap-2.5">
+          <GameLogo size="md" variant="icon" className="!w-14 !h-14" />
+          <div className="w-12 h-12 rounded-2xl bg-[#0F273E] border border-[#4ADE80]/55 flex items-center justify-center text-[#4ADE80]">
+            <Users className="w-6 h-6" />
+          </div>
         </div>
 
         <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#0F273E] border border-[#4ADE80]/45 text-[#4ADE80] text-[10px] font-black uppercase tracking-wider mb-2">
