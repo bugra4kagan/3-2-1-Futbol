@@ -37,5 +37,22 @@ jobs:
           npx tsc --noEmit
           node --import tsx --test src/game/*.test.ts src/services/*.test.ts src/utils/*.test.ts
 
+      - name: Run Production Dependency Security Audit
+        run: npm audit --omit=dev
+
+      - name: Build & Verify Render Production Server (Strict Cloud Persistence Guard)
+        run: |
+          npm run build:render
+          test -f dist/server.mjs
+          NODE_ENV=production PORT=3199 SESSION_SECRET=ci_render_test_secret_0123456789abcdef node --max-old-space-size=384 dist/server.mjs > /tmp/render-server.log 2>&1 &
+          SRV_PID=$!
+          trap "kill $SRV_PID 2>/dev/null || true" EXIT
+          sleep 2
+          curl --retry 5 --retry-connrefused --retry-delay 1 -fsS -H "Origin: https://localhost" http://127.0.0.1:3199/healthz | grep -q '"unsafeLocalStorageBlocked":true'
+          HTTP_CODE=$(curl --retry 5 --retry-connrefused --retry-delay 1 -s -o /tmp/reg.json -w "%{http_code}" -X POST -H "Content-Type: application/json" -d '{"accountId":"ci_1","profile":{"name":"CiTest"},"progression":{}}' http://127.0.0.1:3199/api/accounts/register)
+          echo "Strict missing Firebase Admin guard status: $HTTP_CODE"
+          test "$HTTP_CODE" = "503"
+          test ! -f .data/accounts.json
+
       - name: Run Firestore & RTDB Rules Tests on Firebase Emulator Suite
         run: firebase emulators:exec --project demo-futbol321 --only auth,firestore,database "node --import tsx --test tests/firebase-emulator.rules.test.ts"

@@ -24,6 +24,7 @@ import {
   validateUsernameFormat,
 } from '../game/accountEngine';
 import { isLegacyFlaggedUsername } from '../game/usernameFilter';
+import { fetchBackendWithWakeupRetry } from '../services/backendClient';
 import {
   auth,
   checkUsernameAvailabilityInFirestore,
@@ -153,7 +154,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         if (googleUid) params.set('googleUid', googleUid);
 
         const [serverRes, cloudRes] = await Promise.all([
-          fetch(`/api/accounts/check-username?${params.toString()}`)
+          fetchBackendWithWakeupRetry(
+            `/api/accounts/check-username?${params.toString()}`,
+            {},
+            { timeoutMs: 12000, retries: 1 }
+          )
             .then((r) => (r.ok ? r.json() : null))
             .catch(() => null),
           checkUsernameAvailabilityInFirestore(fmt.cleanedDisplay, googleUid || undefined).catch(
@@ -198,7 +203,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const handleSuggestRandomName = async () => {
     sounds.playCountdown(1);
     try {
-      const res = await fetch('/api/accounts/suggest-name');
+      const res = await fetchBackendWithWakeupRetry(
+        '/api/accounts/suggest-name',
+        {},
+        { timeoutMs: 12000, retries: 1 }
+      );
       if (res.ok) {
         const data = await res.json();
         if (data?.name) {
@@ -264,16 +273,20 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         const regHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
         if (storedToken) regHeaders['X-Account-Token'] = storedToken;
 
-        const regRes = await fetch('/api/accounts/register', {
-          method: 'POST',
-          headers: regHeaders,
-          body: JSON.stringify({
-            accountId: currentProfile.id,
-            profile: updatedProfile,
-            progression,
-            googleUid: googleUid || undefined,
-          }),
-        });
+        const regRes = await fetchBackendWithWakeupRetry(
+          '/api/accounts/register',
+          {
+            method: 'POST',
+            headers: regHeaders,
+            body: JSON.stringify({
+              accountId: currentProfile.id,
+              profile: updatedProfile,
+              progression,
+              googleUid: googleUid || undefined,
+            }),
+          },
+          { timeoutMs: 18000, retries: 2, retryDelayMs: 1800 }
+        );
         const regData = await regRes.json().catch(() => null);
         if (regRes.ok && regData?.sessionToken && typeof window !== 'undefined') {
           try {

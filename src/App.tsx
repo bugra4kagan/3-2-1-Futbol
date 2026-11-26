@@ -53,6 +53,12 @@ import {
   getTournamentMatchForUser,
 } from './game/tournamentEngine';
 import { getClutchThresholdSeconds, getRoundDurationSeconds } from './game/roundTiming';
+import {
+  fetchBackendWithWakeupRetry,
+  getBackendBaseUrl,
+  prewarmBackendHealthz,
+  resolveBackendWsUrl,
+} from './services/backendClient';
 import { computeMatchKeyboardMetrics } from './game/viewportKeyboard';
 import { buildOpponentMiniSummary } from './game/opponentSummary';
 import {
@@ -815,10 +821,12 @@ export default function App() {
       const pid = player1Ref.current.id;
       const code = progressionRef.current.friendCode;
       const name = player1Ref.current.name;
-      const res = await fetch(
+      const res = await fetchBackendWithWakeupRetry(
         `/api/friends/pending?playerId=${encodeURIComponent(pid)}&friendCode=${encodeURIComponent(
           code
-        )}&name=${encodeURIComponent(name)}`
+        )}&name=${encodeURIComponent(name)}`,
+        {},
+        { timeoutMs: 15000, retries: 1 }
       );
       if (!res.ok) return;
       const data = await res.json();
@@ -864,8 +872,8 @@ export default function App() {
 
     const connectNotifSocket = () => {
       if (disposed) return;
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const sock = new WebSocket(`${protocol}//${window.location.host}/ws`);
+      prewarmBackendHealthz();
+      const sock = new WebSocket(resolveBackendWsUrl('/ws'));
       notifWsRef.current = sock;
 
       sock.onopen = () => {
@@ -1423,16 +1431,20 @@ export default function App() {
             user,
             displayName: nextProfile.name,
           }).catch(() => {});
-          fetch('/api/accounts/register', {
-            method: 'POST',
-            headers: buildAccountApiHeaders(sessionPlayerIdRef.current),
-            body: JSON.stringify({
-              accountId: sessionPlayerIdRef.current,
-              profile: nextProfile,
-              progression: mergedProg,
-              googleUid: user.uid,
-            }),
-          })
+          fetchBackendWithWakeupRetry(
+            '/api/accounts/register',
+            {
+              method: 'POST',
+              headers: buildAccountApiHeaders(sessionPlayerIdRef.current),
+              body: JSON.stringify({
+                accountId: sessionPlayerIdRef.current,
+                profile: nextProfile,
+                progression: mergedProg,
+                googleUid: user.uid,
+              }),
+            },
+            { timeoutMs: 18000, retries: 2, retryDelayMs: 1800 }
+          )
             .then((r) => (r.ok ? r.json() : null))
             .then((data) => {
               if (data?.sessionToken) {
@@ -1456,9 +1468,11 @@ export default function App() {
     const accountId = sessionPlayerIdRef.current;
     const token = accountId ? getServerSessionToken(accountId) : null;
     if (!accountId || !token) return;
-    fetch(`/api/accounts/by-id/${encodeURIComponent(accountId)}`, {
-      headers: { 'X-Account-Token': token },
-    })
+    fetchBackendWithWakeupRetry(
+      `/api/accounts/by-id/${encodeURIComponent(accountId)}`,
+      { headers: { 'X-Account-Token': token } },
+      { timeoutMs: 18000, retries: 2, retryDelayMs: 1800 }
+    )
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (!data?.ok || !data?.account) return;
@@ -1493,16 +1507,20 @@ export default function App() {
     if (serverAccountSaveTimerRef.current) clearTimeout(serverAccountSaveTimerRef.current);
     serverAccountSaveTimerRef.current = setTimeout(() => {
       const aid = sessionPlayerIdRef.current;
-      fetch('/api/accounts/sync', {
-        method: 'POST',
-        headers: buildAccountApiHeaders(aid),
-        body: JSON.stringify({
-          accountId: aid,
-          profile: player1Ref.current,
-          progression: progressionRef.current,
-          googleUid: firebaseUser?.uid,
-        }),
-      })
+      fetchBackendWithWakeupRetry(
+        '/api/accounts/sync',
+        {
+          method: 'POST',
+          headers: buildAccountApiHeaders(aid),
+          body: JSON.stringify({
+            accountId: aid,
+            profile: player1Ref.current,
+            progression: progressionRef.current,
+            googleUid: firebaseUser?.uid,
+          }),
+        },
+        { timeoutMs: 18000, retries: 2, retryDelayMs: 1800 }
+      )
         .then((r) => (r.ok ? r.json() : null))
         .then((data) => {
           if (data?.sessionToken) {
@@ -1547,45 +1565,50 @@ export default function App() {
         setLiveLeaderboardPlayers(rtdbPlayers);
       }
 
-      // 2. Also sync legacy server endpoint when running under local Node Express dev server
-      if (
+      // 2. Sync server endpoint when remote Render API URL is set or running local Node Express dev server
+      const hasRemoteBackend = Boolean(getBackendBaseUrl());
+      const isLocalDevOrigin =
         typeof window !== 'undefined' &&
         (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') &&
-        window.location.protocol !== 'capacitor:'
-      ) {
+        window.location.protocol !== 'capacitor:';
+      if (hasRemoteBackend || isLocalDevOrigin) {
         try {
-          const res = await fetch('/api/leaderboard/sync', {
-            method: 'POST',
-            headers: buildAccountApiHeaders(profileToSync.id),
-            body: JSON.stringify({
-              id: profileToSync.id,
-              friendCode: progToSync.friendCode,
-              name: profileToSync.name,
-              avatar: profileToSync.avatar,
-              favoriteClubId: profileToSync.favoriteClubId,
-              weeklyPoints: progToSync.weeklyPoints,
-              totalPoints: progToSync.totalPoints,
-              subtitle: progToSync.equippedTitle,
-              equippedCrest: progToSync.equippedCrest,
-              equippedFrame: progToSync.equippedFrame,
-              equippedBadge: progToSync.equippedBadge,
-              hasCrown: progToSync.unlockedGiftIds.includes('gift_title_legend'),
-              matchesPlayed: progToSync.matchesPlayed,
-              wins: progToSync.wins,
-              losses: progToSync.losses,
-              winStreak: progToSync.winStreak,
-              bestWinStreak: progToSync.bestWinStreak,
-              totalCorrectAnswers: progToSync.totalCorrectAnswers,
-              totalWrongAttempts: progToSync.totalWrongAttempts,
-              fastestAnswerSec: progToSync.fastestAnswerSec,
-              clutchAnswers: progToSync.clutchAnswers,
-              minigameMatchCounts: progToSync.minigameMatchCounts,
-              dailyStreakDays: progToSync.dailyLogin?.streakDays ?? 0,
-              tournamentWins: progToSync.tournamentWins ?? 0,
-              tournamentsPlayed: progToSync.tournamentsPlayed ?? 0,
-              suppressAutoHighScore: options?.suppressAutoHighScore,
-            }),
-          });
+          const res = await fetchBackendWithWakeupRetry(
+            '/api/leaderboard/sync',
+            {
+              method: 'POST',
+              headers: buildAccountApiHeaders(profileToSync.id),
+              body: JSON.stringify({
+                id: profileToSync.id,
+                friendCode: progToSync.friendCode,
+                name: profileToSync.name,
+                avatar: profileToSync.avatar,
+                favoriteClubId: profileToSync.favoriteClubId,
+                weeklyPoints: progToSync.weeklyPoints,
+                totalPoints: progToSync.totalPoints,
+                subtitle: progToSync.equippedTitle,
+                equippedCrest: progToSync.equippedCrest,
+                equippedFrame: progToSync.equippedFrame,
+                equippedBadge: progToSync.equippedBadge,
+                hasCrown: progToSync.unlockedGiftIds.includes('gift_title_legend'),
+                matchesPlayed: progToSync.matchesPlayed,
+                wins: progToSync.wins,
+                losses: progToSync.losses,
+                winStreak: progToSync.winStreak,
+                bestWinStreak: progToSync.bestWinStreak,
+                totalCorrectAnswers: progToSync.totalCorrectAnswers,
+                totalWrongAttempts: progToSync.totalWrongAttempts,
+                fastestAnswerSec: progToSync.fastestAnswerSec,
+                clutchAnswers: progToSync.clutchAnswers,
+                minigameMatchCounts: progToSync.minigameMatchCounts,
+                dailyStreakDays: progToSync.dailyLogin?.streakDays ?? 0,
+                tournamentWins: progToSync.tournamentWins ?? 0,
+                tournamentsPlayed: progToSync.tournamentsPlayed ?? 0,
+                suppressAutoHighScore: options?.suppressAutoHighScore,
+              }),
+            },
+            { timeoutMs: 15000, retries: 2, retryDelayMs: 1800 }
+          );
           if (res.ok) {
             const data = await res.json();
             if (Array.isArray(data.players) && rtdbPlayers.length === 0) {
@@ -1593,7 +1616,7 @@ export default function App() {
             }
           }
         } catch {
-          // Offline / static hosting fallback
+          // Offline / cold-start fallback
         }
       }
     },
@@ -1606,13 +1629,18 @@ export default function App() {
       setLiveLeaderboardPlayers(rtdbPlayers);
       return;
     }
-    if (
+    const hasRemoteBackend = Boolean(getBackendBaseUrl());
+    const isLocalDevOrigin =
       typeof window !== 'undefined' &&
       (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') &&
-      window.location.protocol !== 'capacitor:'
-    ) {
+      window.location.protocol !== 'capacitor:';
+    if (hasRemoteBackend || isLocalDevOrigin) {
       try {
-        const res = await fetch('/api/leaderboard');
+        const res = await fetchBackendWithWakeupRetry(
+          '/api/leaderboard',
+          {},
+          { timeoutMs: 15000, retries: 2, retryDelayMs: 1800 }
+        );
         if (res.ok) {
           const data = await res.json();
           if (Array.isArray(data.players)) {
@@ -1830,19 +1858,23 @@ trackGameEvent('match_complete', {
 
     if (hsMilestone.isHighScore) {
       const eventId = `hs_${player1.id}_${Math.round(hsMilestone.scoreValue)}_${matchInstanceIdRef.current}`;
-      fetch('/api/activity/high-score', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          eventId,
-          actorId: player1.id,
-          actorFriendCode: finalProgression.friendCode,
-          actorName: player1.name,
-          actorAvatar: player1.avatar,
-          scoreValue: hsMilestone.scoreValue,
-          summary: hsMilestone.summary,
-        }),
-      }).catch(() => {});
+      fetchBackendWithWakeupRetry(
+        '/api/activity/high-score',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            eventId,
+            actorId: player1.id,
+            actorFriendCode: finalProgression.friendCode,
+            actorName: player1.name,
+            actorAvatar: player1.avatar,
+            scoreValue: hsMilestone.scoreValue,
+            summary: hsMilestone.summary,
+          }),
+        },
+        { timeoutMs: 12000, retries: 1 }
+      ).catch(() => {});
 
       publishActivityToFirestore({
         user: firebaseUser,
@@ -3376,18 +3408,22 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
     });
     setActiveTournament(bracket);
 
-    fetch('/api/tournaments/announce', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        actorId: player1.id,
-        actorFriendCode: res.progression.friendCode,
-        actorName: player1.name,
-        actorAvatar: player1.avatar,
-        minigameType: mg,
-        title: bracket.title,
-      }),
-    }).catch(() => {});
+    fetchBackendWithWakeupRetry(
+      '/api/tournaments/announce',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          actorId: player1.id,
+          actorFriendCode: res.progression.friendCode,
+          actorName: player1.name,
+          actorAvatar: player1.avatar,
+          minigameType: mg,
+          title: bracket.title,
+        }),
+      },
+      { timeoutMs: 12000, retries: 1 }
+    ).catch(() => {});
 
     publishActivityToFirestore({
       user: firebaseUser,
@@ -3862,16 +3898,20 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
           user,
           displayName: nextProfile.name,
         }).catch(() => {});
-        fetch('/api/accounts/register', {
-          method: 'POST',
-          headers: buildAccountApiHeaders(sessionPlayerIdRef.current),
-          body: JSON.stringify({
-            accountId: sessionPlayerIdRef.current,
-            profile: nextProfile,
-            progression: mergedProg,
-            googleUid: user.uid,
-          }),
-        })
+        fetchBackendWithWakeupRetry(
+          '/api/accounts/register',
+          {
+            method: 'POST',
+            headers: buildAccountApiHeaders(sessionPlayerIdRef.current),
+            body: JSON.stringify({
+              accountId: sessionPlayerIdRef.current,
+              profile: nextProfile,
+              progression: mergedProg,
+              googleUid: user.uid,
+            }),
+          },
+          { timeoutMs: 18000, retries: 2, retryDelayMs: 1800 }
+        )
           .then((r) => (r.ok ? r.json() : null))
           .then((data) => {
             if (data?.sessionToken) {
@@ -3964,9 +4004,11 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
         const aid = sessionPlayerIdRef.current;
         const tok = getServerSessionToken(aid);
         const serverRec = tok
-          ? await fetch(`/api/accounts/by-id/${encodeURIComponent(aid)}`, {
-              headers: { 'X-Account-Token': tok },
-            })
+          ? await fetchBackendWithWakeupRetry(
+              `/api/accounts/by-id/${encodeURIComponent(aid)}`,
+              { headers: { 'X-Account-Token': tok } },
+              { timeoutMs: 18000, retries: 2, retryDelayMs: 1800 }
+            )
               .then((r) => (r.ok ? r.json() : null))
               .catch(() => null)
           : null;
@@ -4014,10 +4056,14 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
       sessionPlayerId: sessionPlayerIdRef.current,
     });
 
-    await fetch(`/api/accounts/by-id/${encodeURIComponent(sessionPlayerIdRef.current)}`, {
-      method: 'DELETE',
-      headers: buildAccountApiHeaders(sessionPlayerIdRef.current),
-    }).catch(() => {});
+    await fetchBackendWithWakeupRetry(
+      `/api/accounts/by-id/${encodeURIComponent(sessionPlayerIdRef.current)}`,
+      {
+        method: 'DELETE',
+        headers: buildAccountApiHeaders(sessionPlayerIdRef.current),
+      },
+      { timeoutMs: 15000, retries: 2 }
+    ).catch(() => {});
 
     if (typeof window !== 'undefined') {
       try {
@@ -4093,25 +4139,29 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
     if (!res.ok || !res.request) return;
 
     persistProgression(res.progression);
-    fetch('/api/friends/request', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        id: res.request.id,
-        fromPlayerId: player1Ref.current.id,
-        fromFriendCode: res.progression.friendCode,
-        fromName: player1Ref.current.name,
-        fromAvatar: player1Ref.current.avatar,
-        toPlayerId: target.id,
-        toFriendCode: target.friendCode,
-        toName: target.name,
-        toAvatar: target.avatar,
-        weeklyPoints: res.progression.weeklyPoints,
-        totalPoints: res.progression.totalPoints,
-        subtitle: res.progression.equippedTitle,
-        isBot: target.isBot,
-      }),
-    }).catch(() => {});
+    fetchBackendWithWakeupRetry(
+      '/api/friends/request',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: res.request.id,
+          fromPlayerId: player1Ref.current.id,
+          fromFriendCode: res.progression.friendCode,
+          fromName: player1Ref.current.name,
+          fromAvatar: player1Ref.current.avatar,
+          toPlayerId: target.id,
+          toFriendCode: target.friendCode,
+          toName: target.name,
+          toAvatar: target.avatar,
+          weeklyPoints: res.progression.weeklyPoints,
+          totalPoints: res.progression.totalPoints,
+          subtitle: res.progression.equippedTitle,
+          isBot: target.isBot,
+        }),
+      },
+      { timeoutMs: 15000, retries: 1 }
+    ).catch(() => {});
   };
 
   const handleAcceptFriendRequest = (requestId: string) => {
@@ -4120,29 +4170,33 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
     persistProgression(res.progression);
     sounds.playNotification();
 
-    fetch('/api/friends/respond', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        requestId,
-        action: 'accept',
-        fromPlayerId: res.acceptedRequest.fromPlayerId,
-        fromFriendCode: res.acceptedRequest.fromFriendCode,
-        fromName: res.acceptedRequest.fromName,
-        fromAvatar: res.acceptedRequest.fromAvatar,
-        toPlayerId: player1Ref.current.id,
-        toFriendCode: res.progression.friendCode,
-        toName: player1Ref.current.name,
-        toAvatar: player1Ref.current.avatar,
-        responderId: player1Ref.current.id,
-        responderFriendCode: res.progression.friendCode,
-        responderName: player1Ref.current.name,
-        responderAvatar: player1Ref.current.avatar,
-        responderWeeklyPoints: res.progression.weeklyPoints,
-        responderTotalPoints: res.progression.totalPoints,
-        responderSubtitle: res.progression.equippedTitle,
-      }),
-    }).catch(() => {});
+    fetchBackendWithWakeupRetry(
+      '/api/friends/respond',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          requestId,
+          action: 'accept',
+          fromPlayerId: res.acceptedRequest.fromPlayerId,
+          fromFriendCode: res.acceptedRequest.fromFriendCode,
+          fromName: res.acceptedRequest.fromName,
+          fromAvatar: res.acceptedRequest.fromAvatar,
+          toPlayerId: player1Ref.current.id,
+          toFriendCode: res.progression.friendCode,
+          toName: player1Ref.current.name,
+          toAvatar: player1Ref.current.avatar,
+          responderId: player1Ref.current.id,
+          responderFriendCode: res.progression.friendCode,
+          responderName: player1Ref.current.name,
+          responderAvatar: player1Ref.current.avatar,
+          responderWeeklyPoints: res.progression.weeklyPoints,
+          responderTotalPoints: res.progression.totalPoints,
+          responderSubtitle: res.progression.equippedTitle,
+        }),
+      },
+      { timeoutMs: 15000, retries: 1 }
+    ).catch(() => {});
   };
 
   const handleRejectFriendRequest = (requestId: string) => {
@@ -4150,20 +4204,24 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
     if (!res.ok || !res.rejectedRequest) return;
     persistProgression(res.progression);
 
-    fetch('/api/friends/respond', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        requestId,
-        action: 'reject',
-        fromPlayerId: res.rejectedRequest.fromPlayerId,
-        fromFriendCode: res.rejectedRequest.fromFriendCode,
-        fromName: res.rejectedRequest.fromName,
-        toPlayerId: player1Ref.current.id,
-        toFriendCode: res.progression.friendCode,
-        toName: player1Ref.current.name,
-      }),
-    }).catch(() => {});
+    fetchBackendWithWakeupRetry(
+      '/api/friends/respond',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          requestId,
+          action: 'reject',
+          fromPlayerId: res.rejectedRequest.fromPlayerId,
+          fromFriendCode: res.rejectedRequest.fromFriendCode,
+          fromName: res.rejectedRequest.fromName,
+          toPlayerId: player1Ref.current.id,
+          toFriendCode: res.progression.friendCode,
+          toName: player1Ref.current.name,
+        }),
+      },
+      { timeoutMs: 15000, retries: 1 }
+    ).catch(() => {});
   };
 
   const handleCancelOutgoingRequest = (requestId: string) => {
@@ -4401,7 +4459,11 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
           typeof sourceObj?.id === 'string' && sourceObj.id
             ? sourceObj.id
             : rawName || rawIdentifier;
-        const res = await fetch(`/api/profiles/${encodeURIComponent(lookupKey)}`);
+        const res = await fetchBackendWithWakeupRetry(
+          `/api/profiles/${encodeURIComponent(lookupKey)}`,
+          {},
+          { timeoutMs: 12000, retries: 1 }
+        );
         if (res.ok) {
           const data = await res.json();
           if (reqId === inspectRequestSeqRef.current && data?.ok && data?.profile) {
@@ -5291,17 +5353,21 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
           handleSelectOnlineMode('online_room', { minigameType: mg });
         }}
         onReportPlayer={async (target, reason, details) => {
-          const serverRes = await fetch('/api/moderation/report', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              reporterId: sessionPlayerIdRef.current,
-              targetId: target.id,
-              targetName: target.name,
-              reason,
-              details: details || 'Profil modalından bildirildi',
-            }),
-          })
+          const serverRes = await fetchBackendWithWakeupRetry(
+            '/api/moderation/report',
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                reporterId: sessionPlayerIdRef.current,
+                targetId: target.id,
+                targetName: target.name,
+                reason,
+                details: details || 'Profil modalından bildirildi',
+              }),
+            },
+            { timeoutMs: 15000, retries: 1 }
+          )
             .then((r) => r.ok)
             .catch(() => false);
 

@@ -44,6 +44,12 @@ export interface ServerMatchSession {
   completed: boolean;
 }
 
+export interface MatchSessionCloudAdapter {
+  loadActiveSessions: (now?: number, limitCount?: number) => Promise<ServerMatchSession[]>;
+  getSessionById: (sessionId: string) => Promise<ServerMatchSession | null>;
+  saveSession: (session: ServerMatchSession) => Promise<void>;
+}
+
 const SUPPORTED_MATCH_TYPES = new Set<MinigameType>([
   'two_clubs',
   'xox',
@@ -53,6 +59,59 @@ const SUPPORTED_MATCH_TYPES = new Set<MinigameType>([
 
 export class ServerMatchLedger {
   private readonly sessions = new Map<string, ServerMatchSession>();
+  private readonly claimedRoomOutcomes = new Set<string>();
+  private cloudAdapter: MatchSessionCloudAdapter | null = null;
+  private readonly pendingCloudWrites = new Map<string, Promise<void>>();
+
+  public setCloudAdapter(adapter: MatchSessionCloudAdapter | null): void {
+    this.cloudAdapter = adapter;
+  }
+
+  private queueCloudSave(session: ServerMatchSession): void {
+    if (!this.cloudAdapter) return;
+    const adapter = this.cloudAdapter;
+    const snapshot: ServerMatchSession = {
+      ...session,
+      scoredRounds: new Set(session.scoredRounds),
+    };
+    const prev = this.pendingCloudWrites.get(session.sessionId) || Promise.resolve();
+    const next = prev
+      .catch(() => {})
+      .then(() => adapter.saveSession(snapshot))
+      .catch(() => {});
+    this.pendingCloudWrites.set(session.sessionId, next);
+  }
+
+  public async flushCloudWrites(): Promise<void> {
+    if (this.pendingCloudWrites.size === 0) return;
+    await Promise.allSettled(Array.from(this.pendingCloudWrites.values()));
+    this.pendingCloudWrites.clear();
+  }
+
+  public async hydrateFromCloud(limitCount = 500): Promise<number> {
+    if (!this.cloudAdapter) return 0;
+    const active = await this.cloudAdapter.loadActiveSessions(Date.now(), limitCount);
+    let restored = 0;
+    for (const s of active) {
+      if (!s?.sessionId || this.sessions.has(s.sessionId)) continue;
+      this.sessions.set(s.sessionId, s);
+      restored += 1;
+    }
+    return restored;
+  }
+
+  public async resolveSessionAsync(sessionId: string): Promise<ServerMatchSession | null> {
+    const cleanSid = String(sessionId || '').trim();
+    if (!cleanSid) return null;
+    const cached = this.sessions.get(cleanSid);
+    if (cached) return cached;
+    if (!this.cloudAdapter) return null;
+    const loaded = await this.cloudAdapter.getSessionById(cleanSid);
+    if (loaded) {
+      this.sessions.set(loaded.sessionId, loaded);
+    }
+    return loaded;
+  }
 
   public issueSession(params: {
     accountId: string;
@@ -81,6 +140,7 @@ export class ServerMatchLedger {
       completed: false,
     };
     this.sessions.set(sessionId, session);
+    this.queueCloudSave(session);
 
     if (this.sessions.size > 5000) {
       for (const [k, s] of this.sessions.entries()) {
@@ -133,6 +193,7 @@ export class ServerMatchLedger {
       session.scoredRounds.add(rIdx);
       session.verifiedPlayerScore += 1;
       session.verifiedCorrectAnswers += 1;
+      this.queueCloudSave(session);
     }
 
     return {
@@ -148,6 +209,7 @@ export class ServerMatchLedger {
     accountId: string;
     hasMultiplier2x: boolean;
     roomVerifiedScores?: { playerScore: number; opponentScore: number };
+    roomClaimKey?: string;
     now?: number;
     minDurationMs?: number;
   }):
@@ -162,6 +224,21 @@ export class ServerMatchLedger {
     if (session.completed) {
       return { ok: false, reason: 'Bu maç oturumu daha önce ödüllendirildi.' };
     }
+    const isOnlineMode = session.mode.startsWith('online');
+    if (isOnlineMode && !params.roomVerifiedScores) {
+      return {
+        ok: false,
+        reason: 'Çevrimiçi maç ödülü için sunucu tarafından doğrulanmış oda sonucu zorunludur.',
+      };
+    }
+    if (params.roomClaimKey) {
+      if (this.claimedRoomOutcomes.has(params.roomClaimKey)) {
+        return {
+          ok: false,
+          reason: 'Bu çevrimiçi oda maçının ödülü daha önce talep edilmiş.',
+        };
+      }
+    }
     const now = params.now ?? Date.now();
     const minDuration = params.minDurationMs ?? MIN_VERIFIED_MATCH_DURATION_MS;
     if (now - session.startedAt < minDuration) {
@@ -173,6 +250,14 @@ export class ServerMatchLedger {
     }
 
     session.completed = true;
+    if (params.roomClaimKey) {
+      this.claimedRoomOutcomes.add(params.roomClaimKey);
+      if (this.claimedRoomOutcomes.size > 5000) {
+        const firstKey = this.claimedRoomOutcomes.values().next().value;
+        if (firstKey) this.claimedRoomOutcomes.delete(firstKey);
+      }
+    }
+    this.queueCloudSave(session);
 
     // İstemcinin beyan ettiği sahte skor ASLA kullanılmaz:
     // Online modda yalnızca Firestore `rooms` sunucu sonucu, offline/solo modda yalnızca sunucu doğrulamalı yanıt sayısı geçerlidir.

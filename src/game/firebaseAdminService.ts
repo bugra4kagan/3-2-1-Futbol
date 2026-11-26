@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import {
   cert,
@@ -9,9 +10,11 @@ import {
 import { getAuth, type DecodedIdToken } from 'firebase-admin/auth';
 import { getDatabase } from 'firebase-admin/database';
 import { FieldValue, getFirestore } from 'firebase-admin/firestore';
-import { normalizeUsernameKey } from './accountEngine.js';
+import { normalizeRecoveryCode, normalizeUsernameKey } from './accountEngine.js';
 import { sanitizeRtdbKey } from './realtimeSyncHelpers.js';
-import type { PlayerProfile, UserProgression } from './types.js';
+import type { AccountCloudAdapter, PersistentAccountRecord } from './accountStore.js';
+import type { MatchSessionCloudAdapter, ServerMatchSession } from './serverSecurity.js';
+import type { MinigameRoundPayload, MinigameType, PlayerProfile, UserProgression } from './types.js';
 
 const PROJECT_ID = 'futbol-9013e';
 const RTDB_URL = 'https://futbol-9013e-default-rtdb.europe-west1.firebasedatabase.app';
@@ -53,10 +56,18 @@ function parseServiceAccountFromEnv(): ServiceAccount | null {
   }
 }
 
+function isEmulatorEnvEnabled(): boolean {
+  return (
+    process.env.NODE_ENV !== 'production' &&
+    Boolean(process.env.FIRESTORE_EMULATOR_HOST?.trim())
+  );
+}
+
 export function isFirebaseAdminConfigured(): boolean {
   return Boolean(
     parseServiceAccountFromEnv() ||
       process.env.GOOGLE_APPLICATION_CREDENTIALS?.trim() ||
+      isEmulatorEnvEnabled() ||
       getApps().length > 0
   );
 }
@@ -81,6 +92,18 @@ export function getFirebaseAdminApp(): App | null {
   if (process.env.GOOGLE_APPLICATION_CREDENTIALS?.trim()) {
     cachedAdminApp = initializeApp({
       projectId: PROJECT_ID,
+      databaseURL: RTDB_URL,
+    });
+    return cachedAdminApp;
+  }
+
+  if (isEmulatorEnvEnabled()) {
+    const emuProjectId =
+      process.env.GCLOUD_PROJECT?.trim() ||
+      process.env.FIREBASE_PROJECT_ID?.trim() ||
+      PROJECT_ID;
+    cachedAdminApp = initializeApp({
+      projectId: emuProjectId,
       databaseURL: RTDB_URL,
     });
     return cachedAdminApp;
@@ -335,4 +358,358 @@ export async function deleteUserFirebaseRecordsAdmin(params: {
   } catch {
     // ignore cleanup failures
   }
+}
+
+const BACKEND_ACCOUNTS_COLLECTION = 'backend_accounts';
+const BACKEND_PURCHASES_COLLECTION = 'backend_purchases';
+const BACKEND_MATCH_SESSIONS_COLLECTION = 'backend_match_sessions';
+
+export function hashPurchaseToken(purchaseToken: string): string {
+  return crypto
+    .createHash('sha256')
+    .update(String(purchaseToken || '').trim())
+    .digest('hex');
+}
+
+function serializeAccountForCloud(record: PersistentAccountRecord): Record<string, unknown> {
+  return {
+    accountId: record.accountId,
+    username: record.username,
+    usernameKey: record.usernameKey,
+    recoveryCode: record.recoveryCode,
+    recoveryCodeNormalized: normalizeRecoveryCode(record.recoveryCode),
+    sessionSecret: record.sessionSecret || null,
+    googleUid: record.googleUid || null,
+    profileJson: JSON.stringify(record.profile).slice(0, 120000),
+    progressionJson: JSON.stringify(record.progression).slice(0, 240000),
+    verifiedPurchasesJson: JSON.stringify(record.verifiedPurchases || []).slice(0, 120000),
+    createdAt: record.createdAt || Date.now(),
+    updatedAt: record.updatedAt || Date.now(),
+  };
+}
+
+function deserializeAccountFromCloud(data: Record<string, unknown> | undefined): PersistentAccountRecord | null {
+  if (!data || typeof data.accountId !== 'string' || !data.accountId.trim()) return null;
+  try {
+    const profile =
+      typeof data.profileJson === 'string'
+        ? JSON.parse(data.profileJson)
+        : (data.profile as PersistentAccountRecord['profile']);
+    const progression =
+      typeof data.progressionJson === 'string'
+        ? JSON.parse(data.progressionJson)
+        : (data.progression as PersistentAccountRecord['progression']);
+    const verifiedPurchases =
+      typeof data.verifiedPurchasesJson === 'string'
+        ? JSON.parse(data.verifiedPurchasesJson)
+        : Array.isArray(data.verifiedPurchases)
+        ? data.verifiedPurchases
+        : [];
+    if (!profile || !progression) return null;
+    return {
+      accountId: data.accountId,
+      username: String(data.username || profile.name || 'Oyuncu'),
+      usernameKey: String(data.usernameKey || normalizeUsernameKey(String(data.username || profile.name || ''))),
+      recoveryCode: String(data.recoveryCode || ''),
+      sessionSecret: typeof data.sessionSecret === 'string' && data.sessionSecret ? data.sessionSecret : undefined,
+      googleUid: typeof data.googleUid === 'string' && data.googleUid ? data.googleUid : undefined,
+      verifiedPurchases: Array.isArray(verifiedPurchases) ? verifiedPurchases : [],
+      profile,
+      progression,
+      createdAt: Number(data.createdAt) || Date.now(),
+      updatedAt: Number(data.updatedAt) || Date.now(),
+    };
+  } catch {
+    return null;
+  }
+}
+
+export async function loadBackendAccountsAdmin(limitCount = 2000): Promise<PersistentAccountRecord[]> {
+  const adminApp = getFirebaseAdminApp();
+  if (!adminApp) return [];
+  try {
+    const db = getFirestore(adminApp);
+    const snap = await db
+      .collection(BACKEND_ACCOUNTS_COLLECTION)
+      .orderBy('updatedAt', 'desc')
+      .limit(Math.max(1, Math.min(5000, limitCount)))
+      .get();
+    const out: PersistentAccountRecord[] = [];
+    for (const doc of snap.docs) {
+      const parsed = deserializeAccountFromCloud(doc.data());
+      if (parsed) out.push(parsed);
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+
+export async function fetchBackendAccountByIdAdmin(accountId: string): Promise<PersistentAccountRecord | null> {
+  const cleanId = String(accountId || '').trim();
+  if (!cleanId) return null;
+  const adminApp = getFirebaseAdminApp();
+  if (!adminApp) return null;
+  try {
+    const db = getFirestore(adminApp);
+    const snap = await db.collection(BACKEND_ACCOUNTS_COLLECTION).doc(cleanId).get();
+    if (!snap.exists) return null;
+    return deserializeAccountFromCloud(snap.data());
+  } catch {
+    return null;
+  }
+}
+
+export async function fetchBackendAccountByRecoveryCodeAdmin(
+  normalizedCode: string
+): Promise<PersistentAccountRecord | null> {
+  const code = normalizeRecoveryCode(normalizedCode);
+  if (!code) return null;
+  const adminApp = getFirebaseAdminApp();
+  if (!adminApp) return null;
+  try {
+    const db = getFirestore(adminApp);
+    const snap = await db
+      .collection(BACKEND_ACCOUNTS_COLLECTION)
+      .where('recoveryCodeNormalized', '==', code)
+      .limit(1)
+      .get();
+    if (snap.empty) return null;
+    return deserializeAccountFromCloud(snap.docs[0]?.data());
+  } catch {
+    return null;
+  }
+}
+
+export async function fetchBackendAccountByGoogleUidAdmin(
+  googleUid: string
+): Promise<PersistentAccountRecord | null> {
+  const cleanUid = String(googleUid || '').trim();
+  if (!cleanUid) return null;
+  const adminApp = getFirebaseAdminApp();
+  if (!adminApp) return null;
+  try {
+    const db = getFirestore(adminApp);
+    const snap = await db
+      .collection(BACKEND_ACCOUNTS_COLLECTION)
+      .where('googleUid', '==', cleanUid)
+      .limit(1)
+      .get();
+    if (snap.empty) return null;
+    return deserializeAccountFromCloud(snap.docs[0]?.data());
+  } catch {
+    return null;
+  }
+}
+
+export async function persistBackendAccountAdmin(record: PersistentAccountRecord): Promise<boolean> {
+  const adminApp = getFirebaseAdminApp();
+  if (!adminApp || !record?.accountId) return false;
+  try {
+    const db = getFirestore(adminApp);
+    await db
+      .collection(BACKEND_ACCOUNTS_COLLECTION)
+      .doc(record.accountId)
+      .set(serializeAccountForCloud(record), { merge: true });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function deleteBackendAccountAdmin(accountId: string): Promise<boolean> {
+  const cleanId = String(accountId || '').trim();
+  if (!cleanId) return false;
+  const adminApp = getFirebaseAdminApp();
+  if (!adminApp) return false;
+  try {
+    const db = getFirestore(adminApp);
+    await db.collection(BACKEND_ACCOUNTS_COLLECTION).doc(cleanId).delete();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function claimVerifiedPurchaseTokenAdmin(params: {
+  purchaseToken: string;
+  accountId: string;
+  productId: string;
+  itemId: string;
+  orderId?: string;
+}): Promise<{ ok: boolean; alreadyOwnedBySameAccount?: boolean; conflict?: boolean }> {
+  const adminApp = getFirebaseAdminApp();
+  if (!adminApp) {
+    return { ok: true };
+  }
+  const tokenHash = hashPurchaseToken(params.purchaseToken);
+  if (!tokenHash) return { ok: false };
+  try {
+    const db = getFirestore(adminApp);
+    const docRef = db.collection(BACKEND_PURCHASES_COLLECTION).doc(tokenHash);
+    try {
+      await docRef.create({
+        tokenHash,
+        accountId: params.accountId,
+        productId: params.productId,
+        itemId: params.itemId,
+        orderId: params.orderId || null,
+        verifiedAt: Date.now(),
+      });
+      return { ok: true, alreadyOwnedBySameAccount: false };
+    } catch {
+      const existing = await docRef.get();
+      const data = existing.data();
+      if (data && data.accountId === params.accountId) {
+        return { ok: true, alreadyOwnedBySameAccount: true };
+      }
+      if (data && data.accountId) {
+        return { ok: false, conflict: true };
+      }
+      return { ok: false };
+    }
+  } catch {
+    return { ok: false };
+  }
+}
+
+export async function hasVerifiedPurchaseTokenAdmin(purchaseToken: string): Promise<boolean> {
+  const adminApp = getFirebaseAdminApp();
+  if (!adminApp) return false;
+  const tokenHash = hashPurchaseToken(purchaseToken);
+  if (!tokenHash) return false;
+  try {
+    const db = getFirestore(adminApp);
+    const snap = await db.collection(BACKEND_PURCHASES_COLLECTION).doc(tokenHash).get();
+    return snap.exists;
+  } catch {
+    return false;
+  }
+}
+
+function serializeMatchSessionForCloud(session: ServerMatchSession): Record<string, unknown> {
+  return {
+    sessionId: session.sessionId,
+    accountId: session.accountId,
+    minigameType: session.minigameType,
+    mode: session.mode,
+    startedAt: session.startedAt,
+    roundsJson: JSON.stringify(session.rounds).slice(0, 240000),
+    scoredRounds: Array.from(session.scoredRounds),
+    verifiedPlayerScore: session.verifiedPlayerScore,
+    verifiedCorrectAnswers: session.verifiedCorrectAnswers,
+    completed: Boolean(session.completed),
+    expiresAt: session.startedAt + 45 * 60 * 1000,
+    updatedAt: Date.now(),
+  };
+}
+
+function deserializeMatchSessionFromCloud(data: Record<string, unknown> | undefined): ServerMatchSession | null {
+  if (!data || typeof data.sessionId !== 'string' || typeof data.accountId !== 'string') return null;
+  try {
+    const rounds =
+      typeof data.roundsJson === 'string'
+        ? (JSON.parse(data.roundsJson) as MinigameRoundPayload[])
+        : [];
+    const scoredArr = Array.isArray(data.scoredRounds)
+      ? data.scoredRounds.map((x) => Number(x)).filter((x) => Number.isFinite(x))
+      : [];
+    return {
+      sessionId: data.sessionId,
+      accountId: data.accountId,
+      minigameType: (String(data.minigameType || 'two_clubs') as MinigameType),
+      mode: String(data.mode || 'solo'),
+      startedAt: Number(data.startedAt) || Date.now(),
+      rounds: Array.isArray(rounds) ? rounds : [],
+      scoredRounds: new Set<number>(scoredArr),
+      verifiedPlayerScore: Math.max(0, Number(data.verifiedPlayerScore) || 0),
+      verifiedCorrectAnswers: Math.max(0, Number(data.verifiedCorrectAnswers) || 0),
+      completed: Boolean(data.completed),
+    };
+  } catch {
+    return null;
+  }
+}
+
+export async function persistMatchSessionAdmin(session: ServerMatchSession): Promise<boolean> {
+  const adminApp = getFirebaseAdminApp();
+  if (!adminApp || !session?.sessionId) return false;
+  try {
+    const db = getFirestore(adminApp);
+    await db
+      .collection(BACKEND_MATCH_SESSIONS_COLLECTION)
+      .doc(session.sessionId)
+      .set(serializeMatchSessionForCloud(session), { merge: true });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function fetchMatchSessionAdmin(sessionId: string): Promise<ServerMatchSession | null> {
+  const cleanId = String(sessionId || '').trim();
+  if (!cleanId) return null;
+  const adminApp = getFirebaseAdminApp();
+  if (!adminApp) return null;
+  try {
+    const db = getFirestore(adminApp);
+    const snap = await db.collection(BACKEND_MATCH_SESSIONS_COLLECTION).doc(cleanId).get();
+    if (!snap.exists) return null;
+    return deserializeMatchSessionFromCloud(snap.data());
+  } catch {
+    return null;
+  }
+}
+
+export async function loadActiveMatchSessionsAdmin(
+  now: number = Date.now(),
+  limitCount = 500
+): Promise<ServerMatchSession[]> {
+  const adminApp = getFirebaseAdminApp();
+  if (!adminApp) return [];
+  try {
+    const db = getFirestore(adminApp);
+    const snap = await db
+      .collection(BACKEND_MATCH_SESSIONS_COLLECTION)
+      .where('expiresAt', '>', now)
+      .orderBy('expiresAt', 'desc')
+      .limit(Math.max(1, Math.min(1000, limitCount)))
+      .get();
+    const out: ServerMatchSession[] = [];
+    for (const doc of snap.docs) {
+      const parsed = deserializeMatchSessionFromCloud(doc.data());
+      if (parsed && !parsed.completed) {
+        out.push(parsed);
+      }
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+
+export function createFirebaseAccountCloudAdapter(): AccountCloudAdapter | null {
+  if (!isFirebaseAdminConfigured()) return null;
+  return {
+    loadAccounts: loadBackendAccountsAdmin,
+    getById: fetchBackendAccountByIdAdmin,
+    getByRecoveryCode: fetchBackendAccountByRecoveryCodeAdmin,
+    getByGoogleUid: fetchBackendAccountByGoogleUidAdmin,
+    saveAccount: async (record) => {
+      await persistBackendAccountAdmin(record);
+    },
+    deleteAccount: deleteBackendAccountAdmin,
+    claimPurchaseToken: claimVerifiedPurchaseTokenAdmin,
+  };
+}
+
+export function createFirebaseMatchSessionCloudAdapter(): MatchSessionCloudAdapter | null {
+  if (!isFirebaseAdminConfigured()) return null;
+  return {
+    loadActiveSessions: loadActiveMatchSessionsAdmin,
+    getSessionById: fetchMatchSessionAdmin,
+    saveSession: async (session) => {
+      await persistMatchSessionAdmin(session);
+    },
+  };
 }

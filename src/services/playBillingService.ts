@@ -7,6 +7,10 @@ import {
   GOOGLE_PLAY_PRODUCT_MAPPINGS,
   type GooglePlaySkuMapping,
 } from '../game/billingCatalog';
+import {
+  fetchBackendWithWakeupRetry,
+  resolveBackendApiUrl,
+} from './backendClient';
 
 export {
   findGooglePlaySkuByItemId,
@@ -14,17 +18,6 @@ export {
   GOOGLE_PLAY_PRODUCT_MAPPINGS,
   type GooglePlaySkuMapping,
 };
-
-function resolveBackendApiUrl(path: string): string {
-  try {
-    const env = (import.meta as unknown as { env?: Record<string, string | undefined> }).env;
-    const base = env?.VITE_API_BASE_URL?.trim().replace(/\/+$/, '');
-    if (base) return `${base}${path}`;
-  } catch {
-    // ignore in Node
-  }
-  return path;
-}
 
 function readLocalAccountSessionToken(accountId: string): string | null {
   if (typeof window === 'undefined' || !accountId) return null;
@@ -161,18 +154,27 @@ export async function verifyGooglePlayPurchaseWithServer(params: {
     if (token) {
       headers['X-Account-Token'] = token;
     }
-    const res = await fetcher(resolveBackendApiUrl('/api/billing/verify-google-play'), {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        accountId: params.accountId,
-        itemId: params.itemId,
-        productId: params.productId,
-        purchaseToken: params.purchaseToken,
-        orderId: params.orderId,
-        isRestore: Boolean(params.isRestore),
-      }),
-    });
+    const res = await fetchBackendWithWakeupRetry(
+      '/api/billing/verify-google-play',
+      {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          accountId: params.accountId,
+          itemId: params.itemId,
+          productId: params.productId,
+          purchaseToken: params.purchaseToken,
+          orderId: params.orderId,
+          isRestore: Boolean(params.isRestore),
+        }),
+      },
+      {
+        fetchImpl: fetcher,
+        timeoutMs: 20000,
+        retries: 2,
+        retryDelayMs: 2000,
+      }
+    );
     const data = (await res.json().catch(() => null)) as {
       ok?: boolean;
       verified?: boolean;

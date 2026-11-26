@@ -28,6 +28,7 @@ import {
   TOURNAMENT_OPEN_PRIZE_POINTS,
   getTournamentMatchForUser,
 } from '../game/tournamentEngine';
+import { fetchBackendWithWakeupRetry } from '../services/backendClient';
 import { formatPoints } from '../game/retentionEngine';
 import { PlayerAvatar } from './PlayerAvatar';
 import { sounds } from '../utils/audio';
@@ -106,7 +107,11 @@ export const TournamentModal: React.FC<TournamentModalProps> = ({
     if (!isOpen || !friendLobby || friendLobby.status === 'started') return;
     const interval = setInterval(async () => {
       try {
-        const res = await fetch(`/api/tournaments/${friendLobby.code}`);
+        const res = await fetchBackendWithWakeupRetry(
+          `/api/tournaments/${friendLobby.code}`,
+          {},
+          { timeoutMs: 10000, retries: 1 }
+        );
         if (res.ok) {
           const data = await res.json();
           if (data?.tournament) {
@@ -149,18 +154,22 @@ export const TournamentModal: React.FC<TournamentModalProps> = ({
 
     setBusy(true);
     try {
-      const res = await fetch('/api/tournaments', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          hostId: playerProfile.id,
-          hostName: playerProfile.name,
-          hostAvatar: playerProfile.avatar,
-          minigameType: selectedMinigame,
-          entryFeeCoins: stake.entryCoins,
-          title: `${playerProfile.name} Turnuvası`,
-        }),
-      });
+      const res = await fetchBackendWithWakeupRetry(
+        '/api/tournaments',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            hostId: playerProfile.id,
+            hostName: playerProfile.name,
+            hostAvatar: playerProfile.avatar,
+            minigameType: selectedMinigame,
+            entryFeeCoins: stake.entryCoins,
+            title: `${playerProfile.name} Turnuvası`,
+          }),
+        },
+        { timeoutMs: 18000, retries: 2, retryDelayMs: 1800 }
+      );
       const data = await res.json();
       if (!res.ok || !data?.tournament) {
         showError(data?.error || 'Turnuva odası oluşturulamadı.');
@@ -190,7 +199,11 @@ export const TournamentModal: React.FC<TournamentModalProps> = ({
     setErrorMsg(null);
     setBusy(true);
     try {
-      const infoRes = await fetch(`/api/tournaments/${cleanCode}`);
+      const infoRes = await fetchBackendWithWakeupRetry(
+        `/api/tournaments/${cleanCode}`,
+        {},
+        { timeoutMs: 15000, retries: 2, retryDelayMs: 1800 }
+      );
       const infoData = await infoRes.json();
       if (!infoRes.ok || !infoData?.tournament) {
         showError(infoData?.error || 'Turnuva kodu bulunamadı.');
@@ -211,15 +224,19 @@ export const TournamentModal: React.FC<TournamentModalProps> = ({
         }
       }
 
-      const joinRes = await fetch(`/api/tournaments/${cleanCode}/join`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          playerId: playerProfile.id,
-          name: playerProfile.name,
-          avatar: playerProfile.avatar,
-        }),
-      });
+      const joinRes = await fetchBackendWithWakeupRetry(
+        `/api/tournaments/${cleanCode}/join`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            playerId: playerProfile.id,
+            name: playerProfile.name,
+            avatar: playerProfile.avatar,
+          }),
+        },
+        { timeoutMs: 15000, retries: 2, retryDelayMs: 1800 }
+      );
       const joinData = await joinRes.json();
       if (!joinRes.ok || !joinData?.tournament) {
         showError(joinData?.error || 'Turnuvaya katılınamadı.');
@@ -247,7 +264,11 @@ export const TournamentModal: React.FC<TournamentModalProps> = ({
     setErrorMsg(null);
     setBusy(true);
     try {
-      await fetch(`/api/tournaments/${friendLobby.code}/start`, { method: 'POST' });
+      await fetchBackendWithWakeupRetry(
+        `/api/tournaments/${friendLobby.code}/start`,
+        { method: 'POST' },
+        { timeoutMs: 12000, retries: 1 }
+      );
     } catch {
       // Proceed locally even if status update fails
     } finally {

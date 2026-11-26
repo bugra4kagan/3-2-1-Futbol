@@ -1,4 +1,5 @@
 import express from 'express';
+import fs from 'node:fs';
 import http from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
 import path from 'path';
@@ -32,7 +33,10 @@ import {
 import { verifyGooglePlayProductReceipt } from './src/game/googlePlayVerifier.js';
 import {
   claimLegacyRtdbLeaderboardAdmin,
+  createFirebaseAccountCloudAdapter,
+  createFirebaseMatchSessionCloudAdapter,
   deleteUserFirebaseRecordsAdmin,
+  isFirebaseAdminConfigured,
   syncAuthoritativeUserStateAdmin,
   verifyFirebaseBearerToken,
   verifyOnlineRoomOutcomeAdmin,
@@ -50,10 +54,60 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const server = http.createServer(app);
-const port = process.env.PORT || 3000;
+const port = Number(process.env.PORT) || 3000;
 
+app.set('trust proxy', 1);
 app.disable('x-powered-by');
 app.use(applySecurityHeaders);
+
+function isAllowedCorsOrigin(origin: string | undefined): boolean {
+  if (!origin) return true;
+  const normalized = origin.trim().replace(/\/+$/, '');
+  const staticAllowed = new Set<string>([
+    'http://localhost',
+    'https://localhost',
+    'capacitor://localhost',
+    'ionic://localhost',
+    'https://bugra4kagan.github.io',
+  ]);
+  if (process.env.APP_URL?.trim()) {
+    try {
+      staticAllowed.add(new URL(process.env.APP_URL.trim()).origin);
+    } catch {
+      // ignore invalid APP_URL
+    }
+  }
+  const extra = (process.env.ALLOWED_ORIGINS || '')
+    .split(',')
+    .map((s) => s.trim().replace(/\/+$/, ''))
+    .filter(Boolean);
+  for (const item of extra) {
+    if (item === '*') return true;
+    staticAllowed.add(item);
+  }
+  if (staticAllowed.has(normalized)) return true;
+  if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(normalized)) return true;
+  return false;
+}
+
+app.use((req, res, next) => {
+  const origin = req.header('origin');
+  if (origin && isAllowedCorsOrigin(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Vary', 'Origin');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.setHeader(
+      'Access-Control-Allow-Headers',
+      'Content-Type, Authorization, X-Account-Token, X-Firebase-Id-Token, X-Firebase-AppCheck'
+    );
+    res.setHeader('Access-Control-Max-Age', '86400');
+  }
+  if (req.method === 'OPTIONS') {
+    return res.status(204).end();
+  }
+  next();
+});
+
 app.use(express.json({ limit: '512kb' }));
 
 const recoverLimiter = new SlidingRateLimiter(10, 5 * 60 * 1000);
@@ -94,9 +148,66 @@ function enforceRateLimit(
   return true;
 }
 
+const REQUIRE_CLOUD_PERSISTENCE =
+  process.env.NODE_ENV === 'production' || process.env.REQUIRE_CLOUD_PERSISTENCE === 'true';
+
+function isUnsafeLocalStorageBlocked(): boolean {
+  return REQUIRE_CLOUD_PERSISTENCE && !isFirebaseAdminConfigured();
+}
+
+const CLOUD_PERSISTENCE_PROTECTED_PREFIXES = [
+  '/api/accounts/register',
+  '/api/accounts/sync',
+  '/api/accounts/recover',
+  '/api/accounts/by-id',
+  '/api/leaderboard/sync',
+  '/api/matches',
+  '/api/store/spend-coins',
+  '/api/migration/claim-legacy-rtdb',
+  '/api/billing/verify-google-play',
+];
+
 // API Endpoints
+app.get('/healthz', (_req, res) => {
+  const blocked = isUnsafeLocalStorageBlocked();
+  res.status(200).json({
+    ok: true,
+    status: blocked ? 'degraded_missing_firebase_admin' : 'ok',
+    uptimeSec: Math.round(process.uptime()),
+    firebaseAdminConfigured: isFirebaseAdminConfigured(),
+    cloudPersistenceReady: !blocked,
+    unsafeLocalStorageBlocked: blocked,
+    localDiskFallbackEnabled: accountStore.hasLocalDiskPersistence(),
+  });
+});
+
 app.get('/api/health', (_req, res) => {
-  res.json({ status: 'ok', time: new Date().toISOString() });
+  const blocked = isUnsafeLocalStorageBlocked();
+  res.json({
+    ok: true,
+    status: blocked ? 'degraded_missing_firebase_admin' : 'ok',
+    time: new Date().toISOString(),
+    uptimeSec: Math.round(process.uptime()),
+    firebaseAdminConfigured: isFirebaseAdminConfigured(),
+    cloudPersistenceReady: !blocked,
+    unsafeLocalStorageBlocked: blocked,
+    localDiskFallbackEnabled: accountStore.hasLocalDiskPersistence(),
+  });
+});
+
+app.use((req, res, next) => {
+  if (
+    isUnsafeLocalStorageBlocked() &&
+    CLOUD_PERSISTENCE_PROTECTED_PREFIXES.some((prefix) => req.path.startsWith(prefix))
+  ) {
+    return res.status(503).json({
+      ok: false,
+      code: 'CLOUD_PERSISTENCE_UNAVAILABLE',
+      error:
+        'Firebase Admin bağlantısı eksik olduğu için güvensiz yerel veri depolaması engellendi.',
+    });
+  }
+  next();
 });
 
 type LiveLeaderboardRecord = PublicPlayerProfile;
@@ -122,10 +233,31 @@ function sanitizeMinigameCounts(raw: unknown): Record<MinigameType, number> {
 
 const liveLeaderboard = new Map<string, LiveLeaderboardRecord>();
 const accountStore = new AccountStore();
+accountStore.setCloudAdapter(createFirebaseAccountCloudAdapter());
+serverMatchLedger.setCloudAdapter(createFirebaseMatchSessionCloudAdapter());
 
 // Seed leaderboard from persisted accounts on server startup
 for (const acc of accountStore.listAll()) {
   liveLeaderboard.set(acc.accountId, buildPublicProfileFromRecord(acc));
+}
+
+async function hydrateBackendStateFromCloud(): Promise<void> {
+  try {
+    const [restoredAccounts, restoredSessions] = await Promise.all([
+      accountStore.hydrateFromCloud(2000),
+      serverMatchLedger.hydrateFromCloud(500),
+    ]);
+    for (const acc of accountStore.listAll()) {
+      liveLeaderboard.set(acc.accountId, buildPublicProfileFromRecord(acc));
+    }
+    if (restoredAccounts > 0 || restoredSessions > 0) {
+      console.log(
+        `[CloudHydration] Restored ${restoredAccounts} accounts and ${restoredSessions} active match sessions from Firestore.`
+      );
+    }
+  } catch (err) {
+    console.warn('[CloudHydration] Non-fatal hydration error:', err);
+  }
 }
 
 function sanitizeLeaderboardEntry(rec: LiveLeaderboardRecord): LiveLeaderboardRecord {
@@ -156,9 +288,9 @@ app.get('/api/accounts/suggest-name', (_req, res) => {
   res.json({ ok: true, name: accountStore.suggestRandomStarterName() });
 });
 
-app.get('/api/accounts/by-id/:accountId', (req, res) => {
+app.get('/api/accounts/by-id/:accountId', async (req, res) => {
   const accountId = String(req.params.accountId || '').trim();
-  const rec = accountStore.getByAccountId(accountId);
+  const rec = await accountStore.resolveByAccountIdAsync(accountId);
   if (!rec) {
     return res.json({ ok: false, found: false });
   }
@@ -179,13 +311,13 @@ app.get('/api/accounts/by-id/:accountId', (req, res) => {
   });
 });
 
-app.delete('/api/accounts/by-id/:accountId', (req, res) => {
+app.delete('/api/accounts/by-id/:accountId', async (req, res) => {
   if (!enforceRateLimit(accountWriteLimiter, req, res)) return;
   const accountId = String(req.params.accountId || '').trim();
   if (!accountId) {
     return res.status(400).json({ ok: false, error: 'Geçersiz hesap kimliği.' });
   }
-  const existing = accountStore.getByAccountId(accountId);
+  const existing = await accountStore.resolveByAccountIdAsync(accountId);
   if (!existing) {
     return res.json({ ok: true, deleted: false });
   }
@@ -193,19 +325,19 @@ app.delete('/api/accounts/by-id/:accountId', (req, res) => {
   if (!accountStore.verifyAccountSession(accountId, token)) {
     return res.status(401).json({ ok: false, error: 'Bu hesabı silme yetkin yok.' });
   }
-  const deleted = accountStore.deleteByAccountId(accountId);
+  const deleted = await accountStore.deleteByAccountIdAsync(accountId);
   liveLeaderboard.delete(accountId);
   res.json({ ok: true, deleted });
 });
 
-app.post('/api/accounts/register', (req, res) => {
+app.post('/api/accounts/register', async (req, res) => {
   if (!enforceRateLimit(accountWriteLimiter, req, res)) return;
   const { accountId, profile, progression, googleUid } = req.body || {};
   if (!accountId || !profile?.name || !progression) {
     return res.status(400).json({ ok: false, error: 'Hesap bilgileri eksik.' });
   }
   const cleanId = String(accountId).trim().slice(0, 64);
-  const existing = accountStore.getByAccountId(cleanId);
+  const existing = await accountStore.resolveByAccountIdAsync(cleanId);
   if (existing) {
     const token = readAccountToken(req);
     const tokenOk = accountStore.verifyAccountSession(cleanId, token);
@@ -245,14 +377,14 @@ app.post('/api/accounts/register', (req, res) => {
   });
 });
 
-app.post('/api/accounts/sync', (req, res) => {
+app.post('/api/accounts/sync', async (req, res) => {
   if (!enforceRateLimit(accountWriteLimiter, req, res)) return;
   const { accountId, profile, progression, googleUid } = req.body || {};
   if (!accountId || !progression) {
     return res.status(400).json({ ok: false, error: 'Senkronizasyon verisi eksik.' });
   }
   const cleanId = String(accountId).trim().slice(0, 64);
-  const existing = accountStore.getByAccountId(cleanId);
+  const existing = await accountStore.resolveByAccountIdAsync(cleanId);
   if (existing) {
     const token = readAccountToken(req);
     const tokenOk = accountStore.verifyAccountSession(cleanId, token);
@@ -280,10 +412,10 @@ app.post('/api/accounts/sync', (req, res) => {
   });
 });
 
-app.post('/api/accounts/recover', (req, res) => {
+app.post('/api/accounts/recover', async (req, res) => {
   if (!enforceRateLimit(recoverLimiter, req, res)) return;
   const { recoveryCode, username } = req.body || {};
-  const result = accountStore.recoverByCode(
+  const result = await accountStore.recoverByCodeAsync(
     String(recoveryCode || ''),
     username ? String(username) : undefined
   );
@@ -310,7 +442,7 @@ app.get('/api/leaderboard', (_req, res) => {
   res.json({ players, entries: players });
 });
 
-app.post('/api/leaderboard/sync', (req, res) => {
+app.post('/api/leaderboard/sync', async (req, res) => {
   if (!enforceRateLimit(accountWriteLimiter, req, res)) return;
   const body = req.body || {};
   const { id, friendCode, name, avatar, weeklyPoints, totalPoints, subtitle, hasCrown } = body;
@@ -318,7 +450,7 @@ app.post('/api/leaderboard/sync', (req, res) => {
     return res.status(400).json({ error: 'Missing player identity' });
   }
   const cleanId = String(id).trim().slice(0, 64);
-  const storedAccount = accountStore.getByAccountId(cleanId);
+  const storedAccount = await accountStore.resolveByAccountIdAsync(cleanId);
   if (!storedAccount && process.env.ALLOW_LEGACY_UNLINKED_LEADERBOARD_SYNC !== 'true') {
     return res.status(401).json({
       ok: false,
@@ -549,14 +681,14 @@ app.post('/api/validate', (req, res) => {
 });
 
 // ── Sunucu Doğrulamalı Maç Oturumu & Ödül İşlemleri ──
-app.post('/api/matches/start', (req, res) => {
+app.post('/api/matches/start', async (req, res) => {
   if (!enforceRateLimit(accountWriteLimiter, req, res)) return;
   const { accountId, minigameType, mode } = req.body || {};
   const cleanId = String(accountId || '').trim().slice(0, 64);
   if (!cleanId) {
     return res.status(400).json({ ok: false, error: 'Geçersiz oyuncu kimliği.' });
   }
-  const existing = accountStore.getByAccountId(cleanId);
+  const existing = await accountStore.resolveByAccountIdAsync(cleanId);
   if (existing && !accountStore.verifyAccountSession(cleanId, readAccountToken(req))) {
     return res.status(401).json({ ok: false, error: 'Hesap oturumu doğrulanamadı.' });
   }
@@ -573,14 +705,15 @@ app.post('/api/matches/start', (req, res) => {
   });
 });
 
-app.post('/api/matches/answer', (req, res) => {
+app.post('/api/matches/answer', async (req, res) => {
   if (!enforceRateLimit(accountWriteLimiter, req, res)) return;
   const { accountId, matchSessionId, roundIndex, answer, cellPos } = req.body || {};
   const cleanId = String(accountId || '').trim().slice(0, 64);
-  const existing = accountStore.getByAccountId(cleanId);
+  const existing = await accountStore.resolveByAccountIdAsync(cleanId);
   if (existing && !accountStore.verifyAccountSession(cleanId, readAccountToken(req))) {
     return res.status(401).json({ ok: false, error: 'Hesap oturumu doğrulanamadı.' });
   }
+  await serverMatchLedger.resolveSessionAsync(String(matchSessionId || ''));
   const ansRes = serverMatchLedger.submitVerifiedAnswer({
     sessionId: String(matchSessionId || ''),
     accountId: cleanId,
@@ -605,7 +738,7 @@ app.post('/api/matches/complete', async (req, res) => {
   if (!enforceRateLimit(accountWriteLimiter, req, res)) return;
   const { accountId, matchSessionId, roomCode } = req.body || {};
   const cleanId = String(accountId || '').trim().slice(0, 64);
-  const existing = accountStore.getByAccountId(cleanId);
+  const existing = await accountStore.resolveByAccountIdAsync(cleanId);
   if (!existing) {
     return res.status(404).json({ ok: false, error: 'Hesap kaydı bulunamadı.' });
   }
@@ -613,7 +746,10 @@ app.post('/api/matches/complete', async (req, res) => {
     return res.status(401).json({ ok: false, error: 'Hesap oturumu doğrulanamadı.' });
   }
 
+  await serverMatchLedger.resolveSessionAsync(String(matchSessionId || ''));
+
   let roomVerifiedScores: { playerScore: number; opponentScore: number } | undefined;
+  let roomClaimKey: string | undefined;
   const firebaseAuthToken = req.header('x-firebase-id-token');
   const verifiedUser = await verifyFirebaseBearerToken(firebaseAuthToken);
 
@@ -624,8 +760,9 @@ app.post('/api/matches/complete', async (req, res) => {
         error: 'Çevrimiçi maç sonucu doğrulaması için geçerli Firebase kimlik doğrulaması gerekir.',
       });
     }
+    const cleanRoomCode = String(roomCode).trim().toUpperCase();
     const roomCheck = await verifyOnlineRoomOutcomeAdmin({
-      roomCode: String(roomCode),
+      roomCode: cleanRoomCode,
       uid: verifiedUser.uid,
       playerId: cleanId,
     });
@@ -636,6 +773,7 @@ app.post('/api/matches/complete', async (req, res) => {
       playerScore: roomCheck.playerScore,
       opponentScore: roomCheck.opponentScore,
     };
+    roomClaimKey = `${cleanRoomCode}:${roomCheck.matchSeq}:${cleanId}`;
   }
 
   const hasMult = Boolean(
@@ -646,6 +784,7 @@ app.post('/api/matches/complete', async (req, res) => {
     accountId: cleanId,
     hasMultiplier2x: hasMult,
     roomVerifiedScores,
+    roomClaimKey,
   });
 
   if (!outcome.ok) {
@@ -685,6 +824,7 @@ app.post('/api/store/spend-coins', async (req, res) => {
   if (!enforceRateLimit(accountWriteLimiter, req, res)) return;
   const { accountId, itemId } = req.body || {};
   const cleanId = String(accountId || '').trim().slice(0, 64);
+  await accountStore.resolveByAccountIdAsync(cleanId);
   if (!accountStore.verifyAccountSession(cleanId, readAccountToken(req))) {
     return res.status(401).json({ ok: false, error: 'Hesap oturumu doğrulanamadı.' });
   }
@@ -713,6 +853,7 @@ app.post('/api/migration/claim-legacy-rtdb', async (req, res) => {
   if (!cleanId || !playerKey) {
     return res.status(400).json({ ok: false, error: 'Eksik geçiş parametresi.' });
   }
+  await accountStore.resolveByAccountIdAsync(cleanId);
   if (!accountStore.verifyAccountSession(cleanId, readAccountToken(req))) {
     return res.status(401).json({ ok: false, error: 'Hesap oturumu doğrulanamadı.' });
   }
@@ -751,7 +892,7 @@ app.post('/api/billing/verify-google-play', async (req, res) => {
     });
   }
 
-  const existing = accountStore.getByAccountId(cleanId);
+  const existing = await accountStore.resolveByAccountIdAsync(cleanId);
   if (existing) {
     const token = readAccountToken(req);
     if (!accountStore.verifyAccountSession(cleanId, token)) {
@@ -787,7 +928,7 @@ app.post('/api/billing/verify-google-play', async (req, res) => {
   }
 
   if (existing) {
-    const applied = accountStore.applyVerifiedPurchase({
+    const applied = await accountStore.applyVerifiedPurchaseAsync({
       accountId: cleanId,
       itemId: sku.itemId,
       productId: sku.productId,
@@ -1391,6 +1532,12 @@ wss.on('connection', (rawWs) => {
 
 // Vite Middleware integration
 async function setupApp() {
+  const hydrationPromise = hydrateBackendStateFromCloud();
+  await Promise.race([
+    hydrationPromise,
+    new Promise((resolve) => setTimeout(resolve, 4000)),
+  ]);
+
   if (process.env.NODE_ENV !== 'production') {
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
@@ -1399,15 +1546,56 @@ async function setupApp() {
     });
     app.use(vite.middlewares);
   } else {
-    app.use(express.static(path.join(__dirname, 'dist')));
-    app.get('*', (_req, res) => {
-      res.sendFile(path.join(__dirname, 'dist', 'index.html'));
-    });
+    const distDir = path.join(__dirname, 'dist');
+    const indexHtmlPath = path.join(distDir, 'index.html');
+    if (fs.existsSync(indexHtmlPath)) {
+      app.use(express.static(distDir));
+      app.get('*', (_req, res) => {
+        res.sendFile(indexHtmlPath);
+      });
+    } else {
+      app.get('/', (_req, res) => {
+        res.status(200).json({
+          ok: true,
+          service: '3-2-1-futbol-backend',
+          status: 'ok',
+          health: '/healthz',
+        });
+      });
+      app.use((_req, res) => {
+        res.status(404).json({ ok: false, error: 'Endpoint bulunamadı.' });
+      });
+    }
   }
 
-  server.listen(port, () => {
-    console.log(`3-2-1 Football Challenge server listening on port ${port}`);
+  server.keepAliveTimeout = 65000;
+  server.headersTimeout = 66000;
+
+  server.listen(port, '0.0.0.0', () => {
+    console.log(`3-2-1 Football Challenge server listening on 0.0.0.0:${port}`);
   });
 }
+
+let shuttingDown = false;
+async function handleGracefulShutdown(signal: string): Promise<void> {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`[Shutdown] Received ${signal}, flushing cloud writes...`);
+  try {
+    await Promise.allSettled([
+      accountStore.flushCloudWrites(),
+      serverMatchLedger.flushCloudWrites(),
+    ]);
+  } catch {
+    // ignore flush errors on shutdown
+  }
+  server.close(() => {
+    process.exit(0);
+  });
+  setTimeout(() => process.exit(0), 3000).unref();
+}
+
+process.on('SIGTERM', () => void handleGracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => void handleGracefulShutdown('SIGINT'));
 
 setupApp().catch(console.error);

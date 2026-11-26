@@ -21,6 +21,14 @@ import {
   serverTimestamp,
 } from 'firebase/firestore';
 import { ref, get, set, remove } from 'firebase/database';
+import { AccountStore } from '../src/game/accountStore';
+import {
+  createFirebaseAccountCloudAdapter,
+  createFirebaseMatchSessionCloudAdapter,
+  verifyOnlineRoomOutcomeAdmin,
+} from '../src/game/firebaseAdminService';
+import { ServerMatchLedger } from '../src/game/serverSecurity';
+import { createInitialProgression } from '../src/game/retentionEngine';
 
 const PROJECT_ID = 'demo-futbol321';
 
@@ -503,4 +511,135 @@ test('RTDB Leaderboard Rules block ALL client writes & unauthorized legacy claim
       updatedAt: Date.now(),
     })
   );
+});
+
+test('Firebase Admin Firestore Emulator persists accounts, coins, purchases & online match verification across restarts while denying direct client access', async () => {
+  const accountAdapter = createFirebaseAccountCloudAdapter();
+  const matchAdapter = createFirebaseMatchSessionCloudAdapter();
+  assert.ok(accountAdapter, 'Firestore Emulator Admin AccountCloudAdapter aktif olmalı');
+  assert.ok(matchAdapter, 'Firestore Emulator Admin MatchSessionCloudAdapter aktif olmalı');
+
+  const store1 = new AccountStore(null);
+  store1.setCloudAdapter(accountAdapter);
+  const ledger1 = new ServerMatchLedger();
+  ledger1.setCloudAdapter(matchAdapter);
+
+  const initProg = createInitialProgression('acc_emu_1');
+  const reg = store1.registerOrUpdate({
+    accountId: 'acc_emu_1',
+    googleUid: 'uid_alice',
+    profile: { id: 'acc_emu_1', name: 'EmulatorKaptan', avatar: 'avatar_classic_ball', score: 0 },
+    progression: initProg,
+  });
+  assert.equal(reg.ok, true);
+  if (!reg.ok) return;
+
+  const sessionToken = store1.issueSessionTokenForAccount(reg.account);
+  const session = ledger1.issueSession({
+    accountId: 'acc_emu_1',
+    minigameType: 'two_clubs',
+    mode: 'online_room',
+    now: Date.now() - 10_000,
+  });
+
+  // Seed finished authoritative room outcome in Firestore Emulator
+  await testEnv.withSecurityRulesDisabled(async (adminCtx) => {
+    await setDoc(doc(adminCtx.firestore(), 'rooms', 'EMU999'), {
+      code: 'EMU999',
+      hostId: 'acc_emu_1',
+      hostUid: 'uid_alice',
+      guestId: 'acc_emu_2',
+      guestUid: 'uid_bob',
+      memberUids: ['uid_alice', 'uid_bob'],
+      state: 'game_over',
+      matchSeq: 1,
+      scores: { acc_emu_1: 4, acc_emu_2: 2 },
+    });
+  });
+
+  const roomOutcome = await verifyOnlineRoomOutcomeAdmin({
+    roomCode: 'EMU999',
+    uid: 'uid_alice',
+    playerId: 'acc_emu_1',
+  });
+  assert.equal(roomOutcome.ok, true);
+  if (!roomOutcome.ok) return;
+  assert.equal(roomOutcome.playerScore, 4);
+  assert.equal(roomOutcome.opponentScore, 2);
+
+  const reward = ledger1.consumeVerifiedMatchSession({
+    sessionId: session.sessionId,
+    accountId: 'acc_emu_1',
+    hasMultiplier2x: false,
+    roomVerifiedScores: {
+      playerScore: roomOutcome.playerScore,
+      opponentScore: roomOutcome.opponentScore,
+    },
+    roomClaimKey: `EMU999:${roomOutcome.matchSeq}:acc_emu_1`,
+    minDurationMs: 1000,
+    now: Date.now(),
+  });
+  assert.equal(reward.ok, true);
+  if (!reward.ok) return;
+
+  store1.recordVerifiedMatchReward({
+    accountId: 'acc_emu_1',
+    coinsAwarded: reward.coinsAwarded,
+    pointsAwarded: reward.pointsAwarded,
+    won: reward.won,
+  });
+  const buy = await store1.applyVerifiedPurchaseAsync({
+    accountId: 'acc_emu_1',
+    itemId: 'store_ad_free',
+    productId: 'futbol_remove_ads',
+    purchaseToken: 'emu_gp_token_unique_12345',
+    orderId: 'GPA.EMU-0001',
+    grantAdFree: true,
+  });
+  assert.equal(buy.ok, true);
+  await store1.flushCloudWrites();
+  await ledger1.flushCloudWrites();
+
+  // NEGATIVE: Clients CANNOT read or write server-only backend_* collections directly
+  const aliceCtx = testEnv.authenticatedContext('uid_alice', {
+    email: 'alice@example.com',
+    email_verified: true,
+  });
+  await assertFails(getDoc(doc(aliceCtx.firestore(), 'backend_accounts', 'acc_emu_1')));
+  await assertFails(
+    setDoc(doc(aliceCtx.firestore(), 'backend_accounts', 'acc_emu_fake'), { coins: 999999 })
+  );
+  await assertFails(
+    setDoc(doc(aliceCtx.firestore(), 'backend_purchases', 'fake_hash'), { accountId: 'acc_emu_1' })
+  );
+  await assertFails(getDoc(doc(aliceCtx.firestore(), 'backend_match_sessions', session.sessionId)));
+
+  // Simulate full Render container wipe & restart (zero local disk, empty RAM)
+  const storeAfterRestart = new AccountStore(null);
+  storeAfterRestart.setCloudAdapter(accountAdapter);
+  const restoredCount = await storeAfterRestart.hydrateFromCloud();
+  assert.equal(restoredCount, 1);
+
+  const restoredAccount = await storeAfterRestart.resolveByAccountIdAsync('acc_emu_1');
+  assert.ok(restoredAccount);
+  assert.equal(restoredAccount.progression.coins, initProg.coins + reward.coinsAwarded);
+  assert.equal(restoredAccount.progression.weeklyPoints, initProg.weeklyPoints + reward.pointsAwarded);
+  assert.equal(restoredAccount.progression.adFree, true);
+  assert.equal(storeAfterRestart.verifyAccountSession('acc_emu_1', sessionToken), true);
+
+  // Replaying same Play Billing purchase token on second account MUST fail even after restart
+  storeAfterRestart.registerOrUpdate({
+    accountId: 'acc_emu_2',
+    googleUid: 'uid_bob',
+    profile: { id: 'acc_emu_2', name: 'EmulatorBob', avatar: 'avatar_classic_ball', score: 0 },
+    progression: createInitialProgression('acc_emu_2'),
+  });
+  const replayRes = await storeAfterRestart.applyVerifiedPurchaseAsync({
+    accountId: 'acc_emu_2',
+    itemId: 'store_ad_free',
+    productId: 'futbol_remove_ads',
+    purchaseToken: 'emu_gp_token_unique_12345',
+    grantAdFree: true,
+  });
+  assert.equal(replayRes.ok, false);
 });

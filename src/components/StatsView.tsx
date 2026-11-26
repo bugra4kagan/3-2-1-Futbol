@@ -10,6 +10,7 @@ import { buildLeagueStandings, formatPoints } from '../game/retentionEngine';
 import { MINIGAME_OPTIONS } from '../game/minigameEngine';
 import { sanitizePublicDisplayName } from '../game/usernameFilter';
 import { PlayerAvatar } from './PlayerAvatar';
+import { fetchBackendWithWakeupRetry } from '../services/backendClient';
 
 interface StatsViewProps {
   playerProfile: PlayerProfile;
@@ -50,7 +51,11 @@ export const StatsView: React.FC<StatsViewProps> = ({
     setIsLookingUp(true);
     const timer = setTimeout(async () => {
       try {
-        const res = await fetch(`/api/profiles?q=${encodeURIComponent(q)}&limit=6`);
+        const res = await fetchBackendWithWakeupRetry(
+          `/api/profiles?q=${encodeURIComponent(q)}&limit=6`,
+          {},
+          { timeoutMs: 12000, retries: 1 }
+        );
         if (res.ok && !cancelled) {
           const data = await res.json();
           if (Array.isArray(data?.profiles)) {

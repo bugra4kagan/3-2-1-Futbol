@@ -26,6 +26,7 @@ import {
 } from '../game/retentionEngine';
 import { sanitizePublicDisplayName } from '../game/usernameFilter';
 import { PlayerAvatar } from './PlayerAvatar';
+import { fetchBackendWithWakeupRetry } from '../services/backendClient';
 
 type InspectTarget = {
   id: string;
@@ -84,7 +85,11 @@ export const FriendsView: React.FC<FriendsViewProps> = ({
     setIsSearchingProfiles(true);
     const timer = setTimeout(async () => {
       try {
-        const res = await fetch(`/api/profiles?q=${encodeURIComponent(q)}&limit=8`);
+        const res = await fetchBackendWithWakeupRetry(
+          `/api/profiles?q=${encodeURIComponent(q)}&limit=8`,
+          {},
+          { timeoutMs: 12000, retries: 1 }
+        );
         if (res.ok && !cancelled) {
           const data = await res.json();
           if (Array.isArray(data?.profiles)) {

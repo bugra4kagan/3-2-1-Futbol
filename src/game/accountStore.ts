@@ -98,6 +98,22 @@ export interface PersistentAccountRecord {
   updatedAt: number;
 }
 
+export interface AccountCloudAdapter {
+  loadAccounts: (limitCount?: number) => Promise<PersistentAccountRecord[]>;
+  getById: (accountId: string) => Promise<PersistentAccountRecord | null>;
+  getByRecoveryCode: (normalizedCode: string) => Promise<PersistentAccountRecord | null>;
+  getByGoogleUid: (googleUid: string) => Promise<PersistentAccountRecord | null>;
+  saveAccount: (record: PersistentAccountRecord) => Promise<void>;
+  deleteAccount: (accountId: string) => Promise<boolean>;
+  claimPurchaseToken?: (params: {
+    purchaseToken: string;
+    accountId: string;
+    productId: string;
+    itemId: string;
+    orderId?: string;
+  }) => Promise<{ ok: boolean; alreadyOwnedBySameAccount?: boolean; conflict?: boolean }>;
+}
+
 export interface UsernameCheckResponse {
   ok: boolean;
   available: boolean;
@@ -107,6 +123,13 @@ export interface UsernameCheckResponse {
   suggestions?: string[];
 }
 
+export function shouldUseLocalDiskFallback(env: NodeJS.ProcessEnv = process.env): boolean {
+  if (env.NODE_ENV === 'production') return false;
+  if (env.DISABLE_LOCAL_ACCOUNT_DISK_FALLBACK === 'true') return false;
+  if (env.REQUIRE_CLOUD_PERSISTENCE === 'true') return false;
+  return true;
+}
+
 export class AccountStore {
   private readonly filePath: string | null;
   private readonly byId = new Map<string, PersistentAccountRecord>();
@@ -114,9 +137,19 @@ export class AccountStore {
   private readonly byRecoveryCode = new Map<string, PersistentAccountRecord>();
   private readonly byGoogleUid = new Map<string, PersistentAccountRecord>();
 
-  constructor(filePath: string | null = path.resolve(process.cwd(), '.data', 'accounts.json')) {
-    this.filePath = filePath;
+  constructor(filePath?: string | null) {
+    if (filePath === undefined) {
+      this.filePath = shouldUseLocalDiskFallback()
+        ? path.resolve(process.cwd(), '.data', 'accounts.json')
+        : null;
+    } else {
+      this.filePath = filePath;
+    }
     this.loadFromDisk();
+  }
+
+  public hasLocalDiskPersistence(): boolean {
+    return this.filePath !== null;
   }
 
   private loadFromDisk(): void {
@@ -172,6 +205,48 @@ export class AccountStore {
 
   public suggestRandomStarterName(): string {
     return generateRandomUniqueStarterName(this.getTakenKeysSet());
+  }
+
+  private cloudAdapter: AccountCloudAdapter | null = null;
+  private readonly pendingCloudWrites = new Map<string, Promise<void>>();
+
+  public setCloudAdapter(adapter: AccountCloudAdapter | null): void {
+    this.cloudAdapter = adapter;
+  }
+
+  private queueCloudAccountSave(record: PersistentAccountRecord): void {
+    if (!this.cloudAdapter) return;
+    const adapter = this.cloudAdapter;
+    const prev = this.pendingCloudWrites.get(record.accountId) || Promise.resolve();
+    const next = prev
+      .catch(() => {})
+      .then(() => adapter.saveAccount(record))
+      .catch(() => {});
+    this.pendingCloudWrites.set(record.accountId, next);
+  }
+
+  public async flushCloudWrites(): Promise<void> {
+    if (this.pendingCloudWrites.size === 0) return;
+    await Promise.allSettled(Array.from(this.pendingCloudWrites.values()));
+    this.pendingCloudWrites.clear();
+  }
+
+  public async hydrateFromCloud(limitCount = 2000): Promise<number> {
+    if (!this.cloudAdapter) return 0;
+    const records = await this.cloudAdapter.loadAccounts(limitCount);
+    let merged = 0;
+    for (const rec of records) {
+      if (!rec?.accountId || !rec.profile || !rec.progression) continue;
+      const existing = this.byId.get(rec.accountId);
+      if (!existing || (rec.updatedAt || 0) > (existing.updatedAt || 0)) {
+        this.indexRecord(rec);
+        merged += 1;
+      }
+    }
+    if (merged > 0) {
+      this.saveToDisk();
+    }
+    return merged;
   }
 
   public checkUsername(
@@ -287,6 +362,7 @@ export class AccountStore {
 
     this.indexRecord(record);
     this.saveToDisk();
+    this.queueCloudAccountSave(record);
     return { ok: true, account: record };
   }
 
@@ -347,6 +423,7 @@ export class AccountStore {
 
     this.indexRecord(updated);
     this.saveToDisk();
+    this.queueCloudAccountSave(updated);
     return { ok: true, account: updated };
   }
 
@@ -375,11 +452,41 @@ export class AccountStore {
     return this.byId.get(accountId) || null;
   }
 
+  public async resolveByAccountIdAsync(accountId: string): Promise<PersistentAccountRecord | null> {
+    const cleanId = String(accountId || '').trim();
+    if (!cleanId) return null;
+    const cached = this.byId.get(cleanId);
+    if (cached) return cached;
+    if (!this.cloudAdapter) return null;
+    const loaded = await this.cloudAdapter.getById(cleanId);
+    if (loaded) {
+      this.indexRecord(loaded);
+      this.saveToDisk();
+    }
+    return loaded;
+  }
+
+  public async recoverByCodeAsync(
+    rawCode: string,
+    rawUsername?: string
+  ): Promise<{ ok: true; account: PersistentAccountRecord } | { ok: false; reason: string }> {
+    const local = this.recoverByCode(rawCode, rawUsername);
+    if (local.ok || !this.cloudAdapter) return local;
+    const code = normalizeRecoveryCode(rawCode);
+    if (!code) return local;
+    const loaded = await this.cloudAdapter.getByRecoveryCode(code);
+    if (!loaded) return local;
+    this.indexRecord(loaded);
+    this.saveToDisk();
+    return this.recoverByCode(rawCode, rawUsername);
+  }
+
   public issueSessionTokenForAccount(rec: PersistentAccountRecord): string {
     if (!rec.sessionSecret) {
       rec.sessionSecret = generateAccountAuthSecret();
       this.indexRecord(rec);
       this.saveToDisk();
+      this.queueCloudAccountSave(rec);
     }
     return createAccountSessionToken(rec.accountId, rec.sessionSecret);
   }
@@ -400,7 +507,18 @@ export class AccountStore {
       this.byGoogleUid.delete(existing.googleUid);
     }
     this.saveToDisk();
+    if (this.cloudAdapter) {
+      void this.cloudAdapter.deleteAccount(accountId).catch(() => {});
+    }
     return true;
+  }
+
+  public async deleteByAccountIdAsync(accountId: string): Promise<boolean> {
+    const deletedLocal = this.deleteByAccountId(accountId);
+    if (this.cloudAdapter) {
+      await this.cloudAdapter.deleteAccount(accountId).catch(() => false);
+    }
+    return deletedLocal;
   }
 
   public hasPurchaseToken(purchaseToken: string): boolean {
@@ -481,7 +599,41 @@ export class AccountStore {
     };
     this.indexRecord(updated);
     this.saveToDisk();
+    this.queueCloudAccountSave(updated);
     return { ok: true, alreadyCredited: false, account: updated };
+  }
+
+  public async applyVerifiedPurchaseAsync(params: {
+    accountId: string;
+    itemId: string;
+    productId: string;
+    purchaseToken: string;
+    orderId?: string;
+    coinGrant?: number;
+    grantAdFree?: boolean;
+    vipFrame?: boolean;
+  }): Promise<{ ok: boolean; alreadyCredited?: boolean; account?: PersistentAccountRecord }> {
+    const existing = await this.resolveByAccountIdAsync(params.accountId);
+    if (!existing) return { ok: false };
+
+    if (this.cloudAdapter?.claimPurchaseToken) {
+      const claim = await this.cloudAdapter.claimPurchaseToken({
+        purchaseToken: params.purchaseToken,
+        accountId: existing.accountId,
+        productId: params.productId,
+        itemId: params.itemId,
+        orderId: params.orderId,
+      });
+      if (!claim.ok) {
+        return { ok: false };
+      }
+    }
+
+    const res = this.applyVerifiedPurchase(params);
+    if (res.ok && res.account && this.cloudAdapter) {
+      await this.cloudAdapter.saveAccount(res.account).catch(() => {});
+    }
+    return res;
   }
 
   /**
@@ -532,6 +684,7 @@ export class AccountStore {
     };
     this.indexRecord(updated);
     this.saveToDisk();
+    this.queueCloudAccountSave(updated);
     return { ok: true, account: updated };
   }
 
@@ -565,11 +718,26 @@ export class AccountStore {
     };
     this.indexRecord(updated);
     this.saveToDisk();
+    this.queueCloudAccountSave(updated);
     return { ok: true, account: updated };
   }
 
   public getByGoogleUid(googleUid: string): PersistentAccountRecord | null {
     return this.byGoogleUid.get(googleUid) || null;
+  }
+
+  public async getByGoogleUidAsync(googleUid: string): Promise<PersistentAccountRecord | null> {
+    const cleanUid = String(googleUid || '').trim();
+    if (!cleanUid) return null;
+    const cached = this.byGoogleUid.get(cleanUid);
+    if (cached) return cached;
+    if (!this.cloudAdapter) return null;
+    const loaded = await this.cloudAdapter.getByGoogleUid(cleanUid);
+    if (loaded) {
+      this.indexRecord(loaded);
+      this.saveToDisk();
+    }
+    return loaded;
   }
 
   public listAll(): PersistentAccountRecord[] {
