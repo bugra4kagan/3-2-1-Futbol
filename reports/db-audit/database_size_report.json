@@ -1,0 +1,148 @@
+{
+  "generatedAt": "2026-11-26T08:52:15.303Z",
+  "elapsedAnalysisSec": 24.5,
+  "currentBaseline": {
+    "uniquePlayers": 3049,
+    "clubs": 133,
+    "localAnimePlayerImagesOnDisk": 255,
+    "playersFallingBackToDefaultAvatar": 2794,
+    "clubsWithExternalCdnCrests": 133,
+    "clubsWithLocalSvgBadges": 133,
+    "publicPlayersDirBytes": 31373803,
+    "publicAssetsDirBytes": 0,
+    "totalPublicImagesMb": 29.92,
+    "playerAndClubSourceDataBytes": 3127865,
+    "currentProdJsBundleBytes": 4178180,
+    "currentProdJsBundleGzipBytes": 870286,
+    "nodeServerRssMb": 765.41,
+    "questionPools": {
+      "two_clubs": 1329,
+      "career": 2611,
+      "country_club": 1060,
+      "xox": 320,
+      "silhouette": 3049
+    }
+  },
+  "externalSources": {
+    "sqlitePersons": 9173,
+    "sqliteAltNames": 18023,
+    "ofbUniquePlayers": 87088,
+    "ofbClubs": 43566,
+    "ofbSeniorCareerRows": 485815,
+    "ofbSquadRows": 310881
+  },
+  "reconciliationSummary": {
+    "matchedExistingPlayers": 2686,
+    "cleanOrUnchangedExisting": 1491,
+    "incompleteOrIncorrectCareers": 1108,
+    "missingRecentTransfers": 779,
+    "verifiedNewCandidatePlayers": 58226,
+    "highPriorityNewMissingImages": 4256,
+    "duplicateOrHomonymEntries": 151,
+    "conflictingOrUnverifiedEntries": 2950,
+    "unverifiedOfbSkipped": 24212,
+    "externalClubsNeedingBadges": 500
+  },
+  "licenses": {
+    "openfootballPlayersDb": {
+      "license": "CC0 1.0 Public Domain",
+      "commercialAllowed": true,
+      "shareAlikeRequired": false,
+      "attribution": "OpenFootball (optional)"
+    },
+    "openfootballBaseWikidata": {
+      "license": "CC0 1.0 Public Domain",
+      "commercialAllowed": true,
+      "shareAlikeRequired": false
+    },
+    "openfootballBaseWikipediaText": {
+      "license": "CC BY-SA 4.0",
+      "commercialAllowed": true,
+      "attributionRequired": true,
+      "shareAlikeNote": "Wikipedia türevi metin/özet verilerinde CC BY-SA 4.0 atıfı (source_title/source_revid) ve ShareAlike uyumu gerekir; ham Wikimedia fair-use kulüp armaları ve lisansı belirsiz fotoğraflar ticari pakete alınmamalıdır."
+    }
+  },
+  "prototypeScaleBenchmarks": {
+    "3049": {
+      "playerCount": 3049,
+      "uniqueClubsIndexed": 114,
+      "naiveJsonBytes": 443938,
+      "compactJsonBytes": 245467,
+      "compactGzipBytes": 79966,
+      "compactBrotliBytes": 63369,
+      "compressionSavingsPct": 82,
+      "parseAndIndexMs": 5.31,
+      "heapDeltaMb": 5.11,
+      "avgIndexedSearchMs": 0.0031,
+      "avgAnswerValidationMs": 0,
+      "roundIntersection20x20Ms": 0.51,
+      "sampleValidPairsFound": 0
+    },
+    "10000": {
+      "playerCount": 10000,
+      "uniqueClubsIndexed": 4652,
+      "naiveJsonBytes": 1993772,
+      "compactJsonBytes": 943298,
+      "compactGzipBytes": 370317,
+      "compactBrotliBytes": 304465,
+      "compressionSavingsPct": 81.4,
+      "parseAndIndexMs": 28.29,
+      "heapDeltaMb": -1.05,
+      "avgIndexedSearchMs": 0.0083,
+      "avgAnswerValidationMs": 0,
+      "roundIntersection20x20Ms": 0.55,
+      "sampleValidPairsFound": 0
+    },
+    "25000": {
+      "playerCount": 25000,
+      "uniqueClubsIndexed": 8973,
+      "naiveJsonBytes": 5341856,
+      "compactJsonBytes": 2321538,
+      "compactGzipBytes": 911573,
+      "compactBrotliBytes": 740725,
+      "compressionSavingsPct": 82.9,
+      "parseAndIndexMs": 93.86,
+      "heapDeltaMb": -123.85,
+      "avgIndexedSearchMs": 0.0089,
+      "avgAnswerValidationMs": 0.0004,
+      "roundIntersection20x20Ms": 0.6,
+      "sampleValidPairsFound": 0
+    },
+    "50000": {
+      "playerCount": 50000,
+      "uniqueClubsIndexed": 15084,
+      "naiveJsonBytes": 10960917,
+      "compactJsonBytes": 4631737,
+      "compactGzipBytes": 1858881,
+      "compactBrotliBytes": 1474168,
+      "compressionSavingsPct": 83,
+      "parseAndIndexMs": 170.35,
+      "heapDeltaMb": 8.45,
+      "avgIndexedSearchMs": 0.0164,
+      "avgAnswerValidationMs": 0,
+      "roundIntersection20x20Ms": 0.75,
+      "sampleValidPairsFound": 0
+    },
+    "85000": {
+      "playerCount": 85000,
+      "uniqueClubsIndexed": 16928,
+      "naiveJsonBytes": 17731197,
+      "compactJsonBytes": 7238482,
+      "compactGzipBytes": 2901610,
+      "compactBrotliBytes": 2099428,
+      "compressionSavingsPct": 83.6,
+      "parseAndIndexMs": 236.02,
+      "heapDeltaMb": -20.39,
+      "avgIndexedSearchMs": 0.0117,
+      "avgAnswerValidationMs": 0,
+      "roundIntersection20x20Ms": 0.23,
+      "sampleValidPairsFound": 0
+    }
+  },
+  "recommendation": {
+    "optimalTargetPlayers": 25000,
+    "rationale": "25.000 doğrulanmış futbolcu (en popüler 1.000–3.500 oyuncu soru havuzunda, kalan 21.500+ oyuncu alternatif geçerli cevap & XOX/İki Kulüp havuzunda): sıkıştırılmış sözlük-ID formatında yalnızca ~0.87 MB indirme yükü ekler; Render 512 MB sınırında <15 MB ekstra heap kullanır ve aramalar ~0.0089 ms sürer.",
+    "estimatedNewProdDownloadDeltaMb": 0.87,
+    "estimatedRenderRamWithin512Mb": true
+  }
+}

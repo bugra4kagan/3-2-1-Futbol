@@ -39,14 +39,16 @@ export const DailyRewardsModal: React.FC<DailyRewardsModalProps> = ({
     if (!claimable) return;
     soundManager.playVictoryFanfare();
     try {
-      confetti({
-        particleCount: 30,
-        spread: 60,
-        ticks: 120,
-        disableForReducedMotion: true,
-        origin: { y: 0.6 },
-        colors: ['#fbbf24', '#10b981', '#ffffff'],
-      });
+      if (typeof document === 'undefined' || document.visibilityState === 'visible') {
+        confetti({
+          particleCount: 30,
+          spread: 60,
+          ticks: 120,
+          disableForReducedMotion: true,
+          origin: { y: 0.6 },
+          colors: ['#fbbf24', '#10b981', '#ffffff'],
+        });
+      }
     } catch {
       // ignore
     }

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useDeferredValue } from 'react';
 import { MatchPairing, Player, PlayerProfile, BotDifficulty } from '../game/types';
 import { ClubBadge } from './ClubBadge';
 import { CountryFlag } from './CountryFlag';
@@ -27,6 +27,7 @@ interface SinglePlayerViewProps {
   isOnlineMatch?: boolean;
   botDifficulty?: BotDifficulty;
   timeRemaining?: number;
+  getTimeRemaining?: () => number;
   energyDrinks?: number;
   extraTimeCards?: number;
   userCoins?: number;
@@ -50,7 +51,7 @@ interface SinglePlayerViewProps {
   disabled?: boolean;
 }
 
-export const SinglePlayerView: React.FC<SinglePlayerViewProps> = ({
+export const SinglePlayerView: React.FC<SinglePlayerViewProps> = React.memo(({
   pairing,
   player1,
   player2,
@@ -58,6 +59,7 @@ export const SinglePlayerView: React.FC<SinglePlayerViewProps> = ({
   isOnlineMatch = false,
   botDifficulty = 'medium',
   timeRemaining = 15,
+  getTimeRemaining,
   userCoins = 0,
   freeJokerTickets = 0,
   roundSeed,
@@ -89,6 +91,7 @@ export const SinglePlayerView: React.FC<SinglePlayerViewProps> = ({
   const pairingRef = useRef(pairing);
   const player2Ref = useRef(player2);
   const timeRemainingRef = useRef(timeRemaining);
+  const getTimeRemainingRef = useRef(getTimeRemaining);
   const disabledRef = useRef(disabled);
   const onAnswerWinnerRef = useRef(onAnswerWinner);
   const onBotWrongAttemptRef = useRef(onBotWrongAttempt);
@@ -97,6 +100,7 @@ export const SinglePlayerView: React.FC<SinglePlayerViewProps> = ({
   pairingRef.current = pairing;
   player2Ref.current = player2;
   timeRemainingRef.current = timeRemaining;
+  getTimeRemainingRef.current = getTimeRemaining;
   disabledRef.current = disabled;
   onAnswerWinnerRef.current = onAnswerWinner;
   onBotWrongAttemptRef.current = onBotWrongAttempt;
@@ -180,7 +184,8 @@ export const SinglePlayerView: React.FC<SinglePlayerViewProps> = ({
     onBotStatusChangeRef.current?.('thinking');
     const qDiff = classifyPairingDifficulty(activePairing);
     const plan = getBotRoundPlan(botDifficulty, 'two_clubs', validPlayers.length, qDiff);
-    const maxRemainingMs = Math.max(900, timeRemainingRef.current * 1000);
+    const currentSecLeft = getTimeRemainingRef.current ? getTimeRemainingRef.current() : timeRemainingRef.current;
+    const maxRemainingMs = Math.max(900, currentSecLeft * 1000);
     const delay = computeHumanizedBotDelayMs(plan, Math.random, maxRemainingMs);
 
     const botTimer = setTimeout(() => {
@@ -218,10 +223,11 @@ export const SinglePlayerView: React.FC<SinglePlayerViewProps> = ({
     return () => clearTimeout(botTimer);
   }, [pairing.id, disabled, isBotMatch, isOnlineMatch, botDifficulty]);
 
+  const deferredAnswerInput = useDeferredValue(answerInput);
   const autocompletePlayers = useMemo(() => {
     if (disabled) return [];
-    return searchPlayersForAutocomplete(answerInput, [], 6);
-  }, [disabled, answerInput]);
+    return searchPlayersForAutocomplete(deferredAnswerInput, [], 6);
+  }, [disabled, deferredAnswerInput]);
 
   const submitAnswerValue = (rawVal: string) => {
     if (disabled || !rawVal.trim()) return;
@@ -496,4 +502,4 @@ export const SinglePlayerView: React.FC<SinglePlayerViewProps> = ({
       </div>
     </div>
   );
-};
+});

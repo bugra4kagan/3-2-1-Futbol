@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertCircle,
   ArrowDown,
@@ -60,7 +60,8 @@ interface MinigameArenaViewProps {
   isBotMatch?: boolean;
   isOnlineMatch?: boolean;
   botDifficulty?: BotDifficulty;
-  timeRemaining: number;
+  timeRemaining?: number;
+  getTimeRemaining?: () => number;
   disabled?: boolean;
   energyDrinks?: number;
   extraTimeCards?: number;
@@ -135,7 +136,7 @@ const TeammatePortrait: React.FC<{ playerId: string; label: string }> = ({ playe
   );
 };
 
-export const MinigameArenaView: React.FC<MinigameArenaViewProps> = ({
+export const MinigameArenaView: React.FC<MinigameArenaViewProps> = React.memo(({
   round,
   roundKey,
   player1,
@@ -144,6 +145,7 @@ export const MinigameArenaView: React.FC<MinigameArenaViewProps> = ({
   isOnlineMatch = false,
   botDifficulty = 'medium',
   timeRemaining = 15,
+  getTimeRemaining,
   disabled = false,
   userCoins = 0,
   freeJokerTickets = 0,
@@ -272,6 +274,7 @@ export const MinigameArenaView: React.FC<MinigameArenaViewProps> = ({
   const botRoundRef = useRef(round);
   const botXoxStateRef = useRef(xoxState);
   const botTimeRemainingRef = useRef(timeRemaining);
+  const botGetTimeRemainingRef = useRef(getTimeRemaining);
   const botDisabledRef = useRef(disabled);
   const botP1Ref = useRef(player1);
   const botP2Ref = useRef(player2);
@@ -283,6 +286,7 @@ export const MinigameArenaView: React.FC<MinigameArenaViewProps> = ({
   botRoundRef.current = round;
   botXoxStateRef.current = xoxState;
   botTimeRemainingRef.current = timeRemaining;
+  botGetTimeRemainingRef.current = getTimeRemaining;
   botDisabledRef.current = disabled;
   botP1Ref.current = player1;
   botP2Ref.current = player2;
@@ -313,7 +317,8 @@ export const MinigameArenaView: React.FC<MinigameArenaViewProps> = ({
     botOnStatusRef.current?.('thinking');
     const qDiff = classifyQuestionDifficulty(activeRound);
     const plan = getBotRoundPlan(botDifficulty, activeRound.minigameType, validPlayers.length, qDiff);
-    const maxRemainingMs = Math.max(900, botTimeRemainingRef.current * 1000);
+    const currentSecLeft = botGetTimeRemainingRef.current ? botGetTimeRemainingRef.current() : botTimeRemainingRef.current;
+    const maxRemainingMs = Math.max(900, currentSecLeft * 1000);
     const delay = computeHumanizedBotDelayMs(plan, Math.random, maxRemainingMs);
 
     const botTimer = setTimeout(() => {
@@ -445,11 +450,12 @@ export const MinigameArenaView: React.FC<MinigameArenaViewProps> = ({
     [silhouetteGuesses]
   );
 
+  const deferredAnswerInput = useDeferredValue(answerInput);
   const autocompletePlayers = useMemo(() => {
     if (disabled) return [];
     const exclude = isSilhouette ? guessedPlayerIds : [];
-    return searchPlayersForAutocomplete(answerInput, exclude, 6);
-  }, [isSilhouette, disabled, answerInput, guessedPlayerIds]);
+    return searchPlayersForAutocomplete(deferredAnswerInput, exclude, 6);
+  }, [isSilhouette, disabled, deferredAnswerInput, guessedPlayerIds]);
 
   const submitSilhouettePlayer = (picked: Player | null, fallbackText: string) => {
     if (!round.silhouette || isSilhouetteExhausted) return;
@@ -1540,4 +1546,4 @@ export const MinigameArenaView: React.FC<MinigameArenaViewProps> = ({
       )}
     </div>
   );
-};
+});

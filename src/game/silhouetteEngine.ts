@@ -263,6 +263,51 @@ const PRECOMPUTED_PLAYER_SEARCH: IndexedPlayerSearchEntry[] = ALL_PLAYERS_LIST.m
   };
 });
 
+// 2-character inverted index over normalized names/common names/aliases to avoid O(N) scans per keystroke
+const PLAYER_BIGRAM_INDEX: Map<string, number[]> = (() => {
+  const map = new Map<string, number[]>();
+  const addStringBigrams = (str: string, idx: number, seenForPlayer: Set<string>) => {
+    if (!str || str.length < 2) return;
+    for (let i = 0; i < str.length - 1; i += 1) {
+      const bg = str.slice(i, i + 2);
+      if (bg.includes(' ') || seenForPlayer.has(bg)) continue;
+      seenForPlayer.add(bg);
+      let bucket = map.get(bg);
+      if (!bucket) {
+        bucket = [];
+        map.set(bg, bucket);
+      }
+      bucket.push(idx);
+    }
+  };
+  for (let i = 0; i < PRECOMPUTED_PLAYER_SEARCH.length; i += 1) {
+    const entry = PRECOMPUTED_PLAYER_SEARCH[i];
+    const seen = new Set<string>();
+    addStringBigrams(entry.normName, i, seen);
+    addStringBigrams(entry.normCommon, i, seen);
+    for (const alias of entry.normAliases) {
+      addStringBigrams(alias, i, seen);
+    }
+  }
+  return map;
+})();
+
+function getCandidateIndicesForQuery(normQuery: string): number[] | null {
+  const tokens = normQuery.split(' ').filter((t) => t.length >= 2);
+  if (tokens.length === 0) return null;
+  let smallestBucket: number[] | null = null;
+  for (const tok of tokens) {
+    for (let i = 0; i < tok.length - 1; i += 1) {
+      const bucket = PLAYER_BIGRAM_INDEX.get(tok.slice(i, i + 2));
+      if (!bucket || bucket.length === 0) return [];
+      if (!smallestBucket || bucket.length < smallestBucket.length) {
+        smallestBucket = bucket;
+      }
+    }
+  }
+  return smallestBucket;
+}
+
 /**
  * Akıllı arama: 2 veya daha fazla karakter girildiğinde Türkçe/İngilizce karakter duyarsız eşleşen
  * futbolcuları uyruk ve mevki bilgileriyle döndürür.
@@ -286,9 +331,14 @@ export function searchSilhouettePlayers(
   if (!normQuery || normQuery.length < 1) return [];
 
   const excludeSet = excludePlayerIds.length > 0 ? new Set(excludePlayerIds) : null;
-  const scored: { player: Player; score: number }[] = [];
+  const indexedIndices = normQuery.length >= 2 ? getCandidateIndicesForQuery(normQuery) : null;
+  if (indexedIndices && indexedIndices.length === 0) return [];
 
-  for (const entry of PRECOMPUTED_PLAYER_SEARCH) {
+  const scored: { player: Player; score: number }[] = [];
+  const totalCount = indexedIndices ? indexedIndices.length : PRECOMPUTED_PLAYER_SEARCH.length;
+
+  for (let k = 0; k < totalCount; k += 1) {
+    const entry = PRECOMPUTED_PLAYER_SEARCH[indexedIndices ? indexedIndices[k] : k];
     const { player, normName, nameWords, normCommon, normAliases } = entry;
     if (excludeSet && excludeSet.has(player.id)) continue;
 
@@ -317,7 +367,15 @@ export function searchSilhouettePlayers(
     }
   }
 
-  scored.sort((a, b) => b.score - a.score || a.player.name.localeCompare(b.player.name));
+  scored.sort((a, b) =>
+    b.score !== a.score
+      ? b.score - a.score
+      : a.player.name < b.player.name
+      ? -1
+      : a.player.name > b.player.name
+      ? 1
+      : 0
+  );
   return scored.slice(0, limit).map((s) => s.player);
 }
 

@@ -54,7 +54,7 @@ const CenterPlayBallIcon: React.FC<{ active: boolean }> = ({ active }) => {
   );
 };
 
-export const BottomNavBar: React.FC<BottomNavBarProps> = ({
+export const BottomNavBar: React.FC<BottomNavBarProps> = React.memo(({
   activeTab,
   onSelectTab,
   pendingFriendRequestsCount = 0,
@@ -167,4 +167,4 @@ export const BottomNavBar: React.FC<BottomNavBarProps> = ({
       </div>
     </nav>
   );
-};
+});

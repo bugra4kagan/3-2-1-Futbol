@@ -70,14 +70,16 @@ export const RoundResultSheet: React.FC<RoundResultSheetProps> = ({
   useEffect(() => {
     if (!didUserWinRound) return;
     try {
-      confetti({
-        particleCount: 28,
-        spread: 62,
-        ticks: 110,
-        disableForReducedMotion: true,
-        origin: { y: 0.65 },
-        colors: getGoalEffectColors(goalEffect),
-      });
+      if (typeof document === 'undefined' || document.visibilityState === 'visible') {
+        confetti({
+          particleCount: 28,
+          spread: 62,
+          ticks: 110,
+          disableForReducedMotion: true,
+          origin: { y: 0.65 },
+          colors: getGoalEffectColors(goalEffect),
+        });
+      }
     } catch {
       // ignore
     }

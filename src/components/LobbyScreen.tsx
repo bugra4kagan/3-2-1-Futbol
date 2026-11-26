@@ -53,7 +53,7 @@ interface LobbyScreenProps {
   onClearOnlineError?: () => void;
 }
 
-export const LobbyScreen: React.FC<LobbyScreenProps> = ({
+export const LobbyScreen: React.FC<LobbyScreenProps> = React.memo(({
   playerProfile,
   progression,
   onSelectMode,
@@ -462,4 +462,4 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
       />
     </div>
   );
-};
+});

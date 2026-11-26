@@ -234,11 +234,11 @@
   0%,
   100% {
     transform: translate3d(0, 0, 0) scale(1);
-    filter: drop-shadow(0 0 8px rgba(251, 191, 36, 0.35));
+    opacity: 0.96;
   }
   50% {
-    transform: translate3d(0, -4px, 0) scale(1.04);
-    filter: drop-shadow(0 0 18px rgba(251, 191, 36, 0.7));
+    transform: translate3d(0, -4px, 0) scale(1.03);
+    opacity: 1;
   }
 }
 
@@ -313,7 +313,8 @@
   animation:
     trophyCelebrate 0.85s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards,
     trophyFloatGlow 2.6s ease-in-out 0.85s infinite;
-  will-change: transform, filter, opacity;
+  filter: drop-shadow(0 4px 12px rgba(251, 191, 36, 0.38));
+  will-change: transform, opacity;
 }
 
 .animate-trophy-icon-pop {
@@ -635,6 +636,33 @@ html[dir="rtl"] .rtl-flip {
 ) :is(.bg-slate-950, .bg-slate-950\/95, .bg-slate-950\/90, .bg-slate-950\/80, .bg-slate-950\/75, .bg-\[\#14232C\], .bg-\[\#080E14\]) {
   background-color: #0B1220 !important;
   border-color: rgba(168, 179, 194, 0.14) !important;
+}
+
+/* Pause background CSS animations when app loses visibility */
+html.app-hidden *,
+html.app-hidden *::before,
+html.app-hidden *::after {
+  animation-play-state: paused !important;
+  transition-duration: 0.01ms !important;
+}
+
+/* Respect device reduced-motion preference across all transitions & loops */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .animate-pulse,
+  .animate-ping,
+  .animate-bounce,
+  .brand-ball-bounce-a,
+  .brand-ball-bounce-b {
+    animation: none !important;
+  }
 }
 
 

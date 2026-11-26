@@ -287,14 +287,16 @@ Ortak futbolcuları benden hızlı bulabilir misin? Meydan okuyorum! 🔥`;
     const effectColors = getGoalEffectColors(goalEffect);
 
     try {
-      confetti({
-        particleCount: 35,
-        spread: 70,
-        ticks: 120,
-        disableForReducedMotion: true,
-        origin: { y: 0.58 },
-        colors: effectColors,
-      });
+      if (typeof document === 'undefined' || document.visibilityState === 'visible') {
+        confetti({
+          particleCount: 35,
+          spread: 70,
+          ticks: 120,
+          disableForReducedMotion: true,
+          origin: { y: 0.58 },
+          colors: effectColors,
+        });
+      }
     } catch {
       // In case canvas-confetti has issues
     }

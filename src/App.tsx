@@ -3,7 +3,7 @@
  * Modern, mobile-first, competitive football trivia duel game.
  */
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { Suspense, lazy, useState, useEffect, useRef, useCallback } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { App as CapacitorApp } from '@capacitor/app';
 import { onAuthStateChanged, User } from 'firebase/auth';
@@ -137,7 +137,9 @@ import {
   recordAchievementPlayerGuess,
   syncAchievementsFromProgression,
 } from './game/achievementsEngine';
-import { AchievementsModal } from './components/AchievementsModal';
+const AchievementsModal = lazy(() =>
+  import('./components/AchievementsModal').then((m) => ({ default: m.AchievementsModal }))
+);
 
 import { LobbyScreen } from './components/LobbyScreen';
 import { GameLogo } from './components/GameLogo';
@@ -145,19 +147,10 @@ import { ScoreBoard } from './components/ScoreBoard';
 import { CountdownOverlay } from './components/CountdownOverlay';
 import { SinglePlayerView } from './components/SinglePlayerView';
 import { MinigameArenaView } from './components/MinigameArenaView';
-import { RoundResultSheet } from './components/RoundResultSheet';
-import { VictoryModal } from './components/VictoryModal';
-import { OnlineRoomView } from './components/OnlineRoomView';
 import { AnimatedIntro } from './components/AnimatedIntro';
-import { AuthModal } from './components/AuthModal';
-import { ConfirmExitModal } from './components/ConfirmExitModal';
 import { BottomNavBar } from './components/BottomNavBar';
-import { DailyRewardsModal } from './components/DailyRewardsModal';
-import { DailyChallengeModal } from './components/DailyChallengeModal';
-import { StoreModal } from './components/StoreModal';
-import { RewardedAdModal } from './components/RewardedAdModal';
-import { InterstitialAdModal } from './components/InterstitialAdModal';
-import { MatchReviewModal } from './components/MatchReviewModal';
+import { ToastContainer } from './components/ToastContainer';
+import { NightMatchPitchBackground } from './components/NightMatchPitchBackground';
 import {
   incrementCompletedMatchAdCount,
   setInterstitialPresenter,
@@ -165,27 +158,93 @@ import {
   showInterstitialAd,
   showRewardedAd,
 } from './services/adService';
-import { TournamentModal } from './components/TournamentModal';
-import { SettingsModal } from './components/SettingsModal';
-import { StatsView } from './components/StatsView';
-import { FriendsView } from './components/FriendsView';
-import { LeagueView } from './components/LeagueView';
-import { ProfileView } from './components/ProfileView';
-import { PublicProfileModal } from './components/PublicProfileModal';
-import { ToastContainer } from './components/ToastContainer';
-import { ClubBadge } from './components/ClubBadge';
-import { NightMatchPitchBackground } from './components/NightMatchPitchBackground';
-import { FriendRequestConfirmModal } from './components/FriendRequestConfirmModal';
 import { isLegacyFlaggedUsername } from './game/accountEngine';
 import { BOT_TIER_METADATA } from './game/botEngine';
-import { EnergyEmptyModal } from './components/EnergyEmptyModal';
-import { DailyWheelModal } from './components/DailyWheelModal';
-import { FootballPassModal } from './components/FootballPassModal';
-import { DailyQuestsModal } from './components/DailyQuestsModal';
-import { StreakSaverModal } from './components/StreakSaverModal';
-import { LastChanceModal } from './components/LastChanceModal';
-import { SpecialEventModal } from './components/SpecialEventModal';
-import { OnboardingModal, ONBOARDING_STORAGE_KEY } from './components/OnboardingModal';
+
+const RoundResultSheet = lazy(() =>
+  import('./components/RoundResultSheet').then((m) => ({ default: m.RoundResultSheet }))
+);
+const VictoryModal = lazy(() =>
+  import('./components/VictoryModal').then((m) => ({ default: m.VictoryModal }))
+);
+const OnlineRoomView = lazy(() =>
+  import('./components/OnlineRoomView').then((m) => ({ default: m.OnlineRoomView }))
+);
+const AuthModal = lazy(() =>
+  import('./components/AuthModal').then((m) => ({ default: m.AuthModal }))
+);
+const ConfirmExitModal = lazy(() =>
+  import('./components/ConfirmExitModal').then((m) => ({ default: m.ConfirmExitModal }))
+);
+const DailyRewardsModal = lazy(() =>
+  import('./components/DailyRewardsModal').then((m) => ({ default: m.DailyRewardsModal }))
+);
+const DailyChallengeModal = lazy(() =>
+  import('./components/DailyChallengeModal').then((m) => ({ default: m.DailyChallengeModal }))
+);
+const StoreModal = lazy(() =>
+  import('./components/StoreModal').then((m) => ({ default: m.StoreModal }))
+);
+const RewardedAdModal = lazy(() =>
+  import('./components/RewardedAdModal').then((m) => ({ default: m.RewardedAdModal }))
+);
+const InterstitialAdModal = lazy(() =>
+  import('./components/InterstitialAdModal').then((m) => ({ default: m.InterstitialAdModal }))
+);
+const MatchReviewModal = lazy(() =>
+  import('./components/MatchReviewModal').then((m) => ({ default: m.MatchReviewModal }))
+);
+const TournamentModal = lazy(() =>
+  import('./components/TournamentModal').then((m) => ({ default: m.TournamentModal }))
+);
+const SettingsModal = lazy(() =>
+  import('./components/SettingsModal').then((m) => ({ default: m.SettingsModal }))
+);
+const StatsView = lazy(() =>
+  import('./components/StatsView').then((m) => ({ default: m.StatsView }))
+);
+const FriendsView = lazy(() =>
+  import('./components/FriendsView').then((m) => ({ default: m.FriendsView }))
+);
+const LeagueView = lazy(() =>
+  import('./components/LeagueView').then((m) => ({ default: m.LeagueView }))
+);
+const ProfileView = lazy(() =>
+  import('./components/ProfileView').then((m) => ({ default: m.ProfileView }))
+);
+const PublicProfileModal = lazy(() =>
+  import('./components/PublicProfileModal').then((m) => ({ default: m.PublicProfileModal }))
+);
+const FriendRequestConfirmModal = lazy(() =>
+  import('./components/FriendRequestConfirmModal').then((m) => ({
+    default: m.FriendRequestConfirmModal,
+  }))
+);
+const EnergyEmptyModal = lazy(() =>
+  import('./components/EnergyEmptyModal').then((m) => ({ default: m.EnergyEmptyModal }))
+);
+const DailyWheelModal = lazy(() =>
+  import('./components/DailyWheelModal').then((m) => ({ default: m.DailyWheelModal }))
+);
+const FootballPassModal = lazy(() =>
+  import('./components/FootballPassModal').then((m) => ({ default: m.FootballPassModal }))
+);
+const DailyQuestsModal = lazy(() =>
+  import('./components/DailyQuestsModal').then((m) => ({ default: m.DailyQuestsModal }))
+);
+const StreakSaverModal = lazy(() =>
+  import('./components/StreakSaverModal').then((m) => ({ default: m.StreakSaverModal }))
+);
+const LastChanceModal = lazy(() =>
+  import('./components/LastChanceModal').then((m) => ({ default: m.LastChanceModal }))
+);
+const SpecialEventModal = lazy(() =>
+  import('./components/SpecialEventModal').then((m) => ({ default: m.SpecialEventModal }))
+);
+const OnboardingModal = lazy(() =>
+  import('./components/OnboardingModal').then((m) => ({ default: m.OnboardingModal }))
+);
+const ONBOARDING_STORAGE_KEY = 'hasSeenTutorial_v1';
 import { CoinIcon } from './components/CoinIcon';
 import { initializeAdMob } from './services/admobService';
 import {
@@ -5109,6 +5168,73 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
   const isOnlineMode = mode === 'online_match' || mode === 'online_room';
   const currentRound = isOnlineMode ? onlineRound : rounds[currentRoundIndex] || rounds[0];
 
+  // Pause background CSS animations when app enters background/inactive state
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const syncVisibilityClass = () => {
+      document.documentElement.classList.toggle('app-hidden', document.visibilityState === 'hidden');
+    };
+    syncVisibilityClass();
+    document.addEventListener('visibilitychange', syncVisibilityClass);
+    return () => {
+      document.removeEventListener('visibilitychange', syncVisibilityClass);
+      document.documentElement.classList.remove('app-hidden');
+    };
+  }, []);
+
+  // Preload match result & review chunks silently once a match starts so end-of-round renders with 0ms delay
+  useEffect(() => {
+    if (screen !== 'playing') return;
+    void import('./components/RoundResultSheet');
+    void import('./components/VictoryModal');
+    void import('./components/MatchReviewModal');
+  }, [screen]);
+
+  const handleSelectOnlineModeRef = useRef(handleSelectOnlineMode);
+  const startBotMatchRef = useRef(startBotMatch);
+  const handleWrongAttemptRef = useRef(handleWrongAttempt);
+  const handleRoundTimeExpiredRef = useRef(handleRoundTimeExpired);
+  const handleSpendCoinsForJokerRef = useRef(handleSpendCoinsForJoker);
+  handleSelectOnlineModeRef.current = handleSelectOnlineMode;
+  startBotMatchRef.current = startBotMatch;
+  handleWrongAttemptRef.current = handleWrongAttempt;
+  handleRoundTimeExpiredRef.current = handleRoundTimeExpired;
+  handleSpendCoinsForJokerRef.current = handleSpendCoinsForJoker;
+
+  const getTimeRemaining = useCallback(() => timeRemainingRef.current, []);
+  const handleOpenSettingsModal = useCallback(() => setShowSettingsModal(true), []);
+  const handleClearOnlineError = useCallback(() => setOnlineError(null), []);
+  const handleWrongAttemptP1Stable = useCallback(
+    (ans?: string) => handleWrongAttemptRef.current(player1Ref.current.id, ans),
+    []
+  );
+  const handleRoundTimeExpiredStable = useCallback(() => handleRoundTimeExpiredRef.current(), []);
+  const handleSpendCoinsForJokerStable = useCallback(
+    (cost: number) => handleSpendCoinsForJokerRef.current(cost),
+    []
+  );
+  const handleSubmitOnlineAnswerSingleStable = useCallback(
+    (ans: string) => handleSubmitOnlineAnswer(ans),
+    [handleSubmitOnlineAnswer]
+  );
+  const handleLobbySelectMode = useCallback(
+    (
+      selectedMode: GameMode,
+      options?: { botDifficulty?: BotDifficulty; roomCode?: string; minigameType?: MinigameType }
+    ) => {
+      setOnlineError(null);
+      if (selectedMode === 'online_match' || selectedMode === 'online_room') {
+        handleSelectOnlineModeRef.current(selectedMode, options);
+      } else {
+        startBotMatchRef.current(
+          options?.botDifficulty || 'medium',
+          options?.minigameType || 'two_clubs'
+        );
+      }
+    },
+    []
+  );
+
   return (
     <main
       data-testid="app-container"
@@ -5143,25 +5269,15 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
               <LobbyScreen
                 playerProfile={player1}
                 progression={progression}
-                onSelectMode={(selectedMode, options) => {
-                  setOnlineError(null);
-                  if (selectedMode === 'online_match' || selectedMode === 'online_room') {
-                    handleSelectOnlineMode(selectedMode, options);
-                  } else {
-                    startBotMatch(
-                      options?.botDifficulty || 'medium',
-                      options?.minigameType || 'two_clubs'
-                    );
-                  }
-                }}
-                onOpenSettings={() => setShowSettingsModal(true)}
+                onSelectMode={handleLobbySelectMode}
+                onOpenSettings={handleOpenSettingsModal}
                 onToggleMute={toggleSoundMute}
                 isMuted={isMuted}
                 pendingFriendRequestsCount={pendingFriendRequestsCount}
                 onExitApp={handlePromptExitApp}
                 isNetworkOnline={isNetworkOnline}
                 onlineError={onlineError}
-                onClearOnlineError={() => setOnlineError(null)}
+                onClearOnlineError={handleClearOnlineError}
               />
             ) : (
               <div className="relative min-h-[100dvh] w-full flex flex-col pitch-turf-backdrop text-[#F5F3EB] overflow-x-clip">
@@ -5213,81 +5329,83 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
                 </header>
 
                 <div className="relative z-10 flex-1 w-full pb-[env(safe-area-inset-bottom)]">
-                  {activeTab === 'stats' && (
-                    <StatsView
-                      playerProfile={player1}
-                      progression={progression}
-                      liveServerPlayers={liveLeaderboardPlayers}
-                      onInspectPlayer={handleInspectPlayer}
-                    />
-                  )}
-                  {activeTab === 'friends' && (
-                    <FriendsView
-                      progression={progression}
-                      selfPlayerId={player1.id}
-                      liveServerPlayers={liveLeaderboardPlayers}
-                      onInspectPlayer={handleInspectPlayer}
-                      onAddFriend={handleRequestAddFriend}
-                      onAcceptFriendRequest={handleAcceptFriendRequest}
-                      onRejectFriendRequest={handleRejectFriendRequest}
-                      onCancelOutgoingRequest={handleCancelOutgoingRequest}
-                      onRemoveFriend={handleRemoveFriendAction}
-                      onChallengeFriend={(mg) =>
-                        handleSelectOnlineMode('online_room', { minigameType: mg })
-                      }
-                    />
-                  )}
-                  {activeTab === 'league' && (
-                    <LeagueView
-                      playerProfile={player1}
-                      progression={progression}
-                      liveServerPlayers={liveLeaderboardPlayers}
-                      onInspectPlayer={handleInspectPlayer}
-                      onDismissSeasonNotice={() =>
-                        persistProgression(dismissLeagueSeasonNotice(progressionRef.current))
-                      }
-                      onGoPlay={() => handleSelectBottomTab('play')}
-                    />
-                  )}
-                  {activeTab === 'profile' && (
-                    <ProfileView
-                      playerProfile={player1}
-                      progression={progression}
-                      careerStats={careerStats}
-                      achievementsState={achievementsState}
-                      cloudUser={
-                        firebaseUser
-                          ? {
-                              uid: firebaseUser.uid,
-                              email: firebaseUser.email,
-                              displayName: firebaseUser.displayName,
-                              emailVerified: firebaseUser.emailVerified,
-                              isAnonymous: firebaseUser.isAnonymous,
-                              isGoogleLinked: firebaseUser.providerData.some(
-                                (p) => p.providerId === 'google.com'
-                              ),
-                            }
-                          : null
-                      }
-                      onGoogleSignIn={handleGoogleSignIn}
-                      onSignOut={handleGoogleSignOut}
-                      onOpenAuth={(tab) => {
-                        setAuthModalTab(tab || 'profile');
-                        setShowAuthModal(true);
-                      }}
-                      onOpenSettings={() => setShowSettingsModal(true)}
-                      onSelectAvatar={(av) => {
-                        handleUpdateProfile({ avatar: av });
-                        syncServerLeaderboard(progression, { ...player1, avatar: av });
-                      }}
-                      onOpenStore={handleOpenStore}
-                      onPurchaseStoreItem={handleProfilePurchaseStoreItem}
-                      onEquipItem={handleEquipStoreItemAction}
-                      onRestorePurchases={handleRestorePurchases}
-                      onDeleteAccount={handleDeleteAccount}
-                      onExitApp={handlePromptExitApp}
-                    />
-                  )}
+                  <Suspense fallback={null}>
+                    {activeTab === 'stats' && (
+                      <StatsView
+                        playerProfile={player1}
+                        progression={progression}
+                        liveServerPlayers={liveLeaderboardPlayers}
+                        onInspectPlayer={handleInspectPlayer}
+                      />
+                    )}
+                    {activeTab === 'friends' && (
+                      <FriendsView
+                        progression={progression}
+                        selfPlayerId={player1.id}
+                        liveServerPlayers={liveLeaderboardPlayers}
+                        onInspectPlayer={handleInspectPlayer}
+                        onAddFriend={handleRequestAddFriend}
+                        onAcceptFriendRequest={handleAcceptFriendRequest}
+                        onRejectFriendRequest={handleRejectFriendRequest}
+                        onCancelOutgoingRequest={handleCancelOutgoingRequest}
+                        onRemoveFriend={handleRemoveFriendAction}
+                        onChallengeFriend={(mg) =>
+                          handleSelectOnlineMode('online_room', { minigameType: mg })
+                        }
+                      />
+                    )}
+                    {activeTab === 'league' && (
+                      <LeagueView
+                        playerProfile={player1}
+                        progression={progression}
+                        liveServerPlayers={liveLeaderboardPlayers}
+                        onInspectPlayer={handleInspectPlayer}
+                        onDismissSeasonNotice={() =>
+                          persistProgression(dismissLeagueSeasonNotice(progressionRef.current))
+                        }
+                        onGoPlay={() => handleSelectBottomTab('play')}
+                      />
+                    )}
+                    {activeTab === 'profile' && (
+                      <ProfileView
+                        playerProfile={player1}
+                        progression={progression}
+                        careerStats={careerStats}
+                        achievementsState={achievementsState}
+                        cloudUser={
+                          firebaseUser
+                            ? {
+                                uid: firebaseUser.uid,
+                                email: firebaseUser.email,
+                                displayName: firebaseUser.displayName,
+                                emailVerified: firebaseUser.emailVerified,
+                                isAnonymous: firebaseUser.isAnonymous,
+                                isGoogleLinked: firebaseUser.providerData.some(
+                                  (p) => p.providerId === 'google.com'
+                                ),
+                              }
+                            : null
+                        }
+                        onGoogleSignIn={handleGoogleSignIn}
+                        onSignOut={handleGoogleSignOut}
+                        onOpenAuth={(tab) => {
+                          setAuthModalTab(tab || 'profile');
+                          setShowAuthModal(true);
+                        }}
+                        onOpenSettings={() => setShowSettingsModal(true)}
+                        onSelectAvatar={(av) => {
+                          handleUpdateProfile({ avatar: av });
+                          syncServerLeaderboard(progression, { ...player1, avatar: av });
+                        }}
+                        onOpenStore={handleOpenStore}
+                        onPurchaseStoreItem={handleProfilePurchaseStoreItem}
+                        onEquipItem={handleEquipStoreItemAction}
+                        onRestorePurchases={handleRestorePurchases}
+                        onDeleteAccount={handleDeleteAccount}
+                        onExitApp={handlePromptExitApp}
+                      />
+                    )}
+                  </Suspense>
                 </div>
               </div>
             )}
@@ -5305,25 +5423,27 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
       {/* Screen 2: Online Room / Matchmaking Waiting */}
       {screen === 'room_waiting' && (
         <div key="screen-room" className="w-full flex-1 flex flex-col animate-screen-slide">
-          <OnlineRoomView
-            roomCode={roomCode}
-            minigameType={minigameType}
-            isMatchmaking={isMatchmaking}
-            matchmakingSecondsLeft={matchmakingSecondsLeft}
-            noOpponentFound={noOpponentFound}
-            player1={player1}
-            player2={player2.id !== 'p2' ? player2 : null}
-            onInspectPlayer={handleInspectPlayer}
-            onRetryMatchmaking={() =>
-              handleSelectOnlineMode('online_match', { minigameType })
-            }
-            onPlayBotInstead={() => {
+          <Suspense fallback={null}>
+            <OnlineRoomView
+              roomCode={roomCode}
+              minigameType={minigameType}
+              isMatchmaking={isMatchmaking}
+              matchmakingSecondsLeft={matchmakingSecondsLeft}
+              noOpponentFound={noOpponentFound}
+              player1={player1}
+              player2={player2.id !== 'p2' ? player2 : null}
+              onInspectPlayer={handleInspectPlayer}
+              onRetryMatchmaking={() =>
+                handleSelectOnlineMode('online_match', { minigameType })
+              }
+              onPlayBotInstead={() => {
               teardownOnlineRoom();
               setNoOpponentFound(false);
               startBotMatch('medium', minigameType);
             }}
             onCancel={handleExitToLobby}
           />
+          </Suspense>
         </div>
       )}
 
@@ -5378,7 +5498,7 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
               player1Crest={progression.equippedCrest}
               player1Badge={progression.equippedBadge}
               compact={matchViewportState.isKeyboardOpen || matchViewportState.isCompactHeight}
-              onOpenSettings={() => setShowSettingsModal(true)}
+              onOpenSettings={handleOpenSettingsModal}
               onExit={handlePromptExitMatch}
             />
 
@@ -5395,21 +5515,21 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
                 isBotMatch={mode === 'bot'}
                 isOnlineMatch={isOnlineMode}
                 botDifficulty={botDiff}
-                timeRemaining={timeRemaining}
+                getTimeRemaining={getTimeRemaining}
                 userCoins={progression.coins}
                 freeJokerTickets={progression.freeJokerTickets ?? 0}
                 roundSeed={`${matchInstanceIdRef.current}-${currentRoundIndex}-${currentRound.pairing.id}`}
                 isKeyboardOpen={matchViewportState.isKeyboardOpen}
                 isCompactViewport={matchViewportState.isCompactHeight}
-                onSpendCoinsForJoker={handleSpendCoinsForJoker}
+                onSpendCoinsForJoker={handleSpendCoinsForJokerStable}
                 onAnswerWinner={handleAnswerWinner}
                 onBotWrongAttempt={handleBotWrongAttempt}
                 onBotStatusChange={setBotStatus}
-                onSubmitOnlineAnswer={(ans) => handleSubmitOnlineAnswer(ans)}
+                onSubmitOnlineAnswer={handleSubmitOnlineAnswerSingleStable}
                 serverWrongFeedback={serverWrongFeedback}
                 opponentMissedPulse={opponentMissedPulse}
-                onWrongAttempt={(ans) => handleWrongAttempt(player1.id, ans)}
-                onTimeExpired={handleRoundTimeExpired}
+                onWrongAttempt={handleWrongAttemptP1Stable}
+                onTimeExpired={handleRoundTimeExpiredStable}
                 disabled={!isRoundPlaying || Boolean(disconnectGraceBanner)}
               />
             ) : (
@@ -5421,21 +5541,21 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
                 isBotMatch={mode === 'bot'}
                 isOnlineMatch={isOnlineMode}
                 botDifficulty={botDiff}
-                timeRemaining={timeRemaining}
+                getTimeRemaining={getTimeRemaining}
                 disabled={!isRoundPlaying || Boolean(disconnectGraceBanner)}
                 userCoins={progression.coins}
                 freeJokerTickets={progression.freeJokerTickets ?? 0}
                 roundSeed={`${matchInstanceIdRef.current}-${currentRoundIndex}-${currentRound.minigameType}-${currentRound.silhouette?.id || currentRound.career?.id || currentRound.countryClub?.id || currentRound.xoxBoard?.id || 'r'}`}
                 isKeyboardOpen={matchViewportState.isKeyboardOpen}
                 isCompactViewport={matchViewportState.isCompactHeight}
-                onSpendCoinsForJoker={handleSpendCoinsForJoker}
+                onSpendCoinsForJoker={handleSpendCoinsForJokerStable}
                 onAnswerWinner={handleAnswerWinner}
                 onBotWrongAttempt={handleBotWrongAttempt}
                 onBotStatusChange={setBotStatus}
                 onSubmitOnlineAnswer={handleSubmitOnlineAnswer}
                 serverWrongFeedback={serverWrongFeedback}
                 opponentMissedPulse={opponentMissedPulse}
-                onWrongAttempt={(ans) => handleWrongAttempt(player1.id, ans)}
+                onWrongAttempt={handleWrongAttemptP1Stable}
                 onSilhouetteExhausted={handleSilhouetteExhausted}
                 onlineSilhouetteExhausted={onlineSilhouetteExhausted}
                 xoxState={xoxState}
@@ -5445,20 +5565,22 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
             )}
 
             {showResultSheet && (
-              <RoundResultSheet
-                round={currentRound}
-                winnerPlayer={roundWinnerPlayer}
-                player1Id={player1.id}
-                acceptedAnswer={acceptedAnswerText}
-                isTimeExpired={isTimeExpired}
-                endReason={roundEndReason}
-                roundIndex={currentRoundIndex + 1}
-                totalRounds={10}
-                goalEffect={progression.equippedGoalEffect}
-                roundReward={lastRoundReward}
-                roundDoubled={roundDoubledByAd}
-                onRequestDoubleRound={handleRequestDoubleRound}
-              />
+              <Suspense fallback={null}>
+                <RoundResultSheet
+                  round={currentRound}
+                  winnerPlayer={roundWinnerPlayer}
+                  player1Id={player1.id}
+                  acceptedAnswer={acceptedAnswerText}
+                  isTimeExpired={isTimeExpired}
+                  endReason={roundEndReason}
+                  roundIndex={currentRoundIndex + 1}
+                  totalRounds={10}
+                  goalEffect={progression.equippedGoalEffect}
+                  roundReward={lastRoundReward}
+                  roundDoubled={roundDoubledByAd}
+                  onRequestDoubleRound={handleRequestDoubleRound}
+                />
+              </Suspense>
             )}
           </div>
         </div>
@@ -5466,117 +5588,151 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
 
       {/* Screen 4: Victory / Game Over Modal */}
       {screen === 'game_over' && (
-        <VictoryModal
-          key="screen-game-over"
-          player1={player1}
-          player2={player2}
-          player1Stats={player1Stats}
-          player2Stats={player2Stats}
-          matchHighlights={matchHighlights}
-          isOnlineMatch={isOnlineMode}
-          isBotMatch={mode === 'bot'}
-          rematchState={rematchState}
-          rematchSecondsLeft={rematchSecondsLeft}
-          onDeclineRematch={handleDeclineRematch}
-          onOpenReview={() => setShowReviewModal(true)}
-          reviewRoundsCount={matchHighlights.length}
-          matchRewards={lastMatchRewards}
-          player1Frame={progression.equippedFrame}
-          goalEffect={progression.equippedGoalEffect}
-          userLeagueName={getLeagueTierInfo(progression.leagueTierId).name}
-          userLeagueIcon={getLeagueTierInfo(progression.leagueTierId).icon}
-          onRequestDoubleMatchReward={handleRequestDoubleMatchReward}
-          doubleRewardAdLoading={matchDoubleAdLoading}
-          onInspectOpponent={(opp) => handleInspectPlayer(opp)}
-          onRematch={handleRematch}
-          onHome={handleExitToLobby}
-        />
+        <Suspense fallback={null}>
+          <VictoryModal
+            key="screen-game-over"
+            player1={player1}
+            player2={player2}
+            player1Stats={player1Stats}
+            player2Stats={player2Stats}
+            matchHighlights={matchHighlights}
+            isOnlineMatch={isOnlineMode}
+            isBotMatch={mode === 'bot'}
+            rematchState={rematchState}
+            rematchSecondsLeft={rematchSecondsLeft}
+            onDeclineRematch={handleDeclineRematch}
+            onOpenReview={() => setShowReviewModal(true)}
+            reviewRoundsCount={matchHighlights.length}
+            matchRewards={lastMatchRewards}
+            player1Frame={progression.equippedFrame}
+            goalEffect={progression.equippedGoalEffect}
+            userLeagueName={getLeagueTierInfo(progression.leagueTierId).name}
+            userLeagueIcon={getLeagueTierInfo(progression.leagueTierId).icon}
+            onRequestDoubleMatchReward={handleRequestDoubleMatchReward}
+            doubleRewardAdLoading={matchDoubleAdLoading}
+            onInspectOpponent={(opp) => handleInspectPlayer(opp)}
+            onRematch={handleRematch}
+            onHome={handleExitToLobby}
+          />
+        </Suspense>
       )}
 
       {/* End-of-Match Completed Question Review Modal */}
-      <MatchReviewModal
-        isOpen={showReviewModal}
-        highlights={matchHighlights}
-        player1Id={player1.id}
-        player1Name={player1.name}
-        player2Name={player2.name}
-        onClose={() => setShowReviewModal(false)}
-      />
+      {showReviewModal && (
+        <Suspense fallback={null}>
+          <MatchReviewModal
+            isOpen={showReviewModal}
+            highlights={matchHighlights}
+            player1Id={player1.id}
+            player1Name={player1.name}
+            player2Name={player2.name}
+            onClose={() => setShowReviewModal(false)}
+          />
+        </Suspense>
+      )}
 
       {/* Daily Check-in & Streak Modal */}
-      <DailyRewardsModal
-        isOpen={showDailyModal}
-        progression={progression}
-        onClaim={handleClaimDailyRewardAction}
-        onClose={() => setShowDailyModal(false)}
-        onOpenWheel={() => setShowDailyWheelModal(true)}
-        hasFreeWheelSpin={canUseFreeWheelSpin(progression)}
-      />
+      {showDailyModal && (
+        <Suspense fallback={null}>
+          <DailyRewardsModal
+            isOpen={showDailyModal}
+            progression={progression}
+            onClaim={handleClaimDailyRewardAction}
+            onClose={() => setShowDailyModal(false)}
+            onOpenWheel={() => setShowDailyWheelModal(true)}
+            hasFreeWheelSpin={canUseFreeWheelSpin(progression)}
+          />
+        </Suspense>
+      )}
 
       {/* Career Achievements (Başarımlar) Modal */}
-      <AchievementsModal
-        isOpen={showAchievementsModal}
-        achievementsState={achievementsState}
-        onClaimReward={handleClaimAchievementReward}
-        onClose={() => setShowAchievementsModal(false)}
-      />
+      {showAchievementsModal && (
+        <Suspense fallback={null}>
+          <AchievementsModal
+            isOpen={showAchievementsModal}
+            achievementsState={achievementsState}
+            onClaimReward={handleClaimAchievementReward}
+            onClose={() => setShowAchievementsModal(false)}
+          />
+        </Suspense>
+      )}
 
       {/* V3.0 Football Pass (15-Tier Season Track) Modal */}
-      <FootballPassModal
-        isOpen={showFootballPassModal}
-        passState={passState}
-        isVipUnlocked={hasUnlimitedEnergy(progression)}
-        onClaimReward={handleClaimPassReward}
-        onUnlockVipPass={() => {
-          setShowFootballPassModal(false);
-          handleOpenStore('ads_coins');
-        }}
-        onClose={() => setShowFootballPassModal(false)}
-      />
+      {showFootballPassModal && (
+        <Suspense fallback={null}>
+          <FootballPassModal
+            isOpen={showFootballPassModal}
+            passState={passState}
+            isVipUnlocked={hasUnlimitedEnergy(progression)}
+            onClaimReward={handleClaimPassReward}
+            onUnlockVipPass={() => {
+              setShowFootballPassModal(false);
+              handleOpenStore('ads_coins');
+            }}
+            onClose={() => setShowFootballPassModal(false)}
+          />
+        </Suspense>
+      )}
 
       {/* V3.0 Dynamic Daily Quests & Big Chest Modal */}
-      <DailyQuestsModal
-        isOpen={showV3QuestsModal}
-        questsState={v3QuestsState}
-        adFree={Boolean(progression.adFree)}
-        onClaimQuest={handleClaimV3Quest}
-        onClaimBigChest={handleClaimV3BigChest}
-        onDoubleBigChest={handleDoubleV3BigChest}
-        onClose={() => setShowV3QuestsModal(false)}
-      />
+      {showV3QuestsModal && (
+        <Suspense fallback={null}>
+          <DailyQuestsModal
+            isOpen={showV3QuestsModal}
+            questsState={v3QuestsState}
+            adFree={Boolean(progression.adFree)}
+            onClaimQuest={handleClaimV3Quest}
+            onClaimBigChest={handleClaimV3BigChest}
+            onDoubleBigChest={handleDoubleV3BigChest}
+            onClose={() => setShowV3QuestsModal(false)}
+          />
+        </Suspense>
+      )}
 
       {/* V3.0 Daily Streak Saver Modal */}
-      <StreakSaverModal
-        isOpen={showStreakSaverModal}
-        streakDays={progression.dailyLogin.streakDays}
-        userCoins={progression.coins}
-        adFree={Boolean(progression.adFree)}
-        onSaveWithAd={handleSaveStreakWithAd}
-        onSaveWithCoins={handleSaveStreakWithCoins}
-        onDismiss={handleDismissStreakSaver}
-      />
+      {showStreakSaverModal && (
+        <Suspense fallback={null}>
+          <StreakSaverModal
+            isOpen={showStreakSaverModal}
+            streakDays={progression.dailyLogin.streakDays}
+            userCoins={progression.coins}
+            adFree={Boolean(progression.adFree)}
+            onSaveWithAd={handleSaveStreakWithAd}
+            onSaveWithCoins={handleSaveStreakWithCoins}
+            onDismiss={handleDismissStreakSaver}
+          />
+        </Suspense>
+      )}
 
       {/* V3.0 In-Match Dramatic 4s Last Chance Popup */}
-      <LastChanceModal
-        isOpen={showLastChanceModal}
-        isVip={hasUnlimitedEnergy(progression)}
-        onReviveSuccess={handleLastChanceRevive}
-        onGiveUp={handleLastChanceGiveUp}
-      />
+      {showLastChanceModal && (
+        <Suspense fallback={null}>
+          <LastChanceModal
+            isOpen={showLastChanceModal}
+            isVip={hasUnlimitedEnergy(progression)}
+            onReviveSuccess={handleLastChanceRevive}
+            onGiveUp={handleLastChanceGiveUp}
+          />
+        </Suspense>
+      )}
 
       {/* V3.0 Weekend Special Cup & Friend Challenge Modal */}
-      <SpecialEventModal
-        isOpen={showSpecialEventModal}
-        mode={specialEventMode}
-        lineup={specialEventLineup}
-        eventState={specialEventState}
-        userCoins={progression.coins}
-        adFree={Boolean(progression.adFree)}
-        friendChallenge={activeFriendChallenge}
-        onStartEntry={handleStartSpecialEventEntry}
-        onCompleteEvent={handleCompleteSpecialEvent}
-        onClose={() => setShowSpecialEventModal(false)}
-      />
+      {showSpecialEventModal && (
+        <Suspense fallback={null}>
+          <SpecialEventModal
+            isOpen={showSpecialEventModal}
+            mode={specialEventMode}
+            lineup={specialEventLineup}
+            eventState={specialEventState}
+            userCoins={progression.coins}
+            adFree={Boolean(progression.adFree)}
+            friendChallenge={activeFriendChallenge}
+            onStartEntry={handleStartSpecialEventEntry}
+            onCompleteEvent={handleCompleteSpecialEvent}
+            onClose={() => setShowSpecialEventModal(false)}
+          />
+        </Suspense>
+      )}
 
       {/* Achievement Unlocked Toast Notification */}
       {achievementToast && (
@@ -5610,301 +5766,347 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
       )}
 
       {/* Daily Challenge (Günlük Meydan Okuma) Modal */}
-      <DailyChallengeModal
-        isOpen={showDailyChallengeModal}
-        progression={progression}
-        onClose={() => setShowDailyChallengeModal(false)}
-        onCompleteDailyChallenge={handleCompleteDailyChallenge}
-      />
+      {showDailyChallengeModal && (
+        <Suspense fallback={null}>
+          <DailyChallengeModal
+            isOpen={showDailyChallengeModal}
+            progression={progression}
+            onClose={() => setShowDailyChallengeModal(false)}
+            onCompleteDailyChallenge={handleCompleteDailyChallenge}
+          />
+        </Suspense>
+      )}
 
       {/* Daily Fortune Wheel (Günlük Kader Çarkı) Modal */}
-      <DailyWheelModal
-        isOpen={showDailyWheelModal}
-        progression={progression}
-        onCommitSpin={handleCommitWheelSpin}
-        onClose={() => setShowDailyWheelModal(false)}
-      />
+      {showDailyWheelModal && (
+        <Suspense fallback={null}>
+          <DailyWheelModal
+            isOpen={showDailyWheelModal}
+            progression={progression}
+            onCommitSpin={handleCommitWheelSpin}
+            onClose={() => setShowDailyWheelModal(false)}
+          />
+        </Suspense>
+      )}
 
       {/* Daily Energy Depleted / Info Modal */}
-      <EnergyEmptyModal
-        isOpen={showEnergyModal}
-        currentEnergy={getEffectiveDailyEnergy(progression)}
-        energyDrinks={progression.energyDrinks ?? 0}
-        isVipUnlimited={hasUnlimitedEnergy(progression)}
-        onClose={() => setShowEnergyModal(false)}
-        onGrantAdEnergy={handleGrantAdEnergy}
-        onUseEnergyDrink={handleUseEnergyDrinkForMatch}
-        onGoToStore={() => handleOpenStore('featured')}
-      />
+      {showEnergyModal && (
+        <Suspense fallback={null}>
+          <EnergyEmptyModal
+            isOpen={showEnergyModal}
+            currentEnergy={getEffectiveDailyEnergy(progression)}
+            energyDrinks={progression.energyDrinks ?? 0}
+            isVipUnlimited={hasUnlimitedEnergy(progression)}
+            onClose={() => setShowEnergyModal(false)}
+            onGrantAdEnergy={handleGrantAdEnergy}
+            onUseEnergyDrink={handleUseEnergyDrinkForMatch}
+            onGoToStore={() => handleOpenStore('featured')}
+          />
+        </Suspense>
+      )}
 
       {/* Full In-Game Store Modal */}
-      <StoreModal
-        key={storeCategory}
-        isOpen={showStoreModal}
-        playerProfile={player1}
-        progression={progression}
-        initialCategory={storeCategory}
-        onClose={() => setShowStoreModal(false)}
-        onPurchaseItem={handlePurchaseStoreItemAction}
-        onEquipItem={handleEquipStoreItemAction}
-        onWatchAdForCoins={handleWatchAdForStoreCoins}
-        onRestorePurchases={handleRestorePurchases}
-      />
+      {showStoreModal && (
+        <Suspense fallback={null}>
+          <StoreModal
+            key={storeCategory}
+            isOpen={showStoreModal}
+            playerProfile={player1}
+            progression={progression}
+            initialCategory={storeCategory}
+            onClose={() => setShowStoreModal(false)}
+            onPurchaseItem={handlePurchaseStoreItemAction}
+            onEquipItem={handleEquipStoreItemAction}
+            onWatchAdForCoins={handleWatchAdForStoreCoins}
+            onRestorePurchases={handleRestorePurchases}
+          />
+        </Suspense>
+      )}
 
       {/* 8-Player Knockout Tournament Modal */}
-      <TournamentModal
-        isOpen={showTournamentModal}
-        playerProfile={player1}
-        progression={progression}
-        activeBracket={activeTournament}
-        initialFriendCode={pendingInviteTournament}
-        onClose={() => {
-          setShowTournamentModal(false);
-          setPendingInviteTournament(null);
-        }}
-        onStartOpenTournament={handleStartOpenTournament}
-        onStartFriendTournament={handleStartFriendTournament}
-        onPayFriendTournamentEntry={handlePayFriendTournamentEntry}
-        onPlayNextMatch={handlePlayNextTournamentMatch}
-        onResetBracket={() => setActiveTournament(null)}
-      />
+      {showTournamentModal && (
+        <Suspense fallback={null}>
+          <TournamentModal
+            isOpen={showTournamentModal}
+            playerProfile={player1}
+            progression={progression}
+            activeBracket={activeTournament}
+            initialFriendCode={pendingInviteTournament}
+            onClose={() => {
+              setShowTournamentModal(false);
+              setPendingInviteTournament(null);
+            }}
+            onStartOpenTournament={handleStartOpenTournament}
+            onStartFriendTournament={handleStartFriendTournament}
+            onPayFriendTournamentEntry={handlePayFriendTournamentEntry}
+            onPlayNextMatch={handlePlayNextTournamentMatch}
+            onResetBracket={() => setActiveTournament(null)}
+          />
+        </Suspense>
+      )}
 
       {/* Interstitial Ad Modal (Every 3 completed matches for non-VIP users) */}
-      <InterstitialAdModal
-        isOpen={Boolean(interstitialAdState)}
-        adUnitId={interstitialAdState?.adUnitId}
-        onDismiss={() => {
-          const resolve = interstitialAdState?.resolve;
-          setInterstitialAdState(null);
-          resolve?.();
-        }}
-      />
+      {interstitialAdState && (
+        <Suspense fallback={null}>
+          <InterstitialAdModal
+            isOpen={Boolean(interstitialAdState)}
+            adUnitId={interstitialAdState?.adUnitId}
+            onDismiss={() => {
+              const resolve = interstitialAdState?.resolve;
+              setInterstitialAdState(null);
+              resolve?.();
+            }}
+          />
+        </Suspense>
+      )}
 
       {/* Rewarded Ad Modal (2x Rewards, +250 Store Coins, Loss Rematch Unlock) */}
-      <RewardedAdModal
-        isOpen={Boolean(pendingAdReward)}
-        adFree={
-          pendingAdReward?.scope === 'store_coins' ? false : Boolean(progression.adFree)
-        }
-        adPurpose={
-          pendingAdReward?.scope === 'store_coins'
-            ? 'free_coins'
-            : pendingAdReward?.scope === 'rematch_unlock'
-            ? 'rematch_unlock'
-            : 'double_match_reward'
-        }
-        badgeText={
-          pendingAdReward?.scope === 'store_coins'
-            ? 'ÜCRETSİZ ÖDÜLLÜ REKLAM'
-            : pendingAdReward?.scope === 'rematch_unlock'
-            ? 'RÖVANŞ REKLAMI'
-            : undefined
-        }
-        title={
-          pendingAdReward?.scope === 'store_coins'
-            ? 'Ücretsiz +250 Coin Kazan!'
-            : pendingAdReward?.scope === 'rematch_unlock'
-            ? 'Rövanş Hakkını Aç!'
-            : undefined
-        }
-        ctaLabel={
-          pendingAdReward?.scope === 'store_coins'
-            ? '+250 Coin Hesaba Ekle!'
-            : pendingAdReward?.scope === 'rematch_unlock'
-            ? 'Rövanş Maçını Başlat!'
-            : undefined
-        }
-        rewardLabel={
-          pendingAdReward
-            ? pendingAdReward.scope === 'store_coins'
-              ? '+250 Ücretsiz Coin'
-              : pendingAdReward.scope === 'rematch_unlock'
-              ? 'Anında Rövanş Maçı Hakkı'
-              : `+${pendingAdReward.coins} Coin & +${pendingAdReward.points} Puan`
-            : ''
-        }
-        onComplete={handleCompleteRewardedAd}
-        onClose={handleCloseRewardedAd}
-      />
+      {pendingAdReward && (
+        <Suspense fallback={null}>
+          <RewardedAdModal
+            isOpen={Boolean(pendingAdReward)}
+            adFree={
+              pendingAdReward?.scope === 'store_coins' ? false : Boolean(progression.adFree)
+            }
+            adPurpose={
+              pendingAdReward?.scope === 'store_coins'
+                ? 'free_coins'
+                : pendingAdReward?.scope === 'rematch_unlock'
+                ? 'rematch_unlock'
+                : 'double_match_reward'
+            }
+            badgeText={
+              pendingAdReward?.scope === 'store_coins'
+                ? 'ÜCRETSİZ ÖDÜLLÜ REKLAM'
+                : pendingAdReward?.scope === 'rematch_unlock'
+                ? 'RÖVANŞ REKLAMI'
+                : undefined
+            }
+            title={
+              pendingAdReward?.scope === 'store_coins'
+                ? 'Ücretsiz +250 Coin Kazan!'
+                : pendingAdReward?.scope === 'rematch_unlock'
+                ? 'Rövanş Hakkını Aç!'
+                : undefined
+            }
+            ctaLabel={
+              pendingAdReward?.scope === 'store_coins'
+                ? '+250 Coin Hesaba Ekle!'
+                : pendingAdReward?.scope === 'rematch_unlock'
+                ? 'Rövanş Maçını Başlat!'
+                : undefined
+            }
+            rewardLabel={
+              pendingAdReward
+                ? pendingAdReward.scope === 'store_coins'
+                  ? '+250 Ücretsiz Coin'
+                  : pendingAdReward.scope === 'rematch_unlock'
+                  ? 'Anında Rövanş Maçı Hakkı'
+                  : `+${pendingAdReward.coins} Coin & +${pendingAdReward.points} Puan`
+                : ''
+            }
+            onComplete={handleCompleteRewardedAd}
+            onClose={handleCloseRewardedAd}
+          />
+        </Suspense>
+      )}
 
       {/* Global Settings Modal (Sound + Language + Official Auth & Cloud Sync) */}
-      <SettingsModal
-        isOpen={showSettingsModal}
-        isMuted={isMuted}
-        uiTheme={uiTheme}
-        progression={progression}
-        cloudUser={
-          firebaseUser && !firebaseUser.isAnonymous
-            ? {
-                uid: firebaseUser.uid,
-                email: firebaseUser.email,
-                displayName: firebaseUser.displayName,
-                emailVerified: firebaseUser.emailVerified,
-              }
-            : null
-        }
-        isSyncingCloud={isSyncingCloud}
-        onToggleMute={toggleSoundMute}
-        onToggleTheme={handleToggleTheme}
-        onGoogleSignIn={handleGoogleSignIn}
-        onGoogleSignOut={handleGoogleSignOut}
-        onSyncCloudNow={handleSyncCloudNow}
-        onSendVerificationEmail={sendVerificationEmailToCurrentUser}
-        onRestorePurchases={handleRestorePurchases}
-        onDeleteAccount={handleDeleteAccount}
-        onUnlinkSocial={handleUnlinkSocialAction}
-        onOpenTutorial={() => {
-          setShowSettingsModal(false);
-          setShowOnboardingModal(true);
-        }}
-        onExitApp={screen === 'lobby' ? handlePromptExitApp : undefined}
-        onClose={() => setShowSettingsModal(false)}
-      />
+      {showSettingsModal && (
+        <Suspense fallback={null}>
+          <SettingsModal
+            isOpen={showSettingsModal}
+            isMuted={isMuted}
+            uiTheme={uiTheme}
+            progression={progression}
+            cloudUser={
+              firebaseUser && !firebaseUser.isAnonymous
+                ? {
+                    uid: firebaseUser.uid,
+                    email: firebaseUser.email,
+                    displayName: firebaseUser.displayName,
+                    emailVerified: firebaseUser.emailVerified,
+                  }
+                : null
+            }
+            isSyncingCloud={isSyncingCloud}
+            onToggleMute={toggleSoundMute}
+            onToggleTheme={handleToggleTheme}
+            onGoogleSignIn={handleGoogleSignIn}
+            onGoogleSignOut={handleGoogleSignOut}
+            onSyncCloudNow={handleSyncCloudNow}
+            onSendVerificationEmail={sendVerificationEmailToCurrentUser}
+            onRestorePurchases={handleRestorePurchases}
+            onDeleteAccount={handleDeleteAccount}
+            onUnlinkSocial={handleUnlinkSocialAction}
+            onOpenTutorial={() => {
+              setShowSettingsModal(false);
+              setShowOnboardingModal(true);
+            }}
+            onExitApp={screen === 'lobby' ? handlePromptExitApp : undefined}
+            onClose={() => setShowSettingsModal(false)}
+          />
+        </Suspense>
+      )}
 
       {/* First-Launch 3-Step Swipeable Onboarding Modal */}
-      <OnboardingModal
-        isOpen={showOnboardingModal}
-        initialClubId={player1.favoriteClubId}
-        onComplete={(selectedClubId) => {
-          setShowOnboardingModal(false);
-          handleUpdateProfile({ favoriteClubId: selectedClubId });
-          logTelemetryEvent('onboarding_completed', { clubId: selectedClubId });
-        }}
-      />
+      {showOnboardingModal && (
+        <Suspense fallback={null}>
+          <OnboardingModal
+            isOpen={showOnboardingModal}
+            initialClubId={player1.favoriteClubId}
+            onComplete={(selectedClubId) => {
+              setShowOnboardingModal(false);
+              handleUpdateProfile({ favoriteClubId: selectedClubId });
+              logTelemetryEvent('onboarding_completed', { clubId: selectedClubId });
+            }}
+          />
+        </Suspense>
+      )}
 
       {/* Auth / Account Profile Modal */}
       {showAuthModal && (
-        <AuthModal
-          currentProfile={player1}
-          progression={progression}
-          googleUid={firebaseUser && !firebaseUser.isAnonymous ? firebaseUser.uid : null}
-          initialTab={authModalTab}
-          onSaveProfile={handleSaveProfile}
-          onGoogleSignIn={handleGoogleSignIn}
-          onPurchaseGift={handlePurchaseGiftAction}
-          onClose={() => {
-            setShowAuthModal(false);
-            if (screen === 'intro') setScreen('lobby');
-          }}
-          isInitialRequired={screen === 'intro'}
-        />
+        <Suspense fallback={null}>
+          <AuthModal
+            currentProfile={player1}
+            progression={progression}
+            googleUid={firebaseUser && !firebaseUser.isAnonymous ? firebaseUser.uid : null}
+            initialTab={authModalTab}
+            onSaveProfile={handleSaveProfile}
+            onGoogleSignIn={handleGoogleSignIn}
+            onPurchaseGift={handlePurchaseGiftAction}
+            onClose={() => {
+              setShowAuthModal(false);
+              if (screen === 'intro') setScreen('lobby');
+            }}
+            isInitialRequired={screen === 'intro'}
+          />
+        </Suspense>
       )}
 
       {/* Public Player Profile & Full Stats Inspector */}
-      <PublicProfileModal
-        isOpen={Boolean(inspectedProfile)}
-        profile={inspectedProfile}
-        isLoading={isInspectingProfile}
-        isSelf={Boolean(
-          inspectedProfile &&
-            (inspectedProfile.id === player1.id ||
-              inspectedProfile.name.toLowerCase() === player1.name.toLowerCase())
-        )}
-        isFriend={Boolean(
-          inspectedProfile &&
-            progression.friends.some(
-              (f) =>
-                f.id === inspectedProfile.id ||
-                (inspectedProfile.friendCode &&
-                  f.friendCode.toUpperCase() === inspectedProfile.friendCode.toUpperCase())
-            )
-        )}
-        isPendingFriend={Boolean(
-          inspectedProfile && hasPendingOutgoingRequest(progression, inspectedProfile)
-        )}
-        isBlocked={Boolean(
-          inspectedProfile &&
-            (progression.blockedPlayerIds || []).includes(inspectedProfile.id)
-        )}
-        currentUserStats={{
-          matchesPlayed: progression.matchesPlayed,
-          wins: progression.wins,
-          winRate:
-            progression.matchesPlayed > 0
-              ? Math.round((progression.wins / progression.matchesPlayed) * 100)
-              : 0,
-          totalPoints: progression.totalPoints,
-          fastestAnswerSec: progression.fastestAnswerSec,
-        }}
-        onAddFriend={handleRequestAddFriend}
-        onChallengePlayer={(mg) => {
-          setInspectedProfile(null);
-          handleSelectOnlineMode('online_room', { minigameType: mg });
-        }}
-        onReportPlayer={async (target, reason, details) => {
-          const serverResp = await fetchBackendWithWakeupRetry(
-            '/api/moderation/report',
-            {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                reporterId: sessionPlayerIdRef.current,
-                targetId: target.id,
-                targetName: target.name,
-                reason,
-                details: details || 'Profil modalından bildirildi',
-              }),
-            },
-            { timeoutMs: 15000, retries: 1 }
-          )
-            .then(async (r) => {
-              const data = await r.json().catch(() => null);
-              return { ok: r.ok && data?.ok !== false, status: r.status, error: data?.error as string | undefined };
-            })
-            .catch(() => ({ ok: false, status: 0, error: undefined }));
+      {inspectedProfile && (
+        <Suspense fallback={null}>
+          <PublicProfileModal
+            isOpen={Boolean(inspectedProfile)}
+            profile={inspectedProfile}
+            isLoading={isInspectingProfile}
+            isSelf={Boolean(
+              inspectedProfile &&
+                (inspectedProfile.id === player1.id ||
+                  inspectedProfile.name.toLowerCase() === player1.name.toLowerCase())
+            )}
+            isFriend={Boolean(
+              inspectedProfile &&
+                progression.friends.some(
+                  (f) =>
+                    f.id === inspectedProfile.id ||
+                    (inspectedProfile.friendCode &&
+                      f.friendCode.toUpperCase() === inspectedProfile.friendCode.toUpperCase())
+                )
+            )}
+            isPendingFriend={Boolean(
+              inspectedProfile && hasPendingOutgoingRequest(progression, inspectedProfile)
+            )}
+            isBlocked={Boolean(
+              inspectedProfile &&
+                (progression.blockedPlayerIds || []).includes(inspectedProfile.id)
+            )}
+            currentUserStats={{
+              matchesPlayed: progression.matchesPlayed,
+              wins: progression.wins,
+              winRate:
+                progression.matchesPlayed > 0
+                  ? Math.round((progression.wins / progression.matchesPlayed) * 100)
+                  : 0,
+              totalPoints: progression.totalPoints,
+              fastestAnswerSec: progression.fastestAnswerSec,
+            }}
+            onAddFriend={handleRequestAddFriend}
+            onChallengePlayer={(mg) => {
+              setInspectedProfile(null);
+              handleSelectOnlineMode('online_room', { minigameType: mg });
+            }}
+            onReportPlayer={async (target, reason, details) => {
+              const serverResp = await fetchBackendWithWakeupRetry(
+                '/api/moderation/report',
+                {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    reporterId: sessionPlayerIdRef.current,
+                    targetId: target.id,
+                    targetName: target.name,
+                    reason,
+                    details: details || 'Profil modalından bildirildi',
+                  }),
+                },
+                { timeoutMs: 15000, retries: 1 }
+              )
+                .then(async (r) => {
+                  const data = await r.json().catch(() => null);
+                  return { ok: r.ok && data?.ok !== false, status: r.status, error: data?.error as string | undefined };
+                })
+                .catch(() => ({ ok: false, status: 0, error: undefined }));
 
-          if (serverResp.status === 429) {
-            return {
-              ok: false,
-              message:
-                serverResp.error ||
-                'Bu oyuncu hakkında yakın zamanda şikayet gönderdin. Ekibimiz inceleyecektir.',
-            };
-          }
+              if (serverResp.status === 429) {
+                return {
+                  ok: false,
+                  message:
+                    serverResp.error ||
+                    'Bu oyuncu hakkında yakın zamanda şikayet gönderdin. Ekibimiz inceleyecektir.',
+                };
+              }
 
-          const fbRes = firebaseUser?.uid
-            ? await submitUserReportToFirestore({
-                reporterUid: firebaseUser.uid,
-                targetId: target.id,
-                targetName: target.name,
-                reason,
-                details: details || 'Profil modalından bildirildi',
-              })
-            : { ok: false };
+              const fbRes = firebaseUser?.uid
+                ? await submitUserReportToFirestore({
+                    reporterUid: firebaseUser.uid,
+                    targetId: target.id,
+                    targetName: target.name,
+                    reason,
+                    details: details || 'Profil modalından bildirildi',
+                  })
+                : { ok: false };
 
-          if (serverResp.ok || fbRes.ok) {
-            return {
-              ok: true,
-              message: `${target.name} hakkında şikayet iletildi. İnceleme ekibimiz değerlendirecektir.`,
-            };
-          }
-          return {
-            ok: false,
-            message: serverResp.error || 'Şikayet şu anda iletilemedi; lütfen bağlantını kontrol et.',
-          };
-        }}
-        onToggleBlockPlayer={(target) => {
-          const prevBlocked = progressionRef.current.blockedPlayerIds || [];
-          const exists = prevBlocked.includes(target.id);
-          const nextBlocked = exists
-            ? prevBlocked.filter((id) => id !== target.id)
-            : Array.from(new Set([...prevBlocked, target.id]));
-          const nextProg: UserProgression = {
-            ...progressionRef.current,
-            blockedPlayerIds: nextBlocked,
-          };
-          persistProgression(nextProg);
-        }}
-        onClose={() => setInspectedProfile(null)}
-      />
+              if (serverResp.ok || fbRes.ok) {
+                return {
+                  ok: true,
+                  message: `${target.name} hakkında şikayet iletildi. İnceleme ekibimiz değerlendirecektir.`,
+                };
+              }
+              return {
+                ok: false,
+                message: serverResp.error || 'Şikayet şu anda iletilemedi; lütfen bağlantını kontrol et.',
+              };
+            }}
+            onToggleBlockPlayer={(target) => {
+              const prevBlocked = progressionRef.current.blockedPlayerIds || [];
+              const exists = prevBlocked.includes(target.id);
+              const nextBlocked = exists
+                ? prevBlocked.filter((id) => id !== target.id)
+                : Array.from(new Set([...prevBlocked, target.id]));
+              const nextProg: UserProgression = {
+                ...progressionRef.current,
+                blockedPlayerIds: nextBlocked,
+              };
+              persistProgression(nextProg);
+            }}
+            onClose={() => setInspectedProfile(null)}
+          />
+        </Suspense>
+      )}
 
       {/* Friend Request Confirmation Modal (Stage 1 of 3-Stage Friend Flow) */}
-      <FriendRequestConfirmModal
-        isOpen={Boolean(pendingFriendTarget)}
-        target={pendingFriendTarget}
-        onConfirm={handleConfirmSendFriendRequest}
-        onCancel={() => setPendingFriendTarget(null)}
-      />
+      {pendingFriendTarget && (
+        <Suspense fallback={null}>
+          <FriendRequestConfirmModal
+            isOpen={Boolean(pendingFriendTarget)}
+            target={pendingFriendTarget}
+            onConfirm={handleConfirmSendFriendRequest}
+            onCancel={() => setPendingFriendTarget(null)}
+          />
+        </Suspense>
+      )}
 
       {/* Live Friend Activity Toasts */}
       <ToastContainer
@@ -5928,17 +6130,21 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
       />
 
       {/* Exit Confirmation Dialog */}
-      <ConfirmExitModal
-        isOpen={showExitConfirm}
-        onConfirm={handleConfirmExit}
-        onCancel={handleCancelExit}
-        title="Çıkmak istediğinize emin misiniz?"
-        description={
-          exitTarget === 'intro'
-            ? 'Ana giriş ekranına dönülecektir.'
-            : 'Devam eden maçınız sonlanacaktır.'
-        }
-      />
+      {showExitConfirm && (
+        <Suspense fallback={null}>
+          <ConfirmExitModal
+            isOpen={showExitConfirm}
+            onConfirm={handleConfirmExit}
+            onCancel={handleCancelExit}
+            title="Çıkmak istediğinize emin misiniz?"
+            description={
+              exitTarget === 'intro'
+                ? 'Ana giriş ekranına dönülecektir.'
+                : 'Devam eden maçınız sonlanacaktır.'
+            }
+          />
+        </Suspense>
+      )}
     </main>
   );
 }
