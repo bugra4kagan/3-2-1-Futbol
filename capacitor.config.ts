@@ -1,6 +1,6 @@
 const config = {
   appId: 'com.futbol321.challenge',
-  appName: '3-2-1 Futbol: Online Düello',
+  appName: '3-2-1 Futbol : Kafa Kafaya',
   webDir: 'dist',
   bundledWebRuntime: false,
   plugins: {

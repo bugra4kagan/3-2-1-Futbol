@@ -86,7 +86,16 @@ test('adService exposes AdMob unit IDs and completes simulated rewarded ad clean
   assert.ok(ADMOB_UNIT_IDS.android.rewardedCoins.startsWith('ca-app-pub-'));
   assert.ok(ADMOB_UNIT_IDS.ios.rewardedRematch.startsWith('ca-app-pub-'));
 
-  const res = await adService.showRewardedAd('free_coins_250', { durationMs: 5 });
+  // Closed test default blocks rewarded ads and fake coin rewards
+  const closedRes = await adService.showRewardedAd('free_coins_250', { durationMs: 5 });
+  assert.equal(closedRes.completed, false);
+  assert.equal(closedRes.rewardAmountCoins, 0);
+  assert.equal(closedRes.provider, 'disabled_closed_test');
+
+  const res = await adService.showRewardedAd('free_coins_250', {
+    durationMs: 5,
+    overrideAdsEnabled: true,
+  });
   assert.equal(res.completed, true);
   assert.equal(res.rewardAmountCoins, 250);
   assert.equal(res.provider, 'web_simulation');

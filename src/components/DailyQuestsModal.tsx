@@ -8,6 +8,7 @@ import {
   areAllV3DailyQuestsCompleted,
 } from '../game/v3DailyQuestsEngine';
 import { showRewardedAd } from '../services/adService';
+import { isAdsEnabled } from '../game/monetizationFlags';
 
 interface DailyQuestsModalProps {
   isOpen: boolean;
@@ -175,7 +176,7 @@ export const DailyQuestsModal: React.FC<DailyQuestsModalProps> = ({
               <CoinIcon size="sm" />
               <span>Büyük Sandığı Aç (+{BIG_CHEST_BASE_COINS} Coin)</span>
             </button>
-          ) : !questsState.bigChestDoubled ? (
+          ) : !questsState.bigChestDoubled && isAdsEnabled() ? (
             <button
               type="button"
               data-testid="double-big-chest-ad-btn"

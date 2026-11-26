@@ -1,7 +1,7 @@
 {
   "name": "react-example",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.1.0",
   "type": "module",
   "engines": {
     "node": "22.x"
@@ -15,7 +15,8 @@
     "start:render": "node --max-old-space-size=384 dist/server.mjs",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "verify:bundle": "node scripts/verify-release-bundle.mjs"
   },
   "dependencies": {
     "@capacitor-community/admob": "^8.4.2",

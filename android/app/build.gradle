@@ -33,8 +33,13 @@ android {
             shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
             def resolvedReleaseAdmobAppId = System.getenv('ADMOB_APP_ID') ?: System.getenv('VITE_ADMOB_APP_ID')
+            def isMissingOrTestAdmob = !resolvedReleaseAdmobAppId || resolvedReleaseAdmobAppId.trim().startsWith('ca-app-pub-3940256099942544')
+            if (isMissingOrTestAdmob && System.getenv('STRICT_ADMOB_RELEASE') == 'true') {
+                throw new GradleException('Release build blocked: production ADMOB_APP_ID / VITE_ADMOB_APP_ID is required when STRICT_ADMOB_RELEASE=true.')
+            }
+            // Kapalı test release derlemesinde Google Test App ID fallback KESİNLİKLE enjekte edilmez
             manifestPlaceholders = [
-                admobAppId: resolvedReleaseAdmobAppId ?: 'ca-app-pub-3940256099942544~3347511713'
+                admobAppId: isMissingOrTestAdmob ? '' : resolvedReleaseAdmobAppId.trim()
             ]
             if (file('release.jks').exists()) {
                 signingConfig signingConfigs.release

@@ -1,29 +1,32 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- Minimal Google Play izinleri: yalnızca internet, titreşim ve reklam kimliği -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <!-- Minimal Google Play izinleri: ilk kapalı testte reklamlar devre dışı olduğu için yalnızca internet ve titreşim -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.VIBRATE" />
-    <uses-permission android:name="com.google.android.gms.permission.AD_ID" />
+    <!-- Kapalı test süresince reklam kimliği (AD_ID) izni geçişli bağımlılıklardan da açıkça kaldırılır -->
+    <uses-permission android:name="com.google.android.gms.permission.AD_ID" tools:node="remove" />
 
     <application
         android:allowBackup="false"
         android:hardwareAccelerated="true"
         android:icon="@mipmap/ic_launcher"
-        android:label="3-2-1 Futbol: Online Düello"
+        android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/AppTheme"
         android:usesCleartextTraffic="false">
 
-        <!-- Google AdMob App ID (Debug: Test ID, Release: ADMOB_APP_ID placeholder) -->
-        <meta-data
-            android:name="com.google.android.gms.ads.APPLICATION_ID"
-            android:value="${admobAppId}" />
+        <!-- Kapalı test süresince Google Mobile Ads otomatik SDK başlatıcısı devre dışı tutulur -->
+        <provider
+            android:name="com.google.android.gms.ads.MobileAdsInitProvider"
+            android:authorities="${applicationId}.mobileadsinitprovider"
+            tools:node="remove" />
 
         <activity
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode|navigation|density"
             android:name=".MainActivity"
-            android:label="3-2-1 Futbol: Online Düello"
+            android:label="@string/title_activity_main"
             android:screenOrientation="unspecified"
             android:theme="@style/AppTheme.NoActionBarLaunch"
             android:windowSoftInputMode="adjustResize"

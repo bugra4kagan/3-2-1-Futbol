@@ -115,6 +115,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
+  const [termsAccepted, setTermsAccepted] = useState<boolean>(() => {
+    if (isEditingExisting) return true;
+    try {
+      return typeof window !== 'undefined' && window.localStorage.getItem('321_terms_accepted_v1') === 'true';
+    } catch {
+      return false;
+    }
+  });
 
   const coins = progression?.coins ?? 0;
 
@@ -262,6 +270,17 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (savedSuccess || isSubmitting) return;
+
+    if (!termsAccepted) {
+      sounds.playWrong();
+      setNameError('Devam etmek için Kullanım Koşulları ve Gizlilik Politikasını onaylamalısın.');
+      return;
+    }
+    try {
+      window.localStorage.setItem('321_terms_accepted_v1', 'true');
+    } catch {
+      // ignore
+    }
 
     const fmt = validateUsernameFormat(name);
     if (!fmt.ok) {
@@ -957,12 +976,55 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               )}
             </div>
 
-            {/* Submit Action */}
-            <div className="pt-1">
+            {/* Submit Action & Explicit Terms Acceptance Gate (Google Play UGC) */}
+            <div className="pt-1 space-y-2.5">
+              <label
+                data-testid="auth-legal-notice"
+                className="flex items-start gap-2.5 p-2.5 rounded-xl bg-slate-950/90 border border-slate-800 hover:border-emerald-500/40 cursor-pointer text-[11px] leading-relaxed text-slate-300"
+              >
+                <input
+                  type="checkbox"
+                  data-testid="auth-terms-checkbox"
+                  checked={termsAccepted}
+                  onChange={(e) => {
+                    setTermsAccepted(e.target.checked);
+                    if (e.target.checked && nameError?.includes('Kullanım Koşulları')) {
+                      setNameError(null);
+                    }
+                  }}
+                  className="mt-0.5 w-4 h-4 rounded accent-emerald-500 shrink-0 cursor-pointer"
+                />
+                <span>
+                  13 yaşından büyük olduğumu,{' '}
+                  <a
+                    href="https://bugra4kagan.github.io/3-2-1-Futbol/kullanim-kosullari.html"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-amber-300 hover:underline font-bold"
+                  >
+                    Kullanım Koşulları &amp; Topluluk Kurallarını
+                  </a>{' '}
+                  ve{' '}
+                  <a
+                    href="https://bugra4kagan.github.io/3-2-1-Futbol/gizlilik.html"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-emerald-300 hover:underline font-bold"
+                  >
+                    Gizlilik Politikasını
+                  </a>{' '}
+                  okuyup kabul ediyorum.
+                </span>
+              </label>
               <button
                 type="submit"
                 data-testid="auth-save-btn"
-                disabled={isSubmitting || nameCheckState === 'taken' || nameCheckState === 'invalid'}
+                disabled={
+                  !termsAccepted ||
+                  isSubmitting ||
+                  nameCheckState === 'taken' ||
+                  nameCheckState === 'invalid'
+                }
                 className="w-full py-3.5 px-4 rounded-xl bg-[#168A52] hover:bg-[#22C55E] disabled:opacity-50 disabled:cursor-not-allowed text-[#FFFFFF] font-display font-extrabold text-xl tracking-wider uppercase transition active:scale-95 shadow-lg flex items-center justify-center gap-2 cursor-pointer"
               >
                 {savedSuccess ? (

@@ -1,7 +1,14 @@
 import { Capacitor } from '@capacitor/core';
 import type { PluginListenerHandle } from '@capacitor/core';
-import { RewardAdPluginEvents, BannerAdSize, BannerAdPosition } from '@capacitor-community/admob';
+import {
+  RewardAdPluginEvents,
+  BannerAdSize,
+  BannerAdPosition,
+  AdmobConsentStatus,
+  MaxAdContentRating,
+} from '@capacitor-community/admob';
 import type { AdMobPlugin } from '@capacitor-community/admob';
+import { isAdsEnabled } from '../game/monetizationFlags';
 import { captureError, logTelemetryEvent } from './telemetryService';
 
 export type RewardedPlacement =
@@ -141,7 +148,125 @@ export function getAdMobEnvConfig() {
   return resolveAdMobConfig();
 }
 
+export interface AdMobConsentState {
+  checked: boolean;
+  canRequestAds: boolean;
+  privacyOptionsRequired: boolean;
+  status: string;
+}
+
 let admobInitialized = false;
+let cachedConsentState: AdMobConsentState = {
+  checked: false,
+  canRequestAds: false,
+  privacyOptionsRequired: false,
+  status: AdmobConsentStatus.UNKNOWN,
+};
+
+export function getAdMobConsentState(): AdMobConsentState {
+  return { ...cachedConsentState };
+}
+
+/**
+ * Google UMP (User Messaging Platform) GDPR / EEA / UK / CH kullanıcı onayı akışı.
+ * Reklam SDK'sı başlatılmadan önce onay durumunu sorgular ve gerekiyorsa Google onay formunu gösterir.
+ */
+export async function ensureAdMobConsent(forceRefresh = false): Promise<AdMobConsentState> {
+  if (!isAdsEnabled() || !isNativeCapacitorRuntime()) {
+    return {
+      checked: true,
+      canRequestAds: false,
+      privacyOptionsRequired: false,
+      status: AdmobConsentStatus.NOT_REQUIRED,
+    };
+  }
+  if (cachedConsentState.checked && !forceRefresh) {
+    return { ...cachedConsentState };
+  }
+
+  const plugin = await getAdMobPlugin();
+  if (!plugin || typeof plugin.requestConsentInfo !== 'function') {
+    cachedConsentState = {
+      checked: true,
+      canRequestAds: false,
+      privacyOptionsRequired: false,
+      status: AdmobConsentStatus.UNKNOWN,
+    };
+    return { ...cachedConsentState };
+  }
+
+  try {
+    let info = await plugin.requestConsentInfo({
+      tagForUnderAgeOfConsent: false,
+    });
+    if (
+      info.status === AdmobConsentStatus.REQUIRED &&
+      info.isConsentFormAvailable &&
+      typeof plugin.showConsentForm === 'function'
+    ) {
+      info = await plugin.showConsentForm();
+    }
+    const canRequestAds =
+      typeof info.canRequestAds === 'boolean'
+        ? info.canRequestAds
+        : info.status === AdmobConsentStatus.OBTAINED ||
+          info.status === AdmobConsentStatus.NOT_REQUIRED;
+    const privacyOptionsRequired =
+      String(info.privacyOptionsRequirementStatus || '') === 'REQUIRED';
+
+    cachedConsentState = {
+      checked: true,
+      canRequestAds,
+      privacyOptionsRequired,
+      status: String(info.status || AdmobConsentStatus.UNKNOWN),
+    };
+    logTelemetryEvent('admob_ump_consent_resolved', {
+      status: cachedConsentState.status,
+      canRequestAds: cachedConsentState.canRequestAds,
+      privacyOptionsRequired: cachedConsentState.privacyOptionsRequired,
+    });
+    return { ...cachedConsentState };
+  } catch (err) {
+    captureError(err, { stage: 'admob_ump_consent' });
+    cachedConsentState = {
+      checked: true,
+      canRequestAds: false,
+      privacyOptionsRequired: false,
+      status: AdmobConsentStatus.UNKNOWN,
+    };
+    return { ...cachedConsentState };
+  }
+}
+
+export async function openAdPrivacyOptionsForm(): Promise<{ ok: boolean; message: string }> {
+  if (!isNativeCapacitorRuntime()) {
+    return {
+      ok: false,
+      message: 'Reklam gizlilik tercihleri yalnızca mobil uygulamada kullanılabilir.',
+    };
+  }
+  const plugin = await getAdMobPlugin();
+  if (!plugin || typeof plugin.showPrivacyOptionsForm !== 'function') {
+    return {
+      ok: false,
+      message: 'Reklam gizlilik formu bu cihazda şu anda kullanılamıyor.',
+    };
+  }
+  try {
+    await plugin.showPrivacyOptionsForm();
+    await ensureAdMobConsent(true);
+    return {
+      ok: true,
+      message: 'Reklam gizlilik tercihlerin güncellendi.',
+    };
+  } catch (err) {
+    captureError(err, { stage: 'admob_privacy_options_form' });
+    return {
+      ok: false,
+      message: 'Reklam gizlilik formu açılamadı. Lütfen daha sonra tekrar dene.',
+    };
+  }
+}
 
 function getPlatformKey(): 'android' | 'ios' {
   try {
@@ -171,6 +296,7 @@ async function getAdMobPlugin(): Promise<AdMobPlugin | null> {
 }
 
 export async function initializeAdMob(): Promise<boolean> {
+  if (!isAdsEnabled()) return false;
   if (admobInitialized) return true;
   if (!isNativeCapacitorRuntime()) return false;
 
@@ -184,12 +310,25 @@ export async function initializeAdMob(): Promise<boolean> {
     return false;
   }
 
+  const consent = await ensureAdMobConsent();
+  if (!consent.canRequestAds) {
+    logTelemetryEvent(
+      'admob_blocked_no_consent',
+      { status: consent.status },
+      'warning'
+    );
+    return false;
+  }
+
   const plugin = await getAdMobPlugin();
   if (!plugin) return false;
 
   try {
     await plugin.initialize({
       initializeForTesting: config.isUsingTestIds,
+      tagForChildDirectedTreatment: false,
+      tagForUnderAgeOfConsent: false,
+      maxAdContentRating: MaxAdContentRating.Teen,
     });
     admobInitialized = true;
     logTelemetryEvent('admob_initialized', {
@@ -229,12 +368,20 @@ export async function showNativeRewardedAd(
   shown: boolean;
   rewarded: boolean;
   adUnitId: string;
-  blockedReason?: 'missing_production_config';
+  blockedReason?: 'missing_production_config' | 'disabled_closed_test';
 }> {
   const config = getAdMobEnvConfig();
   const adUnitId = resolveRewardedAdUnitId(placement, overrideAdId);
   if (!isNativeCapacitorRuntime()) {
     return { shown: false, rewarded: false, adUnitId };
+  }
+  if (!isAdsEnabled()) {
+    return {
+      shown: false,
+      rewarded: false,
+      adUnitId: '',
+      blockedReason: 'disabled_closed_test',
+    };
   }
 
   if (config.mode === 'production' && !adUnitId) {
@@ -298,12 +445,15 @@ export async function showNativeInterstitialAd(
 ): Promise<{
   shown: boolean;
   adUnitId: string;
-  blockedReason?: 'missing_production_config';
+  blockedReason?: 'missing_production_config' | 'disabled_closed_test';
 }> {
   const config = getAdMobEnvConfig();
   const adUnitId = resolveInterstitialAdUnitId(overrideAdId);
   if (!isNativeCapacitorRuntime()) {
     return { shown: false, adUnitId };
+  }
+  if (!isAdsEnabled()) {
+    return { shown: false, adUnitId: '', blockedReason: 'disabled_closed_test' };
   }
 
   if (config.mode === 'production' && !adUnitId) {
@@ -341,7 +491,7 @@ export async function showNativeBannerAd(
   adFree: boolean,
   overrideAdId?: string
 ): Promise<boolean> {
-  if (adFree || !isNativeCapacitorRuntime()) return false;
+  if (!isAdsEnabled() || adFree || !isNativeCapacitorRuntime()) return false;
   const config = getAdMobEnvConfig();
   const adUnitId = resolveBannerAdUnitId(overrideAdId);
   if (config.mode === 'production' && !adUnitId) return false;

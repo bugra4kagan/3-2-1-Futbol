@@ -28,6 +28,7 @@ import {
   hasUnlimitedEnergy,
 } from '../game/retentionEngine';
 import { SIMULATED_AD_DURATION_MS, showRewardedAd } from '../services/adService';
+import { isAdsEnabled } from '../game/monetizationFlags';
 import { sounds } from '../utils/audio';
 import { haptics } from '../utils/haptics';
 
@@ -549,7 +550,7 @@ export const DailyWheelModal: React.FC<DailyWheelModalProps> = ({
               {phase === 'spinning' ? 'Çark Dönüyor...' : 'ÇEVİR (1 ÜCRETSİZ HAK)'}
             </span>
           </button>
-        ) : remainingAdSpins > 0 ? (
+        ) : isAdsEnabled() && remainingAdSpins > 0 ? (
           <div className="space-y-2">
             <div
               data-testid="wheel-cooldown-notice"
@@ -583,7 +584,7 @@ export const DailyWheelModal: React.FC<DailyWheelModalProps> = ({
             disabled
             className="w-full min-h-[46px] py-3 px-4 rounded-xl bg-slate-900 border border-slate-700 text-slate-300 font-black text-xs sm:text-sm cursor-not-allowed"
           >
-            Ücretsiz Hak Bekleniyor ({formatWheelCooldownBadge(getRemainingWheelCooldownMs(progression))}) • Reklam 0/3
+            Ücretsiz Hak Bekleniyor ({formatWheelCooldownBadge(getRemainingWheelCooldownMs(progression))}){isAdsEnabled() ? ' • Reklam 0/3' : ''}
           </button>
         )}
       </div>

@@ -41,6 +41,7 @@ import {
 import { ClubBadge } from './ClubBadge';
 import { CoinIcon } from './CoinIcon';
 import { PlayerAvatar } from './PlayerAvatar';
+import { isRealMoneyIapEnabled } from '../game/monetizationFlags';
 import { sounds } from '../utils/audio';
 import {
   fetchGooglePlayPrices,
@@ -461,7 +462,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                 </span>
               </div>
               <span className="block text-[11px] text-[#F5F3EB]/85 mt-1 truncate">
-                Kulüp armaları, rozetler, ünvanlar ve +250 Coin ödülleri
+                Kulüp armaları, çerçeveler, rozetler ve ünvanlar (Coin ile)
               </span>
             </div>
           </div>
@@ -660,8 +661,8 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         </div>
       </section>
 
-      {/* 7. Reklamları Kaldır (Dedicated Card Preserving store_ad_free & Restore Purchases) */}
-      {adFreeItem && (
+      {/* 7. Reklamları Kaldır (Kapalı testte gerçek para satışı gizli; mevcut doğrulanmış VIP hakkı korunur) */}
+      {adFreeItem && (isAdFreeOwned || isRealMoneyIapEnabled()) && (
         <section
           data-testid="profile-remove-ads-section"
           className="p-4 rounded-3xl bg-[#0F273E] border-2 border-[#E5B94F]/60 space-y-3 shadow-lg"
@@ -712,7 +713,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               </button>
             )}
 
-            {onRestorePurchases && (
+            {isRealMoneyIapEnabled() && onRestorePurchases && (
               <button
                 type="button"
                 data-testid="profile-restore-purchases-btn"

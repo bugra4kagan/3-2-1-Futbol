@@ -72,7 +72,7 @@ export const GameLogoAppIconPreview: React.FC<{ className?: string }> = ({
         Uygulama İkonu Önizleme
       </span>
       <span className="block text-xs font-bold text-[#F5F3EB]">
-        3-2-1 Futbol: Online Düello
+        3-2-1 Futbol : Kafa Kafaya
       </span>
     </div>
   </div>

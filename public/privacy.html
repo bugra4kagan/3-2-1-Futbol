@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="tr">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <title>Privacy Policy / Gizlilik Politikası • 3-2-1 Futbol: Online Düello</title>
+    <title>Privacy Policy / Gizlilik Politikası • 3-2-1 Futbol : Kafa Kafaya</title>
     <style>
       :root {
         color-scheme: dark;
@@ -13,14 +13,14 @@
       }
       body {
         margin: 0;
-        font-family: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-        background: radial-gradient(circle at top, #064e3b 0%, #020617 48%, #020617 100%);
+        font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        background: radial-gradient(circle at top, #064e3b 0%, #020617 50%, #020617 100%);
         color: #f8fafc;
         line-height: 1.65;
         padding: 24px 16px 64px;
       }
       .container {
-        max-width: 820px;
+        max-width: 840px;
         margin: 0 auto;
         background: rgba(15, 23, 42, 0.94);
         border: 1px solid rgba(16, 185, 129, 0.35);
@@ -58,7 +58,8 @@
         font-weight: 800;
         color: #34d399;
       }
-      p, li {
+      p,
+      li {
         color: #cbd5e1;
         font-size: 15px;
       }
@@ -76,131 +77,154 @@
         padding: 16px 18px;
         margin: 18px 0;
       }
-      .lang-divider {
-        margin: 34px 0 26px;
-        border: none;
-        border-top: 1px solid rgba(148, 163, 184, 0.25);
+      .links {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 14px;
+        margin-top: 22px;
+        padding-top: 16px;
+        border-top: 1px solid rgba(148, 163, 184, 0.2);
+        font-size: 14px;
       }
       a {
         color: #34d399;
         font-weight: 700;
       }
+      code {
+        background: rgba(15, 23, 42, 0.9);
+        padding: 2px 6px;
+        border-radius: 6px;
+        font-size: 13px;
+        color: #e2e8f0;
+      }
     </style>
   </head>
   <body>
     <main class="container">
-      <span class="badge">3-2-1 Futbol: Online Düello • Official Privacy Policy</span>
-      <h1>Gizlilik Politikası &amp; Privacy Policy</h1>
-      <p class="meta">Son Güncelleme / Last Updated: 24 Kasım / November 24, 2026</p>
+      <span class="badge">3-2-1 Futbol : Kafa Kafaya • Official Privacy Policy</span>
+      <h1>Privacy Policy</h1>
+      <p class="meta">
+        App: <strong>3-2-1 Futbol : Kafa Kafaya</strong> (<code>com.futbol321.challenge</code>) ·
+        Developer Contact: <strong>321futboloyunu@gmail.com</strong> · Last Updated: November 26, 2026
+      </p>
 
-      <!-- TURKISH SECTION -->
-      <section lang="tr">
-        <h2>1. Yerel Depolama (localStorage)</h2>
-        <p>
-          <strong>3-2-1 Futbol: Online Düello</strong>; oyun içi Coin bakiyeniz, günlük enerjiniz,
-          günlük giriş seriniz, açtığınız Anime Avatar ekipmanları ve yıldız profil fotoğraflarınız
-          gibi ilerleme verilerinizi cihazınızdaki tarayıcı/WebView yerel depolamasında
-          (<code>localStorage</code>) hızlı ve çevrimdışı erişim için saklar.
+      <p>
+        This Privacy Policy explains what information <strong>3-2-1 Futbol : Kafa Kafaya</strong>
+        collects, how it is processed, which third-party services are integrated, and how you can
+        permanently delete your account and data.
+      </p>
+
+      <h2>1. Data We Collect &amp; Purposes</h2>
+      <ul>
+        <li>
+          <strong>Account &amp; Profile Data:</strong> Chosen display nickname, selected profile icon,
+          favorite club, generated account/friend ID, recovery code, and—if you optionally sign in with
+          Google/Email—your Firebase UID and email address.
+        </li>
+        <li>
+          <strong>Gameplay Progression &amp; Statistics:</strong> Match history, weekly and all-time
+          league points, virtual in-game coin balance, unlocked cosmetic items (crests, frames, badges,
+          titles), daily streak, and online match results.
+        </li>
+        <li>
+          <strong>In-App Purchases (Google Play Billing):</strong> Real-money purchases are disabled
+          during the initial v1.1.0 closed test; the cosmetic shop operates strictly with virtual
+          in-game Coins. Previously verified VIP/Ad-Free entitlements remain preserved. When real-money
+          billing is active, receipts are verified server-side and only a non-personal SHA-256 token
+          hash is stored for anti-fraud protection.
+        </li>
+        <li>
+          <strong>Community Safety (Report &amp; Block):</strong> Player abuse reports (reason and
+          target identifier) are persisted in <code>userReports</code> (accessible only to authorized
+          administrators) for moderation review. Blocked players are hidden from your views.
+        </li>
+        <li>
+          <strong>Advertising &amp; Technical Diagnostics:</strong> In the initial v1.1.0 closed test,
+          third-party ads (AdMob) and the <code>AD_ID</code> permission are disabled. Only minimal app
+          version, stability, and integrity signals (Firebase App Check / Google Play Integrity) may be
+          processed.
+        </li>
+      </ul>
+
+      <h2>2. Infrastructure &amp; Third-Party Services</h2>
+      <ul>
+        <li>
+          <strong>Google Firebase (Authentication, Cloud Firestore, Realtime Database, App Check):</strong>
+          Used for optional sign-in, live 1v1 rooms and matchmaking queues (<code>rooms</code>,
+          <code>matchmaking</code>), global leaderboard (<code>leaderboard</code>), cloud account backup
+          (<code>users</code>, <code>publicProfiles</code>, <code>usernames</code>), and abuse prevention
+          via Firebase App Check with Google Play Integrity.
+        </li>
+        <li>
+          <strong>Render Backend Server (<code>three-2-1-futbol-1.onrender.com</code>):</strong>
+          Used over HTTPS/TLS for account registration, recovery code lookup, authoritative match reward
+          validation, Google Play receipt verification, and moderation report persistence.
+        </li>
+        <li>
+          <strong>Google AdMob &amp; Google UMP (User Messaging Platform):</strong>
+          Used for optional rewarded video ads and non-VIP post-match interstitial ads. Users in the
+          EEA, UK, and Switzerland are shown Google&apos;s UMP consent dialog and can update ad privacy
+          preferences in Settings.
+        </li>
+        <li>
+          <strong>Google Play Billing &amp; Play Integrity API:</strong>
+          Used for purchase processing, restoration, and app integrity checks.
+        </li>
+        <li>
+          <strong>Country Flag Images (<code>flagcdn.com</code>):</strong>
+          Standard HTTPS requests may load country flag icons for gameplay cards; no account data is
+          sent to this host.
+        </li>
+      </ul>
+
+      <h2>3. Local Storage &amp; Android Permissions</h2>
+      <p>
+        Local browser/WebView storage (<code>localStorage</code>) is used for offline solo bot matches
+        and local preferences. In the v1.1.0 closed test (with ads disabled), the Android app requests
+        only <code>INTERNET</code> and <code>VIBRATE</code> (optional haptic feedback), while
+        <code>AD_ID</code> is stripped from the manifest. It does not request camera, microphone,
+        contacts, SMS, or precise GPS location.
+      </p>
+
+      <h2>4. Data Security, Encrypted Backups &amp; Retention</h2>
+      <ul>
+        <li>All data in transit is encrypted via HTTPS/TLS.</li>
+        <li>Temporary match room and matchmaking records are deleted after matches conclude.</li>
+        <li>Disaster-recovery backups are stored encrypted (AES-256-GCM). A non-personal one-way SHA-256 tombstone (<code>deleted_accounts</code>) is recorded upon account deletion to ensure deleted accounts are not reactivated if a backup is ever restored.</li>
+        <li>Account data is retained until you request deletion.</li>
+        <li>
+          <strong>Retention Exceptions:</strong> Non-personal SHA-256 anti-fraud purchase hashes
+          (<code>backend_purchases</code>), deleted-account suppression hashes
+          (<code>deleted_accounts</code>), and abuse moderation logs (<code>userReports</code>) may be
+          retained strictly for security, moderation, and legal compliance.
+        </li>
+      </ul>
+
+      <h2>5. Children&apos;s Privacy (13+ Audience)</h2>
+      <p>
+        <strong>3-2-1 Futbol : Kafa Kafaya</strong> is not directed at children under 13 and does not
+        knowingly collect personal data from children under 13. If you believe a child under 13 has
+        submitted personal information, contact <strong>321futboloyunu@gmail.com</strong> for immediate
+        removal.
+      </p>
+
+      <h2>6. Account &amp; Data Deletion</h2>
+      <div class="card">
+        <p style="margin-top: 0;">
+          You can permanently delete your account immediately in-app via
+          <strong>Settings → Delete Account &amp; Data</strong>, or without reinstalling the app via our
+          <a href="./hesap-sil.html">Account Deletion Page</a>.
         </p>
-
-        <h2>2. Firebase Bulut Veritabanı (Firestore &amp; Realtime Database)</h2>
-        <ul>
-          <li>
-            <strong>Çevrim İçi 1v1 ve Özel Odalar (Cloud Firestore):</strong> Arkadaşla özel oda
-            kodları (<code>rooms/{roomCode}</code>) ve hızlı eşleşme kuyrukları
-            (<code>matchmaking/{minigameType}/queue</code>), canlı maç senkronizasyonu amacıyla
-            geçici olarak Google Cloud Firestore üzerinde tutulur ve maç sonrasında temizlenir.
-          </li>
-          <li>
-            <strong>Liderlik Tablosu &amp; Profil:</strong> Seçtiğiniz takma ad, avatar seçimi,
-            haftalık lig puanı ve kazanılan maç istatistikleri küresel sıralama ve arkadaş incelemesi
-            için Firebase Realtime Database (<code>leaderboard/{playerId}</code>) ve Cloud Firestore
-            (<code>publicProfiles/{usernameKey}</code>) üzerinde paylaşılır.
-          </li>
-          <li>
-            <strong>İsteğe Bağlı Bulut Yedekleme &amp; Satın Alım Doğrulaması:</strong> Google ile
-            giriş yapmanız halinde profil ve ilerlemeniz <code>users/{uid}</code> dokümanında
-            saklanır. Uygulama içi satın alımlar (Reklamları Kaldır / VIP) Google Play Billing
-            üzerinden doğrulanır; ödeme kartı bilgileriniz tarafımızca görülmez ve saklanmaz.
-          </li>
-          <li>
-            <strong>Topluluk Güvenliği (Şikayet &amp; Engelleme):</strong> Uygunsuz kullanıcı adı
-            veya davranış bildirimleri moderasyon amacıyla <code>userReports</code> kaydı olarak
-            iletilebilir; engellediğiniz oyuncular kendi listelerinizden gizlenir.
-          </li>
-        </ul>
-
-        <h2>3. Reklamlar (Google AdMob) ve Analitik</h2>
-        <p>
-          Uygulama içi isteğe bağlı ödüllü reklamlar (+250 Coin, ekstra enerji vb.) ve VIP olmayan
-          hesaplardaki geçiş reklamları için Google AdMob SDK ve Firebase servisleri kullanılabilir.
-          AdMob, reklam gösterimi ve sahtekarlık önleme için cihaz reklam kimliğini ve temel teknik
-          tanı verilerini işleyebilir.
-        </p>
-
-        <div class="card">
-          <strong>Hesap ve Veri Silme:</strong> Bulut yedeğinizi veya profil verilerinizi silmek
-          için uygulama içi <em>Profil → Hesabımı Sil</em> seçeneğini veya
-          <a href="./hesap-sil.html">Hesap Silme Sayfasını</a> kullanabilirsiniz.
-          <br />
-          İletişim: <strong>321futboloyunu@gmail.com</strong>
-        </div>
-      </section>
-
-      <hr class="lang-divider" />
-
-      <!-- ENGLISH SECTION -->
-      <section lang="en">
-        <h2>1. Local Device Storage (localStorage)</h2>
-        <p>
-          <strong>3-2-1 Futbol: Online Düello</strong> stores progression data—such as your in-game Coins balance,
-          daily Energy, login streak, unlocked Anime Avatar accessories, and selected profile
-          preferences—locally on your device via <code>localStorage</code> to ensure responsive
-          60 FPS performance and offline Solo Bot play.
-        </p>
-
-        <h2>2. Firebase Cloud Firestore, Realtime Database &amp; Billing</h2>
-        <ul>
-          <li>
-            <strong>Real-Time 1v1 &amp; Private Friend Rooms (Cloud Firestore):</strong> Temporary
-            room state (<code>rooms/{roomCode}</code>) and matchmaking queue entries
-            (<code>matchmaking/{minigameType}/queue</code>) are stored in Google Cloud Firestore
-            solely to synchronize live gameplay and are automatically cleaned up.
-          </li>
-          <li>
-            <strong>Global Leaderboard &amp; Public Profile:</strong> Your chosen display nickname,
-            avatar identifier, league points, and match statistics may appear on the leaderboard in
-            Firebase Realtime Database (<code>leaderboard/{playerId}</code>) and Cloud Firestore
-            (<code>publicProfiles/{usernameKey}</code>).
-          </li>
-          <li>
-            <strong>Optional Account Backup &amp; Google Play Billing:</strong> If you sign in with
-            Google, your UID/email backs up progression across devices in <code>users/{uid}</code>.
-            In-app purchases (such as Remove Ads / VIP) are processed and verified exclusively via
-            Google Play Billing; we never access or store your payment card details.
-          </li>
-          <li>
-            <strong>User Safety (Report &amp; Block):</strong> Abuse reports are stored write-only for
-            moderation review, and blocked players are hidden from your views.
-          </li>
-        </ul>
-
-        <h2>3. Advertising (Google AdMob) &amp; Diagnostics</h2>
-        <p>
-          The Android app integrates Google AdMob for optional rewarded video ads and non-VIP
-          interstitial ads. Google AdMob may collect device advertising identifiers, approximate
-          region, and ad interaction metrics in accordance with Google&apos;s Privacy Policy.
-        </p>
-
-        <h2>4. Data Deletion &amp; Contact</h2>
-        <p>
-          You can clear local data anytime via your device settings or permanently delete your
-          cloud account via <em>Profile → Delete Account</em> inside the app or by visiting
-          <a href="./hesap-sil.html">Account Deletion Guide</a>.
-          <br />
+        <p style="margin-bottom: 0;">
           Developer Contact: <strong>321futboloyunu@gmail.com</strong>
         </p>
-      </section>
+      </div>
+
+      <div class="links">
+        <a href="./gizlilik.html">Türkçe Gizlilik Politikası</a>
+        <a href="./hesap-sil.html">Account Deletion / Hesap Silme</a>
+        <a href="./kullanim-kosullari.html">Terms of Service / Kullanım Koşulları</a>
+      </div>
     </main>
   </body>
 </html>

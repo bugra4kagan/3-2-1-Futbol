@@ -24,6 +24,12 @@ import { SOCIAL_LINK_BONUS_COINS } from '../game/retentionEngine';
 import { LANGUAGE_OPTIONS } from '../game/i18n';
 import { UiTheme } from '../game/themeEngine';
 import { useLanguage } from '../game/LanguageContext';
+import {
+  getAdMobConsentState,
+  isNativeCapacitorRuntime,
+  openAdPrivacyOptionsForm,
+} from '../services/admobService';
+import { isAdsEnabled, isRealMoneyIapEnabled } from '../game/monetizationFlags';
 import { sounds } from '../utils/audio';
 import { haptics, isHapticsEnabled, setHapticsEnabled } from '../utils/haptics';
 import { getAppVersionMetadata } from '../game/appVersion';
@@ -506,7 +512,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
           {/* 5. Restore Purchases & Privacy Links */}
           <section className="p-3.5 rounded-2xl bg-slate-950/85 border border-slate-800 space-y-2.5">
-            {onRestorePurchases && (
+            {isRealMoneyIapEnabled() && onRestorePurchases && (
               <button
                 type="button"
                 data-testid="settings-restore-purchases-btn"
@@ -547,9 +553,33 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </p>
             )}
 
-            <div className="grid grid-cols-2 gap-2 pt-0.5">
+            {isAdsEnabled() &&
+              isNativeCapacitorRuntime() &&
+              getAdMobConsentState().privacyOptionsRequired && (
+              <button
+                type="button"
+                data-testid="settings-ad-privacy-btn"
+                onClick={async () => {
+                  const res = await openAdPrivacyOptionsForm();
+                  setRestoreFeedback({
+                    type: res.ok ? 'ok' : 'err',
+                    text: res.message,
+                  });
+                }}
+                className="w-full py-2 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 border border-sky-400/35 text-sky-200 font-bold text-xs flex items-center justify-center gap-2 cursor-pointer transition"
+              >
+                <ShieldCheck className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                <span>Reklam Gizlilik Tercihleri (UMP)</span>
+              </button>
+            )}
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-0.5">
               <a
-                href="./gizlilik.html"
+                href={
+                  isNativeCapacitorRuntime()
+                    ? 'https://bugra4kagan.github.io/3-2-1-Futbol/gizlilik.html'
+                    : './gizlilik.html'
+                }
                 target="_blank"
                 rel="noopener noreferrer"
                 data-testid="settings-privacy-link"
@@ -560,7 +590,26 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <ExternalLink className="w-3 h-3 opacity-60 shrink-0" />
               </a>
               <a
-                href="./hesap-sil.html"
+                href={
+                  isNativeCapacitorRuntime()
+                    ? 'https://bugra4kagan.github.io/3-2-1-Futbol/kullanim-kosullari.html'
+                    : './kullanim-kosullari.html'
+                }
+                target="_blank"
+                rel="noopener noreferrer"
+                data-testid="settings-terms-link"
+                className="py-2 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-[11px] font-bold text-slate-300 hover:text-amber-300 flex items-center justify-center gap-1.5"
+              >
+                <ShieldCheck className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                <span>Kullanım Koşulları</span>
+                <ExternalLink className="w-3 h-3 opacity-60 shrink-0" />
+              </a>
+              <a
+                href={
+                  isNativeCapacitorRuntime()
+                    ? 'https://bugra4kagan.github.io/3-2-1-Futbol/hesap-sil.html'
+                    : './hesap-sil.html'
+                }
                 target="_blank"
                 rel="noopener noreferrer"
                 data-testid="settings-web-delete-link"
@@ -581,7 +630,30 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </a>
             </p>
             <p className="text-[10px] text-slate-400 leading-relaxed pt-1 border-t border-white/10">
-              Veri Kaynağı ve Lisanslar: OpenFootball players.db (CC0 1.0), Wikidata (CC0 1.0) ve Wikipedia futbolcu biyografileri (CC BY-SA 4.0).
+              Veri Kaynağı ve Lisanslar: OpenFootball players.db (CC0 1.0), Wikidata (CC0 1.0) ve
+              Wikipedia futbolcu biyografileri (
+              <a
+                href="https://creativecommons.org/licenses/by-sa/4.0/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-emerald-300 hover:underline"
+              >
+                CC BY-SA 4.0
+              </a>
+              ) kaynaklarından derlenerek uyarlanmıştır.{' '}
+              <a
+                href={
+                  isNativeCapacitorRuntime()
+                    ? 'https://bugra4kagan.github.io/3-2-1-Futbol/lisanslar.html'
+                    : './lisanslar.html'
+                }
+                target="_blank"
+                rel="noopener noreferrer"
+                data-testid="settings-licenses-link"
+                className="text-sky-300 hover:underline font-semibold"
+              >
+                Tüm Lisanslar ve Atıflar
+              </a>
             </p>
           </section>
 

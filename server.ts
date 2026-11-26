@@ -42,6 +42,8 @@ import {
   createFirebaseMatchSessionCloudAdapter,
   deleteUserFirebaseRecordsAdmin,
   isFirebaseAdminConfigured,
+  recordDeletedAccountTombstoneAdmin,
+  saveModerationReportAdmin,
   syncAuthoritativeUserStateAdmin,
   verifyFirebaseBearerToken,
   verifyOnlineRoomOutcomeAdmin,
@@ -335,17 +337,45 @@ app.delete('/api/accounts/by-id/:accountId', async (req, res) => {
   if (!accountId) {
     return res.status(400).json({ ok: false, error: 'Geçersiz hesap kimliği.' });
   }
+  const verifiedUser = await verifyFirebaseBearerToken(req.header('x-firebase-id-token'));
   const existing = await accountStore.resolveByAccountIdAsync(accountId);
-  if (!existing) {
-    return res.json({ ok: true, deleted: false });
+  if (!existing && !verifiedUser) {
+    return res.json({
+      ok: true,
+      deleted: false,
+      firebaseCleanup: { rtdbCleared: false, firestoreCleared: false, authDeleted: false },
+    });
   }
   const token = readAccountToken(req);
-  if (!accountStore.verifyAccountSession(accountId, token)) {
+  const sessionValid = existing ? accountStore.verifyAccountSession(accountId, token) : false;
+  const googleOwnerValid = Boolean(
+    verifiedUser?.uid && (!existing?.googleUid || existing.googleUid === verifiedUser.uid)
+  );
+  if (!sessionValid && !googleOwnerValid) {
     return res.status(401).json({ ok: false, error: 'Bu hesabı silme yetkin yok.' });
   }
-  const deleted = await accountStore.deleteByAccountIdAsync(accountId);
+
+  const deleted = existing ? await accountStore.deleteByAccountIdAsync(accountId) : false;
   liveLeaderboard.delete(accountId);
-  res.json({ ok: true, deleted });
+  // Silinen hesabın bekleyen tüm arkadaşlık isteklerini temizle
+  for (let i = serverFriendRequests.length - 1; i >= 0; i--) {
+    const reqEntry = serverFriendRequests[i];
+    if (reqEntry.fromPlayerId === accountId || reqEntry.toPlayerId === accountId) {
+      serverFriendRequests.splice(i, 1);
+    }
+  }
+  const resolvedUid = verifiedUser?.uid || existing?.googleUid;
+  const firebaseCleanup = await deleteUserFirebaseRecordsAdmin({
+    uid: resolvedUid,
+    accountId,
+    displayName: existing?.profile?.name || existing?.username,
+    deleteAuthUser: Boolean(verifiedUser?.uid),
+  });
+  const tombstoneRecorded = await recordDeletedAccountTombstoneAdmin({
+    accountId,
+    uid: resolvedUid,
+  });
+  res.json({ ok: true, deleted, firebaseCleanup, tombstoneRecorded });
 });
 
 app.post('/api/accounts/register', async (req, res) => {
@@ -1067,7 +1097,7 @@ const userModerationReports: Array<{
   createdAt: number;
 }> = [];
 
-app.post('/api/moderation/report', (req, res) => {
+app.post('/api/moderation/report', async (req, res) => {
   if (!enforceRateLimit(socialLimiter, req, res)) return;
   const { reporterId, targetId, targetName, reason, details } = req.body || {};
   const cleanReporterId = String(reporterId || 'anon').trim().slice(0, 64) || 'anon';
@@ -1108,11 +1138,13 @@ app.post('/api/moderation/report', (req, res) => {
   if (userModerationReports.length > 500) {
     userModerationReports.splice(0, userModerationReports.length - 500);
   }
+  const persistedToCloud = await saveModerationReportAdmin(report);
   res.json({
     ok: true,
     reportId: report.id,
     reviewStatus: report.reviewStatus,
     autoActionTaken: report.autoActionTaken,
+    persistedToCloud,
   });
 });
 

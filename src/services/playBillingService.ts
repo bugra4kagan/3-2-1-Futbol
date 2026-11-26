@@ -11,6 +11,7 @@ import {
   fetchBackendWithWakeupRetry,
   resolveBackendApiUrl,
 } from './backendClient';
+import { isRealMoneyIapEnabled } from '../game/monetizationFlags';
 
 export {
   findGooglePlaySkuByItemId,
@@ -99,10 +100,12 @@ function getPlayBillingBridge(): NativeBillingBridge | null {
 }
 
 export function isGooglePlayBillingAvailable(): boolean {
+  if (!isRealMoneyIapEnabled()) return false;
   return getPlayBillingBridge() !== null;
 }
 
 export async function fetchGooglePlayPrices(): Promise<Record<string, PlayStoreProductPriceInfo>> {
+  if (!isRealMoneyIapEnabled()) return {};
   const bridge = getPlayBillingBridge();
   if (!bridge) return {};
 
@@ -219,7 +222,22 @@ export async function executeGooglePlayPurchase(params: {
   alreadyOwned?: boolean;
   bridgeOverride?: NativeBillingBridge | null;
   fetchImpl?: typeof fetch;
+  overrideIapEnabled?: boolean;
 }): Promise<PurchaseExecutionResult> {
+  const allowRealMoneyPurchase =
+    params.overrideIapEnabled !== undefined
+      ? params.overrideIapEnabled
+      : params.bridgeOverride !== undefined
+      ? true
+      : isRealMoneyIapEnabled();
+  if (!allowRealMoneyPurchase) {
+    return {
+      ok: false,
+      status: 'DISABLED',
+      itemId: params.itemId,
+      reason: 'Gerçek para ile satın alma işlemleri kapalı test süresince devre dışıdır.',
+    };
+  }
   const mapping = findGooglePlaySkuByItemId(params.itemId);
   if (!mapping) {
     return {

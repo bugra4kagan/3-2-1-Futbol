@@ -394,21 +394,144 @@ export async function deleteUserFirebaseRecordsAdmin(params: {
   uid?: string;
   accountId?: string;
   displayName?: string;
-}): Promise<void> {
+  deleteAuthUser?: boolean;
+}): Promise<{
+  rtdbCleared: boolean;
+  firestoreCleared: boolean;
+  authDeleted: boolean;
+}> {
   const adminApp = getFirebaseAdminApp();
-  if (!adminApp) return;
+  if (!adminApp) {
+    return { rtdbCleared: false, firestoreCleared: false, authDeleted: false };
+  }
+  let rtdbCleared = false;
+  let firestoreCleared = false;
+  let authDeleted = false;
+
   try {
     const rtdb = getDatabase(adminApp);
     if (params.accountId) {
-      await rtdb.ref(`leaderboard/${sanitizeRtdbKey(params.accountId)}`).remove().catch(() => {});
+      await rtdb
+        .ref(`leaderboard/${sanitizeRtdbKey(params.accountId)}`)
+        .remove()
+        .then(() => {
+          rtdbCleared = true;
+        })
+        .catch(() => {});
     }
     if (params.uid) {
-      await rtdb.ref(`leaderboard/${sanitizeRtdbKey(params.uid)}`).remove().catch(() => {});
+      await rtdb
+        .ref(`leaderboard/${sanitizeRtdbKey(params.uid)}`)
+        .remove()
+        .then(() => {
+          rtdbCleared = true;
+        })
+        .catch(() => {});
       const db = getFirestore(adminApp);
-      await db.collection('users').doc(params.uid).delete().catch(() => {});
+      await db
+        .collection('users')
+        .doc(params.uid)
+        .delete()
+        .then(() => {
+          firestoreCleared = true;
+        })
+        .catch(() => {});
+
+      const key = params.displayName ? normalizeUsernameKey(params.displayName) : '';
+      if (key.length >= 3 && key.length <= 32) {
+        for (const colName of ['publicProfiles', 'usernames'] as const) {
+          const ref = db.collection(colName).doc(key);
+          const snap = await ref.get().catch(() => null);
+          if (snap?.exists && snap.data()?.ownerUid === params.uid) {
+            await ref.delete().catch(() => {});
+          }
+        }
+      }
+
+      if (params.deleteAuthUser) {
+        await getAuth(adminApp)
+          .deleteUser(params.uid)
+          .then(() => {
+            authDeleted = true;
+          })
+          .catch((err: unknown) => {
+            const code = (err as { code?: string })?.code;
+            if (code === 'auth/user-not-found') {
+              authDeleted = true;
+            }
+          });
+      }
     }
   } catch {
     // ignore cleanup failures
+  }
+
+  return { rtdbCleared, firestoreCleared, authDeleted };
+}
+
+export function hashDeletedAccountIdentity(rawId: string): string {
+  return crypto
+    .createHash('sha256')
+    .update(`deleted_account_v1:${String(rawId || '').trim()}`)
+    .digest('hex');
+}
+
+export async function recordDeletedAccountTombstoneAdmin(params: {
+  accountId?: string;
+  uid?: string;
+}): Promise<boolean> {
+  const adminApp = getFirebaseAdminApp();
+  if (!adminApp) return false;
+  const targets = [params.accountId, params.uid]
+    .map((v) => String(v || '').trim())
+    .filter(Boolean);
+  if (targets.length === 0) return false;
+  try {
+    const db = getFirestore(adminApp);
+    const now = Date.now();
+    for (const id of new Set(targets)) {
+      const hash = hashDeletedAccountIdentity(id);
+      await db.collection('deleted_accounts').doc(hash).set(
+        {
+          identityHash: hash,
+          deletedAt: now,
+          serverDeletedAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function saveModerationReportAdmin(report: {
+  id: string;
+  reporterId: string;
+  targetId: string;
+  targetName: string;
+  reason: string;
+  details: string;
+  reviewStatus: 'pending_review';
+  autoActionTaken: false;
+  createdAt: number;
+}): Promise<boolean> {
+  const adminApp = getFirebaseAdminApp();
+  if (!adminApp) return false;
+  try {
+    const db = getFirestore(adminApp);
+    await db
+      .collection('userReports')
+      .doc(report.id)
+      .set({
+        ...report,
+        source: 'backend_api',
+        serverCreatedAt: FieldValue.serverTimestamp(),
+      });
+    return true;
+  } catch {
+    return false;
   }
 }
 

@@ -9,6 +9,7 @@ import { sanitizePublicDisplayName } from '../game/usernameFilter';
 import { ClubBadge } from './ClubBadge';
 import { CountryFlag } from './CountryFlag';
 import { PlayerAvatar } from './PlayerAvatar';
+import { isAdsEnabled } from '../game/monetizationFlags';
 import { CheckCircle2, Clock, Film, Info, Sparkles } from 'lucide-react';
 
 interface RoundResultSheetProps {
@@ -136,7 +137,7 @@ export const RoundResultSheet: React.FC<RoundResultSheetProps> = ({
                     ? ` • 🏆 +${roundDoubled ? roundReward.points * 2 : roundReward.points} Puan`
                     : ''}
                 </span>
-                {onRequestDoubleRound && (
+                {isAdsEnabled() && onRequestDoubleRound && (
                   <button
                     type="button"
                     data-testid="round-double-ad-btn"

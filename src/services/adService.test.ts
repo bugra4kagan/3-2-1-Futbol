@@ -43,8 +43,17 @@ test('completed match ad counter persists in storage and triggers interstitial e
   assert.equal(vipRes.skippedByVip, true);
   assert.equal(vipRes.provider, 'vip_bypass');
 
-  // Non-VIP shows interstitial cleanly
-  const stdRes = await showInterstitialAd({ adFree: false, durationMs: 0 });
+  // Closed test default: ads are disabled and never trigger fake interstitial
+  const closedTestRes = await showInterstitialAd({ adFree: false, durationMs: 0 });
+  assert.equal(closedTestRes.shown, false);
+  assert.equal(closedTestRes.provider, 'disabled_closed_test');
+
+  // Non-VIP shows interstitial cleanly when ads are explicitly enabled
+  const stdRes = await showInterstitialAd({
+    adFree: false,
+    durationMs: 0,
+    overrideAdsEnabled: true,
+  });
   assert.equal(stdRes.shown, true);
   assert.equal(stdRes.skippedByVip, false);
 });

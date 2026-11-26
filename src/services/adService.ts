@@ -1,9 +1,11 @@
 import {
   RewardedPlacement,
   getAdMobEnvConfig,
+  isNativeCapacitorRuntime,
   showNativeInterstitialAd,
   showNativeRewardedAd,
 } from './admobService';
+import { isAdsEnabled } from '../game/monetizationFlags';
 
 export interface AdMobUnitConfig {
   android: {
@@ -53,7 +55,13 @@ export type AdRewardPurpose =
 
 export interface AdWatchResult {
   completed: boolean;
-  provider: 'capacitor_admob' | 'web_simulation' | 'vip_bypass' | 'blocked_missing_config';
+  provider:
+    | 'capacitor_admob'
+    | 'web_simulation'
+    | 'vip_bypass'
+    | 'blocked_missing_config'
+    | 'native_ad_unavailable'
+    | 'disabled_closed_test';
   adUnitId: string;
   rewardAmountCoins: number;
   rewardAmountEnergy: number;
@@ -62,7 +70,13 @@ export interface AdWatchResult {
 export interface InterstitialAdResult {
   shown: boolean;
   skippedByVip: boolean;
-  provider: 'capacitor_admob' | 'web_simulation' | 'vip_bypass' | 'blocked_missing_config';
+  provider:
+    | 'capacitor_admob'
+    | 'web_simulation'
+    | 'vip_bypass'
+    | 'blocked_missing_config'
+    | 'native_ad_unavailable'
+    | 'disabled_closed_test';
   adUnitId: string;
 }
 
@@ -187,7 +201,7 @@ function mapPurposeToPlacement(purpose: AdRewardPurpose): RewardedPlacement {
 class AdService {
   async showRewardedAd(
     purpose: AdRewardPurpose,
-    options?: { adFreeBypass?: boolean; durationMs?: number }
+    options?: { adFreeBypass?: boolean; durationMs?: number; overrideAdsEnabled?: boolean }
   ): Promise<AdWatchResult> {
     const adUnitId = getAdUnitIdForPlatform(purpose);
     const rewardAmountCoins =
@@ -204,15 +218,32 @@ class AdService {
       };
     }
 
+    // Kapalı test sürümünde reklamlar ve sahte reklam ödülleri tamamen kapalıdır
+    if (!isAdsEnabled(options?.overrideAdsEnabled)) {
+      return {
+        completed: false,
+        provider: 'disabled_closed_test',
+        adUnitId: '',
+        rewardAmountCoins: 0,
+        rewardAmountEnergy: 0,
+      };
+    }
+
     // @capacitor-community/admob native plugin path (Android / iOS)
     const nativeAttempt = await showNativeRewardedAd(
       mapPurposeToPlacement(purpose),
       adUnitId
     );
-    if (nativeAttempt.blockedReason === 'missing_production_config') {
+    if (
+      nativeAttempt.blockedReason === 'missing_production_config' ||
+      nativeAttempt.blockedReason === 'disabled_closed_test'
+    ) {
       return {
         completed: false,
-        provider: 'blocked_missing_config',
+        provider:
+          nativeAttempt.blockedReason === 'disabled_closed_test'
+            ? 'disabled_closed_test'
+            : 'blocked_missing_config',
         adUnitId: '',
         rewardAmountCoins: 0,
         rewardAmountEnergy: 0,
@@ -251,8 +282,19 @@ class AdService {
           rewardAmountEnergy,
         };
       } catch {
-        // Native reklam yüklenemezse güvenli web simülasyonu devreye girer
+        // Native reklam yüklenemedi; aşağıda native platform koruması devreye girer
       }
+    }
+
+    // Native Android/iOS platformlarda AdMob dolmadığında ASLA sahte simülasyon reklamı gösterilmez veya ödül verilmez
+    if (isNativeCapacitorRuntime()) {
+      return {
+        completed: false,
+        provider: 'native_ad_unavailable',
+        adUnitId,
+        rewardAmountCoins: 0,
+        rewardAmountEnergy: 0,
+      };
     }
 
     const waitMs = options?.durationMs ?? SIMULATED_AD_DURATION_MS;
@@ -272,6 +314,7 @@ class AdService {
   async showInterstitialAd(options?: {
     adFree?: boolean;
     durationMs?: number;
+    overrideAdsEnabled?: boolean;
   }): Promise<InterstitialAdResult> {
     const adUnitId = getInterstitialAdUnitId();
 
@@ -285,13 +328,29 @@ class AdService {
       };
     }
 
-    // @capacitor-community/admob native interstitial path (Android / iOS)
-    const nativeInterstitial = await showNativeInterstitialAd(adUnitId);
-    if (nativeInterstitial.blockedReason === 'missing_production_config') {
+    // Kapalı test sürümünde geçiş reklamları tamamen devre dışıdır
+    if (!isAdsEnabled(options?.overrideAdsEnabled)) {
       return {
         shown: false,
         skippedByVip: false,
-        provider: 'blocked_missing_config',
+        provider: 'disabled_closed_test',
+        adUnitId: '',
+      };
+    }
+
+    // @capacitor-community/admob native interstitial path (Android / iOS)
+    const nativeInterstitial = await showNativeInterstitialAd(adUnitId);
+    if (
+      nativeInterstitial.blockedReason === 'missing_production_config' ||
+      nativeInterstitial.blockedReason === 'disabled_closed_test'
+    ) {
+      return {
+        shown: false,
+        skippedByVip: false,
+        provider:
+          nativeInterstitial.blockedReason === 'disabled_closed_test'
+            ? 'disabled_closed_test'
+            : 'blocked_missing_config',
         adUnitId: '',
       };
     }
@@ -317,8 +376,18 @@ class AdService {
           adUnitId,
         };
       } catch {
-        // Native reklam yüklenemezse güvenli web simülasyonu devreye girer
+        // Native reklam yüklenemedi; aşağıda native platform koruması devreye girer
       }
+    }
+
+    // Native Android/iOS platformlarda AdMob dolmadığında ASLA sahte simülasyon geçiş reklamı gösterilmez
+    if (isNativeCapacitorRuntime()) {
+      return {
+        shown: false,
+        skippedByVip: false,
+        provider: 'native_ad_unavailable',
+        adUnitId,
+      };
     }
 
     if (activeInterstitialPresenter) {
@@ -353,7 +422,7 @@ export const adService = new AdService();
  */
 export function showRewardedAd(
   purpose: AdRewardPurpose,
-  options?: { adFreeBypass?: boolean; durationMs?: number }
+  options?: { adFreeBypass?: boolean; durationMs?: number; overrideAdsEnabled?: boolean }
 ): Promise<AdWatchResult> {
   return adService.showRewardedAd(purpose, options);
 }
@@ -364,6 +433,7 @@ export function showRewardedAd(
 export function showInterstitialAd(options?: {
   adFree?: boolean;
   durationMs?: number;
+  overrideAdsEnabled?: boolean;
 }): Promise<InterstitialAdResult> {
   return adService.showInterstitialAd(options);
 }

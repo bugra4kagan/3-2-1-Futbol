@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>3-2-1 Futbol : Kafa Kafaya — Veri Kaynakları ve Açık Kaynak Lisansları</title>
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        background: radial-gradient(circle at top, #0b3b24 0%, #06131f 52%, #040914 100%);
+        color: #f8fafc;
+        line-height: 1.65;
+        padding: 24px 16px 64px;
+      }
+      .container {
+        max-width: 840px;
+        margin: 0 auto;
+        background: rgba(15, 23, 42, 0.94);
+        border: 1px solid rgba(52, 211, 153, 0.35);
+        border-radius: 24px;
+        padding: 28px 24px;
+        box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+      }
+      .badge {
+        display: inline-block;
+        padding: 4px 12px;
+        border-radius: 999px;
+        background: rgba(16, 185, 129, 0.16);
+        border: 1px solid rgba(52, 211, 153, 0.45);
+        color: #6ee7b7;
+        font-size: 12px;
+        font-weight: 800;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+      }
+      h1 {
+        margin: 12px 0 6px;
+        font-size: 26px;
+        line-height: 1.25;
+        font-weight: 900;
+        color: #ffffff;
+      }
+      .meta {
+        color: #94a3b8;
+        font-size: 13px;
+        margin-bottom: 24px;
+      }
+      h2 {
+        margin: 24px 0 10px;
+        font-size: 18px;
+        font-weight: 800;
+        color: #34d399;
+      }
+      p,
+      li {
+        color: #cbd5e1;
+        font-size: 15px;
+      }
+      ul {
+        padding-left: 20px;
+        margin: 8px 0 14px;
+      }
+      li {
+        margin-bottom: 8px;
+      }
+      .card {
+        background: rgba(2, 6, 23, 0.78);
+        border: 1px solid rgba(148, 163, 184, 0.25);
+        border-radius: 16px;
+        padding: 16px 18px;
+        margin: 16px 0;
+      }
+      .links {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 14px;
+        margin-top: 22px;
+        padding-top: 16px;
+        border-top: 1px solid rgba(148, 163, 184, 0.2);
+        font-size: 14px;
+      }
+      a {
+        color: #34d399;
+        font-weight: 700;
+      }
+      code {
+        background: rgba(15, 23, 42, 0.9);
+        padding: 2px 6px;
+        border-radius: 6px;
+        font-size: 13px;
+        color: #e2e8f0;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="container">
+      <span class="badge">3-2-1 Futbol : Kafa Kafaya • Veri Kaynakları &amp; Lisanslar</span>
+      <h1>Veri Kaynakları, Atıflar ve Açık Kaynak Lisansları</h1>
+      <p class="meta">
+        Uygulama: <strong>3-2-1 Futbol : Kafa Kafaya</strong> (<code>com.futbol321.challenge</code>) ·
+        Son Güncelleme: 26 Kasım 2026
+      </p>
+
+      <h2>1. Futbolcu ve Kulüp Veri Seti (25.000 Futbolcu · 333 Kulüp)</h2>
+      <div class="card">
+        <p style="margin-top: 0;">
+          Oyun içi olgusal futbol bilgi yarışması verileri (oyuncu adları, uyrukları, mevkileri ve
+          kulüp geçmişleri) aşağıdaki kamuya açık kaynaklardan derlenerek bilgi yarışması formatına
+          göre uyarlanmıştır (değiştirilerek düzenlenmiştir):
+        </p>
+        <ul style="margin-bottom: 0;">
+          <li>
+            <strong>OpenFootball (<code>players.db</code>):</strong>
+            <a href="https://creativecommons.org/publicdomain/zero/1.0/" target="_blank" rel="noopener noreferrer">CC0 1.0 Universal (Kamu Malı)</a>
+            — Ticari ve ticari olmayan kullanıma açık.
+          </li>
+          <li>
+            <strong>Wikidata:</strong>
+            <a href="https://creativecommons.org/publicdomain/zero/1.0/" target="_blank" rel="noopener noreferrer">CC0 1.0 Universal (Kamu Malı)</a>
+            — Yapılandırılmış olgusal futbolcu/kulüp kayıtları.
+          </li>
+          <li>
+            <strong>Wikipedia Futbolcu Biyografileri:</strong>
+            <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noopener noreferrer">Creative Commons Attribution-ShareAlike 4.0 International (CC BY-SA 4.0)</a>
+            — Kaynak atfı yapılmış ve oyun soruları için uyarlanmıştır; bu kaynaktan türetilen
+            olgusal olmayan uyarlamalar aynı CC BY-SA 4.0 lisansı ile paylaşılır.
+          </li>
+        </ul>
+      </div>
+
+      <h2>2. Özgün Görsel ve Ses Varlıkları</h2>
+      <ul>
+        <li>
+          <strong>Kulüp Kartları:</strong> Uygulamada gösterilen 333 kulüp rozeti resmî kulüp
+          arması değildir; yalnızca takım renklerinden oluşan özgün prosedürel SVG kalkan tasarımlarıdır.
+        </li>
+        <li>
+          <strong>Oyun İçi Karakter Kartları &amp; Profil İkonları:</strong> Oyun ekranlarındaki
+          anime tarzı oyuncu kartları (<code>PlayerAvatar.tsx</code>) ve 10 profil ikonu
+          (<code>ProfileIconSvg.tsx</code>) uygulama için üretilmiş özgün vektör (SVG) çizimlerdir.
+        </li>
+        <li>
+          <strong>Ses Efektleri:</strong> Tüm ses efektleri (gol, düdük, geri sayım, alkış) harici
+          telifli ses dosyası kullanılmadan Web Audio API ile gerçek zamanlı prosedürel olarak
+          sentezlenir.
+        </li>
+        <li>
+          <strong>Bağımsızlık Bildirimi:</strong> <strong>3-2-1 Futbol : Kafa Kafaya</strong>
+          bağımsız bir bilgi yarışmasıdır; FIFA, UEFA, TFF veya herhangi bir kulüp/lig ile resmî
+          bağlantısı veya sponsorluğu bulunmamaktadır.
+        </li>
+      </ul>
+
+      <h2>3. Yazı Tipleri (Fonts)</h2>
+      <ul>
+        <li>
+          <strong>Barlow Condensed &amp; Inter (Google Fonts):</strong>
+          <a href="https://openfontlicense.org/" target="_blank" rel="noopener noreferrer">SIL Open Font License 1.1 (OFL)</a>
+          — Ticari mobil ve web uygulamalarında serbest kullanım.
+        </li>
+      </ul>
+
+      <h2>4. Üçüncü Taraf Açık Kaynak Yazılım Kütüphaneleri</h2>
+      <ul>
+        <li><strong>React &amp; React DOM</strong> — MIT License</li>
+        <li><strong>Vite &amp; Tailwind CSS</strong> — MIT License</li>
+        <li><strong>Capacitor Core / Android / App</strong> — MIT License</li>
+        <li><strong>Lucide Icons</strong> — ISC License</li>
+        <li><strong>canvas-confetti</strong> — ISC License</li>
+        <li><strong>Express &amp; ws</strong> — MIT License</li>
+        <li><strong>Firebase JS SDK &amp; Firebase Admin SDK</strong> — Apache License 2.0</li>
+      </ul>
+
+      <div class="links">
+        <a href="./gizlilik.html">Gizlilik Politikası</a>
+        <a href="./kullanim-kosullari.html">Kullanım Koşulları</a>
+        <a href="./hesap-sil.html">Hesabımı ve Verilerimi Sil</a>
+      </div>
+    </main>
+  </body>
+</html>

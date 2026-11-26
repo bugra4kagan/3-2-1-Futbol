@@ -4,6 +4,7 @@ import { Film, Flame, ShieldAlert, X } from 'lucide-react';
 import { CoinIcon } from './CoinIcon';
 import { STREAK_SAVER_COIN_COST } from '../game/v3DailyQuestsEngine';
 import { showRewardedAd } from '../services/adService';
+import { isAdsEnabled } from '../game/monetizationFlags';
 
 interface StreakSaverModalProps {
   isOpen: boolean;
@@ -74,18 +75,20 @@ export const StreakSaverModal: React.FC<StreakSaverModalProps> = ({
         </p>
 
         <div className="mt-5 space-y-2.5">
-          <button
-            type="button"
-            data-testid="streak-saver-ad-btn"
-            disabled={adLoading}
-            onClick={handleSaveAd}
-            className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-emerald-400 via-teal-400 to-cyan-400 hover:from-emerald-300 hover:to-cyan-300 disabled:opacity-60 text-slate-950 font-black text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg cursor-pointer transition active:scale-95"
-          >
-            <Film className="w-4 h-4 shrink-0" />
-            <span>
-              {adLoading ? 'Reklam Oynatılıyor...' : '🎬 Reklam İzle ve Serini Kurtar'}
-            </span>
-          </button>
+          {isAdsEnabled() && (
+            <button
+              type="button"
+              data-testid="streak-saver-ad-btn"
+              disabled={adLoading}
+              onClick={handleSaveAd}
+              className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-emerald-400 via-teal-400 to-cyan-400 hover:from-emerald-300 hover:to-cyan-300 disabled:opacity-60 text-slate-950 font-black text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg cursor-pointer transition active:scale-95"
+            >
+              <Film className="w-4 h-4 shrink-0" />
+              <span>
+                {adLoading ? 'Reklam Oynatılıyor...' : '🎬 Reklam İzle ve Serini Kurtar'}
+              </span>
+            </button>
+          )}
 
           <button
             type="button"

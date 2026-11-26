@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Crown, Film, HeartPulse, Zap } from 'lucide-react';
 import { showRewardedAd } from '../services/adService';
+import { isAdsEnabled } from '../game/monetizationFlags';
 
 interface LastChanceModalProps {
   isOpen: boolean;
@@ -103,7 +104,7 @@ export const LastChanceModal: React.FC<LastChanceModalProps> = ({
               <Crown className="w-4 h-4 shrink-0" />
               <span>👑 VIP Ücretsiz +15 Saniye / 1 Can ile Devam Et</span>
             </button>
-          ) : (
+          ) : isAdsEnabled() ? (
             <button
               type="button"
               data-testid="last-chance-ad-revive-btn"
@@ -120,7 +121,7 @@ export const LastChanceModal: React.FC<LastChanceModalProps> = ({
                 </>
               )}
             </button>
-          )}
+          ) : null}
 
           <button
             type="button"

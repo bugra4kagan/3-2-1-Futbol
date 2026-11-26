@@ -35,6 +35,7 @@ import { sounds } from '../utils/audio';
 import { PlayerAvatar } from './PlayerAvatar';
 import { ClubBadge } from './ClubBadge';
 import { CoinIcon } from './CoinIcon';
+import { isAdsEnabled } from '../game/monetizationFlags';
 import { MatchHighlightsPanel } from './MatchHighlightsPanel';
 import {
   formatStoryMatchMetrics,
@@ -680,7 +681,8 @@ Ortak futbolcuları benden hızlı bulabilir misin? Meydan okuyorum! 🔥`;
               </span>
             </div>
 
-            {onRequestDoubleMatchReward &&
+            {isAdsEnabled() &&
+              onRequestDoubleMatchReward &&
               !isDraw &&
               !userLost &&
               (matchRewards.earnedCoins > 0 || matchRewards.doubledByAd) && (

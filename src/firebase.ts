@@ -521,8 +521,9 @@ export async function deleteCloudAccountData(params: {
   user: User | null;
   displayName?: string;
   sessionPlayerId?: string;
+  authAlreadyDeletedOnServer?: boolean;
 }): Promise<{ ok: boolean; warning?: string }> {
-  const { user, displayName, sessionPlayerId } = params;
+  const { user, displayName, sessionPlayerId, authAlreadyDeletedOnServer } = params;
   if (!user) return { ok: true };
 
   const key = displayName ? normalizeUsernameKey(displayName) : '';
@@ -546,13 +547,20 @@ export async function deleteCloudAccountData(params: {
         await deleteDoc(userRef).catch(() => {});
       }
     }
+    if (authAlreadyDeletedOnServer) {
+      await signOut(auth).catch(() => {});
+      return { ok: true };
+    }
     try {
       await deleteUser(user);
     } catch (err) {
       await signOut(auth).catch(() => {});
       return {
-        ok: true,
-        warning: mapFirebaseAuthErrorToTurkish(err),
+        ok: false,
+        warning:
+          'Yerel ve profil verilerin temizlendi; güvenlik gereği oturum kaydını silmek için yeniden giriş yapıp tekrar deneyebilir veya 321futboloyunu@gmail.com adresine yazabilirsin. (' +
+          mapFirebaseAuthErrorToTurkish(err) +
+          ')',
       };
     }
     return { ok: true };

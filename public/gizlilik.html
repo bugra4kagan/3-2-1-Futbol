@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <title>Gizlilik Politikası • 3-2-1 Futbol: Online Düello</title>
+    <title>3-2-1 Futbol : Kafa Kafaya — Gizlilik Politikası</title>
     <style>
       :root {
         color-scheme: dark;
@@ -13,16 +13,16 @@
       }
       body {
         margin: 0;
-        font-family: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-        background: radial-gradient(circle at top, #064e3b 0%, #020617 45%, #020617 100%);
+        font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        background: radial-gradient(circle at top, #064e3b 0%, #020617 50%, #020617 100%);
         color: #f8fafc;
         line-height: 1.65;
         padding: 24px 16px 64px;
       }
       .container {
-        max-width: 780px;
+        max-width: 840px;
         margin: 0 auto;
-        background: rgba(15, 23, 42, 0.92);
+        background: rgba(15, 23, 42, 0.94);
         border: 1px solid rgba(16, 185, 129, 0.35);
         border-radius: 24px;
         padding: 28px 24px;
@@ -42,8 +42,8 @@
       }
       h1 {
         margin: 12px 0 6px;
-        font-size: 28px;
-        line-height: 1.2;
+        font-size: 26px;
+        line-height: 1.25;
         font-weight: 900;
         color: #ffffff;
       }
@@ -53,12 +53,13 @@
         margin-bottom: 24px;
       }
       h2 {
-        margin: 26px 0 10px;
+        margin: 24px 0 10px;
         font-size: 18px;
         font-weight: 800;
         color: #34d399;
       }
-      p, li {
+      p,
+      li {
         color: #cbd5e1;
         font-size: 15px;
       }
@@ -70,124 +71,174 @@
         margin-bottom: 6px;
       }
       .card {
-        background: rgba(2, 6, 23, 0.72);
-        border: 1px solid rgba(148, 163, 184, 0.22);
+        background: rgba(2, 6, 23, 0.78);
+        border: 1px solid rgba(148, 163, 184, 0.25);
         border-radius: 16px;
         padding: 16px 18px;
-        margin: 16px 0;
+        margin: 18px 0;
       }
-      .actions {
+      .links {
         display: flex;
         flex-wrap: wrap;
-        gap: 12px;
-        margin-top: 28px;
-      }
-      .btn {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        padding: 12px 18px;
-        border-radius: 14px;
+        gap: 14px;
+        margin-top: 22px;
+        padding-top: 16px;
+        border-top: 1px solid rgba(148, 163, 184, 0.2);
         font-size: 14px;
-        font-weight: 800;
-        text-decoration: none;
-        transition: transform 0.15s ease, opacity 0.15s ease;
-      }
-      .btn:hover {
-        opacity: 0.92;
-      }
-      .btn-primary {
-        background: #10b981;
-        color: #020617;
-      }
-      .btn-danger {
-        background: rgba(244, 63, 94, 0.16);
-        border: 1px solid rgba(251, 113, 133, 0.45);
-        color: #fda4af;
       }
       a {
         color: #34d399;
+        font-weight: 700;
+      }
+      code {
+        background: rgba(15, 23, 42, 0.9);
+        padding: 2px 6px;
+        border-radius: 6px;
+        font-size: 13px;
+        color: #e2e8f0;
       }
     </style>
   </head>
   <body>
     <main class="container">
-      <span class="badge">3-2-1 Futbol: Online Düello • Resmi Gizlilik Politikası</span>
-      <h1>Gizlilik Politikası ve Veri Güvenliği</h1>
-      <p class="meta">Son güncelleme: 23 Kasım 2026 • Uygulama: 3-2-1 Futbol: Online Düello</p>
-
-      <p>
-        <strong>3-2-1 Futbol: Online Düello</strong> olarak oyuncularımızın gizliliğine ve kişisel verilerinin
-        korunmasına büyük önem veriyoruz. Bu politika; uygulamamızı ve web sürümümüzü
-        kullandığınızda hangi verilerin işlendiğini, nasıl korunduğunu ve haklarınızı açıklar.
+      <span class="badge">3-2-1 Futbol : Kafa Kafaya • Resmî Gizlilik Politikası</span>
+      <h1>Gizlilik Politikası</h1>
+      <p class="meta">
+        Uygulama: <strong>3-2-1 Futbol : Kafa Kafaya</strong> (<code>com.futbol321.challenge</code>) ·
+        Geliştirici İletişim: <strong>321futboloyunu@gmail.com</strong> · Son Güncelleme: 26 Kasım 2026
       </p>
 
-      <h2>1. Cihaz İçi Yerel Depolama (localStorage)</h2>
       <p>
-        Oyun deneyiminizin kesintisiz devam etmesi için aşağıdaki ilerleme verileri cihazınızda
-        yerel olarak (<code>localStorage</code>) saklanır:
+        Bu Gizlilik Politikası, <strong>3-2-1 Futbol : Kafa Kafaya</strong> mobil ve web uygulamasını
+        kullandığınızda hangi verilerin toplandığını, nasıl işlendiğini, hangi üçüncü taraf servislerin
+        kullanıldığını ve verileriniz üzerindeki haklarınızı açıklar.
       </p>
+
+      <h2>1. Toplanan Veriler ve Kullanım Amaçları</h2>
       <ul>
-        <li>Coin bakiyesi, günlük giriş serisi, enerji hakları ve 24 saatlik Şans Çarkı sayacı,</li>
-        <li>Açtığınız avatarlar, kulüp armaları, saha temaları ve çerçeveler,</li>
-        <li>Çevrimdışı bot antrenmanı istatistikleriniz, lig puanınız ve bildirim/ses tercihleriniz.</li>
+        <li>
+          <strong>Hesap ve Profil Bilgileri:</strong> Seçtiğiniz takma ad (kullanıcı adı), profil
+          ikonu tercihi, favori kulüp seçimi, rastgele üretilen hesap/arkadaş kimliği, kurtarma kodu
+          ve isteğe bağlı Google/e-posta ile giriş yaparsanız Firebase UID ve e-posta adresiniz.
+        </li>
+        <li>
+          <strong>Oyun İlerlemesi ve İstatistikler:</strong> Kazanılan/kaybedilen maçlar, haftalık ve
+          toplam lig puanları, oyun içi sanal coin bakiyesi, açılan kozmetik ödüller (arma, çerçeve,
+          rozet, ünvan), günlük giriş serisi ve çevrim içi maç sonuçları.
+        </li>
+        <li>
+          <strong>Uygulama İçi Satın Alımlar (Google Play Billing):</strong> İlk kapalı test
+          sürümünde (v1.1.0) gerçek para ile yeni satın alma işlemleri geçici olarak devre dışıdır;
+          oyun içi kozmetik mağazası yalnızca sanal Coin ile çalışır. Önceki sürümlerde doğrulanmış
+          VIP/Reklamsız hakları korunur. Satın alma işlemleri yeniden açıldığında makbuz doğrulaması
+          sunucuda yapılır, kart bilgileri tarafımızca görülmez ve sahtekarlık önleme için yalnızca
+          tek yönlü SHA-256 token özeti saklanır.
+        </li>
+        <li>
+          <strong>Topluluk Güvenliği (Şikayet ve Engelleme):</strong> Başka bir oyuncunun uygunsuz
+          kullanıcı adı veya davranışını bildirdiğinizde, bildirim nedeni ve hedef kimlik moderasyon
+          incelemesi için kalıcı <code>userReports</code> koleksiyonunda (yalnızca yetkili yönetici
+          erişimine açık olarak) saklanır. Engellediğiniz kullanıcılar listelerinizden gizlenir.
+        </li>
+        <li>
+          <strong>Reklamlar ve Teknik Tanı Verileri:</strong> İlk kapalı test sürümünde (v1.1.0)
+          üçüncü taraf reklam gösterimi (AdMob) ve <code>AD_ID</code> izni devre dışı bırakılmıştır.
+          Yalnızca temel uygulama sürümü, çökme önleme ve sunucu güvenliği (Firebase App Check /
+          Google Play Integrity) verileri işlenebilir.
+        </li>
       </ul>
 
-      <h2>2. Hesap, Firebase ve Çok Oyunculu (1v1) Veriler</h2>
-      <p>
-        Misafir olarak oynadığınızda kişisel e-posta adresi paylaşmanız gerekmez. Hesabınızı buluta
-        yedeklemek veya çevrimiçi özelliklerden yararlanmak için Google ya da E-posta/Şifre ile
-        giriş yaptığınızda <strong>Firebase Authentication</strong> ve <strong>Cloud Firestore</strong>
-        üzerinden yalnızca şu veriler işlenir:
-      </p>
+      <h2>2. Kullanılan Altyapı ve Üçüncü Taraf Servisler</h2>
       <ul>
-        <li>E-posta adresi, doğrulanmış hesap kimliği (UID) ve seçtiğiniz oyuncu takma adı,</li>
-        <li>Arkadaş kodunuz, arkadaş listeniz ve haftalık/genel liderlik tablosu skorlarınız,</li>
-        <li>Anlık 1v1 oda eşleştirmeleri sırasında gönderilen geçici tur ve skor bilgileri.</li>
+        <li>
+          <strong>Google Firebase (Authentication, Cloud Firestore, Realtime Database, App Check):</strong>
+          İsteğe bağlı hesap girişi, 1v1 çevrim içi oda/eşleşme senkronizasyonu (<code>rooms</code>,
+          <code>matchmaking</code>), liderlik tablosu (<code>leaderboard</code>), bulut profil yedeği
+          (<code>users</code>, <code>publicProfiles</code>, <code>usernames</code>) ve bot/kötüye
+          kullanım koruması (Google Play Integrity destekli Firebase App Check) için kullanılır.
+          (<a href="https://policies.google.com/privacy" target="_blank" rel="noopener noreferrer">Google Gizlilik Politikası</a>)
+        </li>
+        <li>
+          <strong>Render Bulut Sunucusu (<code>three-2-1-futbol-1.onrender.com</code>):</strong>
+          Hesap kaydı, kurtarma kodu doğrulama, adil maç ödül doğrulaması, Google Play makbuz
+          doğrulaması ve şikayet kayıtlarının güvenli şekilde işlenmesi için HTTPS/TLS şifrelemesiyle
+          kullanılır.
+        </li>
+        <li>
+          <strong>Google AdMob ve Google UMP (Kullanıcı Onay Platformu):</strong>
+          İsteğe bağlı ödüllü reklamlar ve VIP olmayan hesaplardaki maç sonu geçiş reklamları için
+          Google AdMob SDK kullanılır. Avrupa Ekonomik Alanı (EEA), Birleşik Krallık ve İsviçre'deki
+          kullanıcılara Google UMP onay formu sunulur; tercihler uygulama içinden güncellenebilir.
+        </li>
+        <li>
+          <strong>Google Play Billing &amp; Play Integrity API:</strong>
+          Dijital satın alımların işlenmesi ve uygulamanın bütünlüğünün doğrulanması için Google Play
+          hizmetleri kullanılır.
+        </li>
+        <li>
+          <strong>Bayrak Görselleri (<code>flagcdn.com</code>):</strong>
+          Oyun içi ülke bayraklarının görüntülenmesi amacıyla standart HTTPS görsel istekleri
+          yapılabilir (kişisel hesap verisi paylaşılmaz).
+        </li>
       </ul>
 
-      <h2>3. Google AdMob ve Reklam Kimliği (AD_ID)</h2>
+      <h2>3. Yerel Depolama ve Android İzinleri</h2>
       <p>
-        Uygulamamız, ücretsiz olarak sunulabilmesi için <strong>Google AdMob</strong> altyapısını
-        kullanır (VIP Reklamsız paket sahipleri hariç):
+        Çevrimdışı bot maçlarının hızlı çalışması ve kullanıcı tercihlerinizin (ses, titreşim, tema)
+        hatırlanması için cihazınızda <code>localStorage</code> kullanılır.
       </p>
+      <p>Android kapalı test sürümü (v1.1.0) yalnızca aşağıdaki asgari izinleri kullanır:</p>
       <ul>
-        <li><strong>Ödüllü Reklamlar:</strong> Ekstra Şans Çarkı çevirme, 2x Coin veya İpucu/Enerji kazanımı için yalnızca sizin onayınızla oynatılır.</li>
-        <li><strong>Geçiş Reklamları:</strong> VIP olmayan kullanıcılarda her 3 tamamlanan maçtan sonra gösterilebilir.</li>
-        <li>Reklam sunumu ve dolandırıcılık önleme amacıyla cihazın Android Reklam Kimliği (<code>AD_ID</code>) ve temel cihaz teknik sinyalleri Google Mobile Ads SDK tarafından işlenebilir.</li>
+        <li><code>android.permission.INTERNET</code> — Çevrim içi maçlar, sunucu doğrulaması ve liderlik tablosu için.</li>
+        <li><code>android.permission.VIBRATE</code> — Oyun içi dokunsal geri bildirim (titreşim) için; Ayarlar'dan kapatılabilir.</li>
+      </ul>
+      <p>
+        İlk kapalı test sürümünde reklamlar devre dışı olduğu için <code>AD_ID</code> izni manifestten
+        kaldırılmıştır. Uygulama kamera, mikrofon, rehber, SMS, dosya sistemi veya hassas GPS konumu
+        izni istemez.
+      </p>
+
+      <h2>4. Veri Güvenliği, Yedekleme ve Saklama Süreleri</h2>
+      <ul>
+        <li>Tüm sunucu ve Firebase iletişimleri HTTPS/TLS ile aktarım sırasında şifrelenir.</li>
+        <li>Geçici çevrim içi oda ve eşleşme kuyruğu kayıtları maç tamamlandıktan sonra temizlenir.</li>
+        <li>Felaket kurtarma amaçlı alınan özel sistem yedekleri AES-256-GCM ile şifrelenerek saklanır; yedekten geri yükleme sırasında daha önce silinmiş hesapların yeniden etkinleşmesini önlemek için yalnızca kişisel veri içermeyen tek yönlü SHA-256 silinmiş-hesap işareti (<code>deleted_accounts</code>) tutulur.</li>
+        <li>Hesap ve ilerleme verileri, siz hesabınızı silene kadar saklanır.</li>
+        <li>
+          <strong>Saklama İstisnaları:</strong> Hesap silinse dahi, sahtekarlık önleme için yalnızca
+          kişisel veri içermeyen SHA-256 satın alma özeti (<code>backend_purchases</code>), silinmiş
+          hesap yeniden-etkinleştirme önleyici özeti (<code>deleted_accounts</code>) ve topluluk
+          güvenliği için oluşturulan moderasyon bildirimleri (<code>userReports</code>) yalnızca
+          güvenlik ve inceleme amacıyla sınırlı olarak saklanabilir.
+        </li>
       </ul>
 
-      <h2>4. İzin Politikası (Minimum İzin Prensibi)</h2>
+      <h2>5. Çocukların Gizliliği (13 Yaş Sınırı)</h2>
+      <p>
+        <strong>3-2-1 Futbol : Kafa Kafaya</strong>, 13 yaşından küçük çocuklara yönelik değildir ve
+        bilerek 13 yaş altındaki çocuklardan kişisel veri toplamaz. 13 yaşından küçük bir çocuğa ait
+        verinin işlendiğini düşünüyorsanız lütfen <strong>321futboloyunu@gmail.com</strong> adresinden
+        bizimle iletişime geçin; ilgili kayıtlar derhal silinecektir.
+      </p>
+
+      <h2>6. Hesap ve Veri Silme Haklarınız</h2>
       <div class="card">
-        <strong>3-2-1 Futbol: Online Düello</strong> yalnızca <code>INTERNET</code> ve <code>AD_ID</code>
-        izinlerini kullanır. Kamera, mikrofon, rehber (kişiler), konum (GPS) veya SMS verilerinize
-        <strong>kesinlikle erişilmez</strong>.
+        <p style="margin-top: 0;">
+          Hesabınızı ve ilişkili tüm verilerinizi istediğiniz zaman uygulama içindeki
+          <strong>Ayarlar → Hesabımı ve Verilerimi Sil</strong> seçeneğiyle anında veya uygulamayı
+          yüklemeden <a href="./hesap-sil.html">Web Hesap Silme Sayfası</a> üzerinden kalıcı olarak
+          silebilirsiniz.
+        </p>
+        <p style="margin-bottom: 0;">
+          Gizlilik talepleriniz ve sorularınız için iletişim:
+          <strong>321futboloyunu@gmail.com</strong>
+        </p>
       </div>
 
-      <h2>5. Hata ve Çökme Kayıtları</h2>
-      <p>
-        Uygulama kararlılığını artırmak amacıyla beklenmedik uygulama hataları ve temel oyun akışı
-        olayları kişisel kimlik bilgisi içermeyen teknik kayıtlar halinde tutulur.
-      </p>
-
-      <h2>6. Veri Saklama, Hesap Silme ve Haklarınız</h2>
-      <p>
-        Hesabınızı ve tüm verilerinizi istediğiniz an kalıcı olarak silebilirsiniz:
-      </p>
-      <ul>
-        <li><strong>Uygulama İçinden:</strong> <em>Ayarlar</em> veya <em>Profil</em> bölümündeki <strong>“Hesabımı ve Verilerimi Sil”</strong> butonunu kullanın.</li>
-        <li><strong>Web Üzerinden:</strong> <a href="./hesap-sil.html">Hesap Silme Formu</a> sayfasından talebinizi iletebilirsiniz.</li>
-      </ul>
-
-      <h2>7. İletişim</h2>
-      <p>
-        Gizlilik politikamız veya verilerinizle ilgili her türlü soru için bize ulaşabilirsiniz:<br />
-        E-posta: <a href="mailto:321futboloyunu@gmail.com">321futboloyunu@gmail.com</a>
-      </p>
-
-      <div class="actions">
-        <a class="btn btn-primary" href="./index.html">⚽ Oyuna Dön</a>
-        <a class="btn btn-danger" href="./hesap-sil.html">🗑️ Hesap ve Veri Silme Sayfası</a>
+      <div class="links">
+        <a href="./privacy.html">English Privacy Policy</a>
+        <a href="./hesap-sil.html">Hesabımı ve Verilerimi Sil</a>
+        <a href="./kullanim-kosullari.html">Kullanım Koşulları</a>
       </div>
     </main>
   </body>

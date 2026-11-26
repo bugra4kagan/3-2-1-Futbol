@@ -11,6 +11,7 @@ import {
   getAdUnitIdForPlatform,
   showRewardedAd,
 } from '../services/adService';
+import { isAdsEnabled } from '../game/monetizationFlags';
 import { sounds } from '../utils/audio';
 
 interface EnergyEmptyModalProps {
@@ -266,7 +267,7 @@ export const EnergyEmptyModal: React.FC<EnergyEmptyModalProps> = ({
 
         {/* Action Buttons */}
         <div className="mt-4 space-y-2.5">
-          {!isVipUnlimited && (
+          {!isVipUnlimited && isAdsEnabled() && (
             <button
               type="button"
               data-testid="energy-watch-ad-btn"

@@ -194,6 +194,7 @@ export interface RestoreSparkBackupOptions {
   dryRun?: boolean;
   includeLegacyUsersMirror?: boolean;
   reconcileLegacyUsersWithAuthoritativeAccounts?: boolean;
+  deletedAccountHashes?: ReadonlySet<string>;
   timestampFactory?: (iso: string) => unknown;
 }
 
@@ -204,7 +205,15 @@ export interface RestoreSparkBackupReport {
   checksumVerified: boolean;
   restoredFirestoreCounts: Record<SparkBackupCollectionName, number>;
   restoredRtdbCounts: Record<SparkBackupRtdbPath, number>;
+  skippedDeletedAccountsCount?: number;
   legacyAnomalies: Array<{ docId: string; anomalies: string[] }>;
+}
+
+export function hashDeletedAccountIdentityForRestore(rawId: string): string {
+  return crypto
+    .createHash('sha256')
+    .update(`deleted_account_v1:${String(rawId || '').trim()}`)
+    .digest('hex');
 }
 
 const PREMIUM_ENTITLEMENT_GIFTS = new Set([
@@ -996,6 +1005,15 @@ export async function restoreFirebaseSparkBackup(params: {
   }
 
   const legacyAnomalies: Array<{ docId: string; anomalies: string[] }> = [];
+  const deletedHashes = params.options?.deletedAccountHashes;
+  let skippedDeletedAccountsCount = 0;
+
+  const isDeletedId = (candidateId: unknown): boolean => {
+    if (!deletedHashes || deletedHashes.size === 0 || typeof candidateId !== 'string') return false;
+    const clean = candidateId.trim();
+    if (!clean) return false;
+    return deletedHashes.has(clean) || deletedHashes.has(hashDeletedAccountIdentityForRestore(clean));
+  };
 
   for (const collectionName of SPARK_BACKUP_FIRESTORE_COLLECTIONS) {
     if (collectionName === 'users' && !includeLegacyUsersMirror) {
@@ -1003,6 +1021,21 @@ export async function restoreFirebaseSparkBackup(params: {
     }
     const docs = params.snapshot.collections[collectionName];
     for (const docItem of docs) {
+      if (
+        (collectionName === 'backend_accounts' ||
+          collectionName === 'users' ||
+          collectionName === 'usernames' ||
+          collectionName === 'publicProfiles') &&
+        (isDeletedId(docItem.id) ||
+          isDeletedId(docItem.data.accountId) ||
+          isDeletedId(docItem.data.googleUid) ||
+          isDeletedId(docItem.data.ownerUid) ||
+          isDeletedId(docItem.data.userId))
+      ) {
+        skippedDeletedAccountsCount += 1;
+        continue;
+      }
+
       let dataToRestore = deserializeBackupValue(docItem.data, timestampFactory) as Record<string, unknown>;
 
       if (collectionName === 'users' && reconcileLegacy) {
@@ -1040,11 +1073,19 @@ export async function restoreFirebaseSparkBackup(params: {
     for (const rtdbPath of SPARK_BACKUP_RTDB_PATHS) {
       const value = params.snapshot.rtdb[rtdbPath];
       if (value && typeof value === 'object') {
-        const restoredValue = deserializeBackupValue(value, timestampFactory);
+        const filteredEntries: Record<string, unknown> = {};
+        for (const [k, v] of Object.entries(value)) {
+          if (rtdbPath === 'leaderboard' && isDeletedId(k)) {
+            skippedDeletedAccountsCount += 1;
+            continue;
+          }
+          filteredEntries[k] = v;
+        }
+        const restoredValue = deserializeBackupValue(filteredEntries, timestampFactory);
         if (!dryRun) {
           await params.rtdb.ref(rtdbPath).set(restoredValue);
         }
-        emptyRtdbCounts[rtdbPath] = Object.keys(value).length;
+        emptyRtdbCounts[rtdbPath] = Object.keys(filteredEntries).length;
       }
     }
   }
@@ -1055,6 +1096,7 @@ export async function restoreFirebaseSparkBackup(params: {
     checksumVerified: true,
     restoredFirestoreCounts: emptyFirestoreCounts,
     restoredRtdbCounts: emptyRtdbCounts,
+    skippedDeletedAccountsCount,
     legacyAnomalies,
   };
 }

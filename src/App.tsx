@@ -169,6 +169,7 @@ import {
   showInterstitialAd,
   showRewardedAd,
 } from './services/adService';
+import { isAdsEnabled } from './game/monetizationFlags';
 import { isLegacyFlaggedUsername } from './game/accountEngine';
 import { BOT_TIER_METADATA } from './game/botEngine';
 
@@ -2682,8 +2683,12 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
     }, 1000);
   };
 
-  // Web ortamı için geçiş reklamı sunucusunu kaydet
+  // Web ortamı için geçiş reklamı sunucusunu yalnızca reklamlar açıkken kaydet
   useEffect(() => {
+    if (!isAdsEnabled()) {
+      setInterstitialPresenter(null);
+      return;
+    }
     setInterstitialPresenter((adUnitId) => {
       return new Promise<void>((resolve) => {
         setInterstitialAdState({ adUnitId, resolve });
@@ -2692,15 +2697,17 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
     return () => setInterstitialPresenter(null);
   }, []);
 
-  // Her 3 tamamlanan maçta 1 geçiş reklamı (VIP Reklamsız aktifse kesinlikle gösterilmez)
+  // Her 3 tamamlanan maçta 1 geçiş reklamı (kapalı testte ve VIP Reklamsız hesaplarda kesinlikle gösterilmez)
   const transitionToGameOver = useCallback(async () => {
     if (gameOverTransitionInFlightRef.current) return;
     gameOverTransitionInFlightRef.current = true;
     try {
-      const completedCount = incrementCompletedMatchAdCount();
-      const isVipAdFree = hasUnlimitedEnergy(progressionRef.current);
-      if (shouldTriggerInterstitialForMatchCount(completedCount, isVipAdFree)) {
-        await showInterstitialAd({ adFree: isVipAdFree });
+      if (isAdsEnabled()) {
+        const completedCount = incrementCompletedMatchAdCount();
+        const isVipAdFree = hasUnlimitedEnergy(progressionRef.current);
+        if (shouldTriggerInterstitialForMatchCount(completedCount, isVipAdFree)) {
+          await showInterstitialAd({ adFree: isVipAdFree });
+        }
       }
     } catch {
       // Reklam hatası maç özetine geçişi asla engellememeli
@@ -2719,7 +2726,10 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
     const nextIndex = curIdx + 1;
 
     if (isMatchFinished || nextIndex >= Math.min(10, currentList.length)) {
+      const canOfferLastChance =
+        isAdsEnabled() || hasUnlimitedEnergy(progressionRef.current);
       const wouldLoseSolo =
+        canOfferLastChance &&
         !isOnlineMode &&
         player1Ref.current.score < player2Ref.current.score &&
         !lastChanceUsedInMatchRef.current;
@@ -4661,20 +4671,43 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
 
   const handleDeleteAccount = async (): Promise<{ ok: boolean; warning?: string }> => {
     logTelemetryEvent('account_delete_requested');
+
+    const deleteHeaders: Record<string, string> = {
+      ...buildAccountApiHeaders(sessionPlayerIdRef.current),
+    };
+    if (firebaseUser) {
+      try {
+        const idToken = await firebaseUser.getIdToken();
+        if (idToken) deleteHeaders['X-Firebase-Id-Token'] = idToken;
+      } catch {
+        // ignore token read failure; client fallback below will attempt deleteUser
+      }
+    }
+
+    let authDeletedOnServer = false;
+    try {
+      const delRes = await fetchBackendWithWakeupRetry(
+        `/api/accounts/by-id/${encodeURIComponent(sessionPlayerIdRef.current)}`,
+        {
+          method: 'DELETE',
+          headers: deleteHeaders,
+        },
+        { timeoutMs: 15000, retries: 2 }
+      );
+      const delData = (await delRes.json().catch(() => null)) as {
+        firebaseCleanup?: { authDeleted?: boolean };
+      } | null;
+      authDeletedOnServer = Boolean(delData?.firebaseCleanup?.authDeleted);
+    } catch {
+      // ignore network error; proceed with client-side cleanup
+    }
+
     const cloudRes = await deleteCloudAccountData({
       user: firebaseUser,
       displayName: player1Ref.current.name,
       sessionPlayerId: sessionPlayerIdRef.current,
+      authAlreadyDeletedOnServer: authDeletedOnServer,
     });
-
-    await fetchBackendWithWakeupRetry(
-      `/api/accounts/by-id/${encodeURIComponent(sessionPlayerIdRef.current)}`,
-      {
-        method: 'DELETE',
-        headers: buildAccountApiHeaders(sessionPlayerIdRef.current),
-      },
-      { timeoutMs: 15000, retries: 2 }
-    ).catch(() => {});
 
     if (typeof window !== 'undefined') {
       try {
@@ -5920,7 +5953,7 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
             onClose={() => setShowStoreModal(false)}
             onPurchaseItem={handlePurchaseStoreItemAction}
             onEquipItem={handleEquipStoreItemAction}
-            onWatchAdForCoins={handleWatchAdForStoreCoins}
+            onWatchAdForCoins={isAdsEnabled() ? handleWatchAdForStoreCoins : undefined}
             onRestorePurchases={handleRestorePurchases}
           />
         </Suspense>
@@ -5963,8 +5996,8 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
         </Suspense>
       )}
 
-      {/* Rewarded Ad Modal (2x Rewards, +250 Store Coins, Loss Rematch Unlock) */}
-      {pendingAdReward && (
+      {/* Rewarded Ad Modal (Kapalı testte tamamen kapalı) */}
+      {isAdsEnabled() && pendingAdReward && (
         <Suspense fallback={null}>
           <RewardedAdModal
             isOpen={Boolean(pendingAdReward)}

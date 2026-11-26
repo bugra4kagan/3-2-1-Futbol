@@ -13,6 +13,7 @@ import {
 } from '../game/specialEventEngine';
 import { normalizeText } from '../game/validator';
 import { showRewardedAd } from '../services/adService';
+import { isAdsEnabled } from '../game/monetizationFlags';
 import { soundManager } from '../utils/soundManager';
 import { haptics } from '../utils/haptics';
 import { PlayerAvatar } from './PlayerAvatar';
@@ -211,18 +212,20 @@ export const SpecialEventModal: React.FC<SpecialEventModalProps> = ({
               </button>
             ) : (
               <div className="space-y-2.5">
-                <button
-                  type="button"
-                  data-testid="special-event-ad-start-btn"
-                  disabled={adLoading}
-                  onClick={handleAdEntry}
-                  className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-fuchsia-500 to-amber-400 hover:from-fuchsia-400 hover:to-amber-300 disabled:opacity-60 text-white font-black text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg cursor-pointer transition active:scale-95"
-                >
-                  <Film className="w-4 h-4" />
-                  <span>
-                    {adLoading ? 'Reklam Oynatılıyor...' : '🎬 Reklam İzle ve Ekstra Giriş Kazan'}
-                  </span>
-                </button>
+                {isAdsEnabled() && (
+                  <button
+                    type="button"
+                    data-testid="special-event-ad-start-btn"
+                    disabled={adLoading}
+                    onClick={handleAdEntry}
+                    className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-fuchsia-500 to-amber-400 hover:from-fuchsia-400 hover:to-amber-300 disabled:opacity-60 text-white font-black text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg cursor-pointer transition active:scale-95"
+                  >
+                    <Film className="w-4 h-4" />
+                    <span>
+                      {adLoading ? 'Reklam Oynatılıyor...' : '🎬 Reklam İzle ve Ekstra Giriş Kazan'}
+                    </span>
+                  </button>
+                )}
                 <button
                   type="button"
                   data-testid="special-event-coin-start-btn"

@@ -6,4 +6,4 @@ export type GameLogoVariant = 'full' | 'compact' | 'icon';
  */
 export const BRAND_LOGO_SRC = './icons/brand-logo.webp';
 export const BRAND_PUBLIC_LOGO_PATH = './icons/icon-512.webp';
-export const BRAND_LOGO_ALT = '3-2-1 Futbol: Online Düello Logosu';
+export const BRAND_LOGO_ALT = '3-2-1 Futbol : Kafa Kafaya Logosu';
