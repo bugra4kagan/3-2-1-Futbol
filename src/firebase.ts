@@ -44,6 +44,11 @@ import {
 } from 'firebase/app-check';
 import { Capacitor } from '@capacitor/core';
 import {
+  BackendRetryOptions,
+  fetchWithVerifiedFirebaseAuth,
+  resolveVerifiedFirebaseIdToken,
+} from './services/backendClient';
+import {
   USERNAME_TAKEN_ERROR,
   USERNAME_UNVERIFIED_ERROR,
   isLegacyFlaggedUsername,
@@ -333,17 +338,69 @@ export async function ensureAnonymousFirebaseSession(): Promise<User | null> {
   }
 }
 
-export async function processAuthRedirectResult(): Promise<User | null> {
+export async function getVerifiedFirebaseIdToken(forceRefresh = false): Promise<string | null> {
+  return resolveVerifiedFirebaseIdToken(auth, forceRefresh);
+}
+
+export async function refreshCurrentFirebaseUser(): Promise<User | null> {
   try {
-    const res = await getRedirectResult(auth);
-    return res?.user ?? null;
+    await auth.authStateReady();
+    const current = auth.currentUser;
+    if (!current || current.isAnonymous) {
+      return current;
+    }
+    await current.reload();
+    if (auth.currentUser && !auth.currentUser.isAnonymous) {
+      await auth.currentUser.getIdToken(true).catch(() => null);
+    }
+    return auth.currentUser;
   } catch {
-    return null;
+    return auth.currentUser;
+  }
+}
+
+export async function fetchAccountApiWithFirebaseAuth(params: {
+  path: string;
+  method?: string;
+  baseHeaders: Record<string, string>;
+  body?: unknown;
+  retryOptions?: BackendRetryOptions;
+}): Promise<Response> {
+  return fetchWithVerifiedFirebaseAuth({
+    ...params,
+    auth,
+  });
+}
+
+export async function processAuthRedirectResult(): Promise<{
+  user: User | null;
+  error?: string;
+}> {
+  try {
+    await auth.authStateReady();
+    const res = await getRedirectResult(auth);
+    return { user: res?.user ?? null };
+  } catch (err) {
+    const code =
+      err && typeof err === 'object' && 'code' in err ? String((err as { code?: unknown }).code) : '';
+    if (code.includes('credential-already-in-use') || code.includes('email-already-in-use')) {
+      const pendingCred = GoogleAuthProvider.credentialFromError(err as never);
+      if (pendingCred) {
+        try {
+          const signedIn = await signInWithCredential(auth, pendingCred);
+          return { user: signedIn.user };
+        } catch (credErr) {
+          return { user: null, error: mapFirebaseAuthErrorToTurkish(credErr) };
+        }
+      }
+    }
+    return { user: null, error: mapFirebaseAuthErrorToTurkish(err) };
   }
 }
 
 export async function signInWithGooglePopup(): Promise<User> {
   const current = auth.currentUser;
+  const isNative = Capacitor.isNativePlatform();
   if (current && current.isAnonymous) {
     try {
       const linked = await linkWithPopup(current, googleProvider);
@@ -363,8 +420,9 @@ export async function signInWithGooglePopup(): Promise<User> {
         return credential.user;
       }
       if (
-        code.includes('popup-blocked') ||
-        code.includes('operation-not-supported-in-this-environment')
+        !isNative &&
+        (code.includes('popup-blocked') ||
+          code.includes('operation-not-supported-in-this-environment'))
       ) {
         await linkWithRedirect(current, googleProvider);
         throw new Error('redirect-in-progress');
@@ -382,8 +440,9 @@ export async function signInWithGooglePopup(): Promise<User> {
         ? String((err as { code?: unknown }).code)
         : '';
     if (
-      code.includes('popup-blocked') ||
-      code.includes('operation-not-supported-in-this-environment')
+      !isNative &&
+      (code.includes('popup-blocked') ||
+        code.includes('operation-not-supported-in-this-environment'))
     ) {
       await signInWithRedirect(auth, googleProvider);
       throw new Error('redirect-in-progress');
@@ -398,6 +457,24 @@ export function mapFirebaseAuthErrorToTurkish(err: unknown): string {
   const msg = err instanceof Error ? err.message : String(err);
   const combined = `${code} ${msg}`.toLowerCase();
 
+  if (combined.includes('disallowed_useragent')) {
+    return 'Uygulama içi tarayıcıda Google giriş penceresi desteklenmiyor. E-posta/şifre ile giriş yapabilir veya web sürümünden hesabını bağlayabilirsin.';
+  }
+  if (combined.includes('unauthorized-domain')) {
+    return 'Bu alan adı Firebase yetkilendirilmiş alanlar listesinde tanımlı değil.';
+  }
+  if (combined.includes('account-exists-with-different-credential')) {
+    return 'Bu e-posta adresi farklı bir giriş yöntemiyle kayıtlı. E-posta/şifre ile giriş yapmayı dene.';
+  }
+  if (combined.includes('popup-closed-by-user') || combined.includes('cancelled-popup-request')) {
+    return 'Google giriş penceresi kapatıldı.';
+  }
+  if (combined.includes('popup-blocked')) {
+    return 'Tarayıcı açılır pencereyi engelledi. İzin verip tekrar dene.';
+  }
+  if (combined.includes('operation-not-supported-in-this-environment')) {
+    return 'Bu cihaz/tarayıcı ortamında açılır Google penceresi desteklenmiyor. E-posta ile giriş yapmayı deneyebilirsin.';
+  }
   if (combined.includes('email-already-in-use')) {
     return 'Bu e-posta adresi zaten kayıtlı. Giriş yapmayı dene!';
   }

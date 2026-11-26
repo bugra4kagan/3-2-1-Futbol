@@ -156,3 +156,93 @@ export function prewarmBackendHealthz(options: {
     // Sessiz arka plan uyandırma; hata durumunda offline/Firestore akışı korunur
   });
 }
+
+export interface FirebaseAuthStateLike {
+  authStateReady?: () => Promise<void>;
+  currentUser: {
+    isAnonymous?: boolean;
+    getIdToken?: (forceRefresh?: boolean) => Promise<string>;
+  } | null;
+}
+
+/**
+ * Firebase Auth durumu hazır olduktan sonra yalnızca anonim olmayan (Google / E-posta)
+ * oturumlar için ID token döner; anonim misafir oturumlarında her zaman null döner.
+ */
+export async function resolveVerifiedFirebaseIdToken(
+  authLike: FirebaseAuthStateLike,
+  forceRefresh = false
+): Promise<string | null> {
+  try {
+    if (typeof authLike.authStateReady === 'function') {
+      await authLike.authStateReady();
+    }
+    const current = authLike.currentUser;
+    if (!current || current.isAnonymous || typeof current.getIdToken !== 'function') {
+      return null;
+    }
+    const token = await current.getIdToken(forceRefresh);
+    return token && token.trim().length > 0 ? token.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * İstek öncesi anonim olmayan oturum için `X-Firebase-Id-Token` ekler;
+ * doğrulanmış oturumda sunucudan 401 dönülürse `getIdToken(true)` ile
+ * kontrollü olarak yalnızca bir kez token yenileyip tekrar dener.
+ */
+export async function fetchWithVerifiedFirebaseAuth(params: {
+  path: string;
+  method?: string;
+  baseHeaders: Record<string, string>;
+  body?: unknown;
+  auth: FirebaseAuthStateLike;
+  retryOptions?: BackendRetryOptions;
+}): Promise<Response> {
+  const buildHeaders = async (forceRefresh: boolean): Promise<Record<string, string>> => {
+    const headers: Record<string, string> = { ...params.baseHeaders };
+    const idToken = await resolveVerifiedFirebaseIdToken(params.auth, forceRefresh);
+    if (idToken) {
+      headers['X-Firebase-Id-Token'] = idToken;
+    }
+    return headers;
+  };
+
+  const payload = params.body !== undefined ? JSON.stringify(params.body) : undefined;
+  let response = await fetchBackendWithWakeupRetry(
+    params.path,
+    {
+      method: params.method || 'POST',
+      headers: await buildHeaders(false),
+      ...(payload !== undefined ? { body: payload } : {}),
+    },
+    params.retryOptions
+  );
+
+  if (
+    response.status === 401 &&
+    params.auth.currentUser &&
+    !params.auth.currentUser.isAnonymous
+  ) {
+    const refreshedToken = await resolveVerifiedFirebaseIdToken(params.auth, true);
+    if (refreshedToken) {
+      const retryHeaders: Record<string, string> = {
+        ...params.baseHeaders,
+        'X-Firebase-Id-Token': refreshedToken,
+      };
+      response = await fetchBackendWithWakeupRetry(
+        params.path,
+        {
+          method: params.method || 'POST',
+          headers: retryHeaders,
+          ...(payload !== undefined ? { body: payload } : {}),
+        },
+        params.retryOptions
+      );
+    }
+  }
+
+  return response;
+}

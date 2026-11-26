@@ -92,17 +92,24 @@ async function authenticateAccountMutationCaller(params: {
   const verifiedTokenUser = rawFirebaseToken
     ? await deps.verifyFirebaseBearerToken(rawFirebaseToken)
     : null;
-  const verifiedUser =
-    verifiedTokenUser && verifiedTokenUser.firebase?.sign_in_provider !== 'anonymous'
-      ? verifiedTokenUser
-      : null;
+  const isAnonymousToken = Boolean(
+    verifiedTokenUser && verifiedTokenUser.firebase?.sign_in_provider === 'anonymous'
+  );
+  // Anonim Firebase tokenı hiçbir şekilde Google/Cloud hesap sahipliği kanıtı sayılmaz.
+  const verifiedUser = verifiedTokenUser && !isAnonymousToken ? verifiedTokenUser : null;
 
-  if (rawFirebaseToken && !verifiedUser) {
+  if (rawFirebaseToken && (!verifiedTokenUser || (isAnonymousToken && requestedGoogleUid))) {
     return {
       ok: false,
       response: {
         status: 401,
-        body: { ok: false, error: 'Geçersiz Firebase oturum tokenı.' },
+        body: {
+          ok: false,
+          error:
+            isAnonymousToken && requestedGoogleUid
+              ? 'Google hesabı doğrulaması için geçerli Firebase kimlik tokenı gereklidir.'
+              : 'Geçersiz Firebase oturum tokenı.',
+        },
       },
     };
   }

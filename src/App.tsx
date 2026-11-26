@@ -340,17 +340,19 @@ function buildAccountApiHeaders(accountId: string): Record<string, string> {
   return headers;
 }
 
-async function buildSignedAccountApiHeaders(accountId: string): Promise<Record<string, string>> {
-  const headers = buildAccountApiHeaders(accountId);
-  try {
-    const idToken = await auth.currentUser?.getIdToken().catch(() => null);
-    if (idToken) {
-      headers['X-Firebase-Id-Token'] = idToken;
-    }
-  } catch {
-    // ignore auth token failures
-  }
-  return headers;
+async function fetchSignedAccountApi(
+  accountId: string,
+  path: string,
+  body: unknown,
+  retryOptions?: { timeoutMs?: number; retries?: number; retryDelayMs?: number }
+): Promise<Response> {
+  return fetchAccountApiWithFirebaseAuth({
+    path,
+    method: 'POST',
+    baseHeaders: buildAccountApiHeaders(accountId),
+    body,
+    retryOptions,
+  });
 }
 import { getAuthoritativeServerNowMs } from './game/serverTime';
 import { ONLINE_MATCHMAKING_TIMEOUT_MS } from './game/realtimeSyncHelpers';
@@ -414,11 +416,14 @@ import {
   claimUsernameInFirestore,
   deleteCloudAccountData,
   ensureAnonymousFirebaseSession,
+  fetchAccountApiWithFirebaseAuth,
   fetchPublicProfileFromFirestore,
   initializeFirebaseAppCheck,
   loadUserBackupFromFirestore,
+  mapFirebaseAuthErrorToTurkish,
   processAuthRedirectResult,
   publishActivityToFirestore,
+  refreshCurrentFirebaseUser,
   savePublicProfileToFirestore,
   saveUserBackupToFirestore,
   sendVerificationEmailToCurrentUser,
@@ -594,6 +599,8 @@ export default function App() {
   });
   const [showAuthModal, setShowAuthModal] = useState<boolean>(false);
   const [authModalTab, setAuthModalTab] = useState<'profile' | 'email'>('profile');
+  const [authModalNotice, setAuthModalNotice] = useState<string | null>(null);
+  const [isFirebaseEmailVerified, setIsFirebaseEmailVerified] = useState<boolean>(false);
   const [showOnboardingModal, setShowOnboardingModal] = useState<boolean>(false);
   const [isNetworkOnline, setIsNetworkOnline] = useState<boolean>(() =>
     typeof navigator !== 'undefined' ? navigator.onLine : true
@@ -920,21 +927,17 @@ export default function App() {
       }
       const startPromise = (async () => {
         try {
-          const headers = await buildSignedAccountApiHeaders(aid);
-          const res = await fetchBackendWithWakeupRetry(
+          const res = await fetchSignedAccountApi(
+            aid,
             '/api/matches/start',
             {
-              method: 'POST',
-              headers,
-              body: JSON.stringify({
-                accountId: aid,
-                minigameType: matchMinigame,
-                mode: matchMode,
-                roundIds,
-                roomCode: roomMeta?.roomCode,
-                matchSeq: roomMeta?.matchSeq,
-                rosterVersion: getRosterHydrationStatus().version,
-              }),
+              accountId: aid,
+              minigameType: matchMinigame,
+              mode: matchMode,
+              roundIds,
+              roomCode: roomMeta?.roomCode,
+              matchSeq: roomMeta?.matchSeq,
+              rosterVersion: getRosterHydrationStatus().version,
             },
             { timeoutMs: 25000, retries: 2, retryDelayMs: 2000 }
           );
@@ -972,19 +975,15 @@ export default function App() {
             serverMatchSessionIdRef.current ||
             (serverMatchStartPromiseRef.current ? await serverMatchStartPromiseRef.current : null);
           if (!sid) return;
-          const headers = await buildSignedAccountApiHeaders(aid);
-          await fetchBackendWithWakeupRetry(
+          await fetchSignedAccountApi(
+            aid,
             '/api/matches/answer',
             {
-              method: 'POST',
-              headers,
-              body: JSON.stringify({
-                accountId: aid,
-                matchSessionId: sid,
-                roundIndex,
-                answer,
-                cellPos,
-              }),
+              accountId: aid,
+              matchSessionId: sid,
+              roundIndex,
+              answer,
+              cellPos,
             },
             { timeoutMs: 25000, retries: 2, retryDelayMs: 2000 }
           );
@@ -1008,17 +1007,13 @@ export default function App() {
       if (serverMatchAnswerPromisesRef.current.length > 0) {
         await Promise.allSettled(serverMatchAnswerPromisesRef.current);
       }
-      const headers = await buildSignedAccountApiHeaders(aid);
-      const res = await fetchBackendWithWakeupRetry(
+      const res = await fetchSignedAccountApi(
+        aid,
         '/api/matches/complete',
         {
-          method: 'POST',
-          headers,
-          body: JSON.stringify({
-            accountId: aid,
-            matchSessionId: sid,
-            roomCode: matchRoomCode || undefined,
-          }),
+          accountId: aid,
+          matchSessionId: sid,
+          roomCode: matchRoomCode || undefined,
         },
         { timeoutMs: 25000, retries: 2, retryDelayMs: 2000 }
       );
@@ -1710,23 +1705,31 @@ export default function App() {
 
       // 1. Doğrulanmış Firebase ID Token ile ÖNCE sunucuda kayıt/bağlama + Admin SDK Firestore ilk oluşturmayı yap
       let cloudReadyInFirestore = Boolean(remote);
-      const signedHeaders = await buildSignedAccountApiHeaders(sessionPlayerIdRef.current);
-      const regData = await fetchBackendWithWakeupRetry(
+      const regRes = await fetchSignedAccountApi(
+        sessionPlayerIdRef.current,
         '/api/accounts/register',
         {
-          method: 'POST',
-          headers: signedHeaders,
-          body: JSON.stringify({
-            accountId: sessionPlayerIdRef.current,
-            profile: nextProfile,
-            progression: mergedProg,
-            googleUid: user.uid,
-          }),
+          accountId: sessionPlayerIdRef.current,
+          profile: nextProfile,
+          progression: mergedProg,
+          googleUid: user.uid,
         },
         { timeoutMs: 18000, retries: 2, retryDelayMs: 1800 }
-      )
-        .then((r) => (r.ok ? r.json() : null))
-        .catch(() => null);
+      ).catch(() => null);
+
+      const regData = regRes ? await regRes.json().catch(() => null) : null;
+      if (regRes && !regRes.ok && regRes.status !== 400) {
+        return {
+          ok: false,
+          error:
+            (regData && typeof regData.error === 'string' && regData.error) ||
+            'Google hesabı sunucuyla doğrulanamadı. Lütfen tekrar dene.',
+          nextProfile,
+          mergedProg,
+          bonusCoinsAwarded: 0,
+          needsUsername: !nextProfile.name || nextProfile.name === 'Futbol Gurmesi',
+        };
+      }
 
       if (regData?.ok && regData?.account) {
         const canonicalId = String(regData.account.accountId || sessionPlayerIdRef.current);
@@ -1793,34 +1796,148 @@ export default function App() {
         progression: mergedProg,
       }).catch(() => {});
 
-      return { nextProfile, mergedProg, bonusCoinsAwarded };
+      const needsUsername =
+        !nextProfile.name ||
+        nextProfile.name === 'Futbol Gurmesi' ||
+        isLegacyFlaggedUsername(nextProfile.name);
+
+      return { ok: true, nextProfile, mergedProg, bonusCoinsAwarded, needsUsername };
     },
     [mergeCloudAndLocalProgression, persistProgression]
   );
 
-  // Firebase Auth session listener + initial Firestore cloud backup sync/restore
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      setFirebaseUser(user);
+  const runVerifiedCloudSyncIfReady = useCallback(
+    async (user: User | null) => {
       if (!user || user.isAnonymous || !user.emailVerified) {
-        if (!user || user.isAnonymous) cloudLoadedUidRef.current = null;
-        return;
+        if (!user || user.isAnonymous) {
+          cloudLoadedUidRef.current = null;
+          setIsFirebaseEmailVerified(false);
+        }
+        return null;
       }
-      if (cloudLoadedUidRef.current === user.uid) return;
+      setIsFirebaseEmailVerified(true);
+      if (cloudLoadedUidRef.current === user.uid) {
+        const curName = player1Ref.current.name;
+        return {
+          ok: true,
+          nextProfile: player1Ref.current,
+          mergedProg: progressionRef.current,
+          bonusCoinsAwarded: 0,
+          needsUsername: !curName || curName === 'Futbol Gurmesi' || isLegacyFlaggedUsername(curName),
+        };
+      }
       cloudLoadedUidRef.current = user.uid;
-
       setIsSyncingCloud(true);
       try {
-        await syncVerifiedGoogleWithServerAndCloud(user);
+        const res = await syncVerifiedGoogleWithServerAndCloud(user);
+        if (!res.ok) {
+          cloudLoadedUidRef.current = null;
+        }
+        return res;
       } catch (err) {
+        cloudLoadedUidRef.current = null;
         console.warn('Cloud backup sync failed:', err);
+        return null;
       } finally {
         setIsSyncingCloud(false);
       }
+    },
+    [syncVerifiedGoogleWithServerAndCloud]
+  );
+
+  // Firebase Auth redirect callback + session listener + initial Firestore cloud backup sync/restore
+  useEffect(() => {
+    let active = true;
+    void processAuthRedirectResult().then(async (redirectRes) => {
+      if (!active) return;
+      if (redirectRes.error) {
+        setAuthModalNotice(redirectRes.error);
+        setAuthModalTab('email');
+        setShowAuthModal(true);
+        return;
+      }
+      if (redirectRes.user) {
+        setFirebaseUser(redirectRes.user);
+        setIsFirebaseEmailVerified(Boolean(redirectRes.user.emailVerified));
+        if (redirectRes.user.emailVerified) {
+          const syncRes = await runVerifiedCloudSyncIfReady(redirectRes.user);
+          if (syncRes?.ok && syncRes.needsUsername) {
+            setAuthModalTab('profile');
+            setShowAuthModal(true);
+          }
+        }
+      }
     });
 
-    return () => unsubscribe();
-  }, [syncVerifiedGoogleWithServerAndCloud]);
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      setFirebaseUser(user);
+      setIsFirebaseEmailVerified(Boolean(user && !user.isAnonymous && user.emailVerified));
+      await runVerifiedCloudSyncIfReady(user);
+    });
+
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, [runVerifiedCloudSyncIfReady]);
+
+  // E-posta doğrulama linkine Gmail üzerinden tıklandıktan sonra oyuna dönülünce doğrulanmış durumu algıla
+  const handleCheckEmailVerification = useCallback(async () => {
+    try {
+      const reloaded = await refreshCurrentFirebaseUser();
+      setFirebaseUser(reloaded);
+      const verified = Boolean(reloaded && !reloaded.isAnonymous && reloaded.emailVerified);
+      setIsFirebaseEmailVerified(verified);
+      if (verified && reloaded) {
+        const syncRes = await runVerifiedCloudSyncIfReady(reloaded);
+        if (syncRes && !syncRes.ok) {
+          return {
+            verified: false,
+            error: syncRes.error || 'Hesap sunucuyla doğrulanamadı.',
+          };
+        }
+        return {
+          verified: true,
+          email: reloaded.email || undefined,
+          needsUsername: Boolean(syncRes?.needsUsername),
+        };
+      }
+      return {
+        verified: false,
+        email: reloaded?.email || undefined,
+      };
+    } catch (err) {
+      return {
+        verified: false,
+        error: mapFirebaseAuthErrorToTurkish(err),
+      };
+    }
+  }, [runVerifiedCloudSyncIfReady]);
+
+  useEffect(() => {
+    if (!firebaseUser || firebaseUser.isAnonymous || isFirebaseEmailVerified) return;
+
+    const checkOnReturn = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      void handleCheckEmailVerification();
+    };
+
+    window.addEventListener('focus', checkOnReturn);
+    document.addEventListener('visibilitychange', checkOnReturn);
+    const capListener = Capacitor.isNativePlatform()
+      ? CapacitorApp.addListener('appStateChange', ({ isActive }) => {
+          if (isActive) {
+            void handleCheckEmailVerification();
+          }
+        })
+      : null;
+
+    return () => {
+      window.removeEventListener('focus', checkOnReturn);
+      document.removeEventListener('visibilitychange', checkOnReturn);
+      void capListener?.then((h) => h.remove()).catch(() => {});
+    };
+  }, [firebaseUser, isFirebaseEmailVerified, handleCheckEmailVerification]);
 
   // Restore saved account from server if local storage missed profile
   useEffect(() => {
@@ -1867,18 +1984,16 @@ export default function App() {
     serverAccountSaveTimerRef.current = setTimeout(() => {
       void (async () => {
         const aid = sessionPlayerIdRef.current;
-        const headers = await buildSignedAccountApiHeaders(aid);
-        fetchBackendWithWakeupRetry(
+        const verifiedUid =
+          firebaseUser && !firebaseUser.isAnonymous ? firebaseUser.uid : undefined;
+        fetchSignedAccountApi(
+          aid,
           '/api/accounts/sync',
           {
-            method: 'POST',
-            headers,
-            body: JSON.stringify({
-              accountId: aid,
-              profile: player1Ref.current,
-              progression: progressionRef.current,
-              googleUid: firebaseUser?.uid,
-            }),
+            accountId: aid,
+            profile: player1Ref.current,
+            progression: progressionRef.current,
+            googleUid: verifiedUid,
           },
           { timeoutMs: 18000, retries: 2, retryDelayMs: 1800 }
         )
@@ -4047,19 +4162,12 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
       syncServerLeaderboard(res.progression, nextProfile);
       const aid = sessionPlayerIdRef.current;
       if (aid) {
-        void buildSignedAccountApiHeaders(aid)
-          .then((headers) =>
-            fetchBackendWithWakeupRetry(
-              '/api/store/spend-coins',
-              {
-                method: 'POST',
-                headers,
-                body: JSON.stringify({ accountId: aid, itemId: giftId }),
-              },
-              { timeoutMs: 25000, retries: 2, retryDelayMs: 2000 }
-            )
-          )
-          .catch(() => {});
+        void fetchSignedAccountApi(
+          aid,
+          '/api/store/spend-coins',
+          { accountId: aid, itemId: giftId },
+          { timeoutMs: 25000, retries: 2, retryDelayMs: 2000 }
+        ).catch(() => {});
       }
     }
     return { ok: res.ok, reason: res.reason };
@@ -4211,19 +4319,12 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
       syncServerLeaderboard(res.progression, nextProfile);
       const aid = sessionPlayerIdRef.current;
       if (aid) {
-        void buildSignedAccountApiHeaders(aid)
-          .then((headers) =>
-            fetchBackendWithWakeupRetry(
-              '/api/store/spend-coins',
-              {
-                method: 'POST',
-                headers,
-                body: JSON.stringify({ accountId: aid, itemId }),
-              },
-              { timeoutMs: 25000, retries: 2, retryDelayMs: 2000 }
-            )
-          )
-          .catch(() => {});
+        void fetchSignedAccountApi(
+          aid,
+          '/api/store/spend-coins',
+          { accountId: aid, itemId },
+          { timeoutMs: 25000, retries: 2, retryDelayMs: 2000 }
+        ).catch(() => {});
       }
     }
     return { ok: res.ok, reason: res.reason, gift: res.gift };
@@ -4540,27 +4641,30 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
       }
       cloudLoadedUidRef.current = user.uid;
       setFirebaseUser(user);
+      setIsFirebaseEmailVerified(true);
       setIsSyncingCloud(true);
 
-      const { bonusCoinsAwarded } = await syncVerifiedGoogleWithServerAndCloud(user);
+      const syncRes = await syncVerifiedGoogleWithServerAndCloud(user);
+      if (!syncRes.ok) {
+        cloudLoadedUidRef.current = null;
+        return {
+          ok: false,
+          error: syncRes.error || 'Google hesabı bağlanamadı.',
+        };
+      }
 
       return {
         ok: true,
-        bonusCoinsAwarded,
+        bonusCoinsAwarded: syncRes.bonusCoinsAwarded,
         email: user.email,
+        needsUsername: syncRes.needsUsername,
       };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       if (msg.includes('redirect-in-progress')) {
-        return { ok: true, email: '' };
+        return { ok: false, redirectInProgress: true, email: '' };
       }
-      if (msg.includes('popup-closed-by-user')) {
-        return { ok: false, error: 'Google giriş penceresi kapatıldı.' };
-      }
-      if (msg.includes('popup-blocked')) {
-        return { ok: false, error: 'Tarayıcı açılır pencereyi engelledi. İzin verip tekrar dene.' };
-      }
-      return { ok: false, error: 'Google ile giriş tamamlanamadı. Lütfen tekrar dene.' };
+      return { ok: false, error: mapFirebaseAuthErrorToTurkish(err) };
     } finally {
       setIsSyncingCloud(false);
     }
@@ -6063,7 +6167,7 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
                     uid: firebaseUser.uid,
                     email: firebaseUser.email,
                     displayName: firebaseUser.displayName,
-                    emailVerified: firebaseUser.emailVerified,
+                    emailVerified: Boolean(firebaseUser.emailVerified || isFirebaseEmailVerified),
                   }
                 : null
             }
@@ -6126,10 +6230,13 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
             progression={progression}
             googleUid={firebaseUser && !firebaseUser.isAnonymous ? firebaseUser.uid : null}
             initialTab={authModalTab}
+            initialNotice={authModalNotice}
             onSaveProfile={handleSaveProfile}
             onGoogleSignIn={handleGoogleSignIn}
+            onCheckEmailVerification={handleCheckEmailVerification}
             onPurchaseGift={handlePurchaseGiftAction}
             onClose={() => {
+              setAuthModalNotice(null);
               setShowAuthModal(false);
               if (screen === 'intro') setScreen('lobby');
             }}

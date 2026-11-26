@@ -315,17 +315,52 @@ test('Sahte token, anonim token, UID uyuşmazlığı, sahte coin/puan artışı 
     });
     assert.equal(forgedTokenRes.status, 401);
 
-    // 2. Anonim Firebase tokenı -> 401
-    const anonTokenRes = await handleAccountRegisterRequest({
+    // 2a. Anonim Firebase tokenı ile Google UID bağlama girişimi -> 401 reddi
+    const anonGoogleBindRes = await handleAccountRegisterRequest({
       deps,
       getHeader: headerGetter({ 'X-Firebase-Id-Token': 'anon-firebase-token' }),
       body: {
         accountId: 'acc_bad_2',
         profile: makeProfile('acc_bad_2', 'AnonTokenUser'),
         progression: createInitialProgression('acc_bad_2'),
+        googleUid: 'anon_uid_1',
       },
     });
-    assert.equal(anonTokenRes.status, 401);
+    assert.equal(anonGoogleBindRes.status, 401);
+
+    // 2b. Eski 86e522b AAB uyumluluğu: googleUid olmayan misafir kaydında geçerli anonim token yok sayılır (200/180 misafir, sıfır bulut yazımı)
+    const anonGuestFallbackRes = await handleAccountRegisterRequest({
+      deps,
+      getHeader: headerGetter({ 'X-Firebase-Id-Token': 'anon-firebase-token' }),
+      body: {
+        accountId: 'acc_anon_guest_compat',
+        profile: makeProfile('acc_anon_guest_compat', 'AnonCompat'),
+        progression: {
+          ...createInitialProgression('acc_anon_guest_compat'),
+          coins: 9999,
+          weeklyPoints: 9999,
+        },
+      },
+    });
+    assert.equal(anonGuestFallbackRes.status, 200);
+    assert.equal(anonGuestFallbackRes.body.cloudSync, undefined);
+    assert.equal(cloudWrites.length, 0);
+    const anonGuestAcc = anonGuestFallbackRes.body.account as { progression: UserProgression };
+    assert.equal(anonGuestAcc.progression.coins, 200);
+    assert.equal(anonGuestAcc.progression.weeklyPoints, 180);
+    assert.equal(store.getByAccountId('acc_anon_guest_compat')?.googleUid, undefined);
+
+    // 2c. Anonim token hiçbir şekilde mevcut hesap sahipliği kanıtı olarak kabul edilmez (X-Account-Token yoksa 401)
+    const anonOwnershipAttempt = await handleAccountRegisterRequest({
+      deps,
+      getHeader: headerGetter({ 'X-Firebase-Id-Token': 'anon-firebase-token' }),
+      body: {
+        accountId: 'acc_anon_guest_compat',
+        profile: makeProfile('acc_anon_guest_compat', 'AnonCompat'),
+        progression: anonGuestAcc.progression,
+      },
+    });
+    assert.equal(anonOwnershipAttempt.status, 401);
 
     // 3. Doğrulanmamış body.googleUid (token olmadan) -> 401
     const unverifiedUidRes = await handleAccountRegisterRequest({

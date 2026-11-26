@@ -33,7 +33,9 @@ import {
   auth,
   checkUsernameAvailabilityInFirestore,
   claimUsernameInFirestore,
+  fetchAccountApiWithFirebaseAuth,
   mapFirebaseAuthErrorToTurkish,
+  refreshCurrentFirebaseUser,
   sendPasswordResetForEmail,
   sendVerificationEmailToCurrentUser,
   signInWithEmail,
@@ -54,11 +56,20 @@ interface AuthModalProps {
   progression?: UserProgression;
   googleUid?: string | null;
   initialTab?: 'profile' | 'email';
+  initialNotice?: string | null;
   onSaveProfile: (profile: PlayerProfile, authoritativeProgression?: UserProgression) => void;
   onGoogleSignIn?: () => Promise<{
     ok: boolean;
     bonusCoinsAwarded?: number;
     email?: string;
+    error?: string;
+    redirectInProgress?: boolean;
+    needsUsername?: boolean;
+  }>;
+  onCheckEmailVerification?: () => Promise<{
+    verified: boolean;
+    email?: string;
+    needsUsername?: boolean;
     error?: string;
   }>;
   onPurchaseGift?: (giftId: string) => { ok: boolean; reason?: string };
@@ -73,8 +84,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   progression,
   googleUid = null,
   initialTab = 'profile',
+  initialNotice = null,
   onSaveProfile,
   onGoogleSignIn,
+  onCheckEmailVerification,
   onClose,
   isInitialRequired = false,
 }) => {
@@ -95,7 +108,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [emailAuthFeedback, setEmailAuthFeedback] = useState<{
     type: 'ok' | 'err' | 'info';
     text: string;
-  } | null>(null);
+  } | null>(() => (initialNotice ? { type: 'err', text: initialNotice } : null));
+  const [awaitingEmailVerification, setAwaitingEmailVerification] = useState<boolean>(() =>
+    Boolean(auth.currentUser && !auth.currentUser.isAnonymous && !auth.currentUser.emailVerified)
+  );
   const [name, setName] = useState(initialIsGeneric ? '' : currentProfile.name);
   const [selectedAvatar, setSelectedAvatar] = useState(() =>
     normalizeProfileIconId(currentProfile.avatar)
@@ -338,27 +354,24 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           typeof window !== 'undefined'
             ? window.localStorage.getItem(`321_server_session_token_${currentProfile.id}`)
             : null;
-        const regHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
-        if (storedToken) regHeaders['X-Account-Token'] = storedToken;
-        const firebaseIdToken = await auth.currentUser?.getIdToken().catch(() => null);
-        if (firebaseIdToken) {
-          regHeaders['X-Firebase-Id-Token'] = firebaseIdToken;
-        }
+        const baseHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (storedToken) baseHeaders['X-Account-Token'] = storedToken;
+        const verifiedUid =
+          googleUid ||
+          (auth.currentUser && !auth.currentUser.isAnonymous ? auth.currentUser.uid : null);
 
-        const regRes = await fetchBackendWithWakeupRetry(
-          '/api/accounts/register',
-          {
-            method: 'POST',
-            headers: regHeaders,
-            body: JSON.stringify({
-              accountId: currentProfile.id,
-              profile: updatedProfile,
-              progression,
-              googleUid: googleUid || undefined,
-            }),
+        const regRes = await fetchAccountApiWithFirebaseAuth({
+          path: '/api/accounts/register',
+          method: 'POST',
+          baseHeaders,
+          body: {
+            accountId: currentProfile.id,
+            profile: updatedProfile,
+            progression,
+            googleUid: verifiedUid || undefined,
           },
-          { timeoutMs: 18000, retries: 2, retryDelayMs: 1800 }
-        );
+          retryOptions: { timeoutMs: 18000, retries: 2, retryDelayMs: 1800 },
+        });
         const regData = await regRes.json().catch(() => null);
         const canonicalId = String(regData?.account?.accountId || currentProfile.id);
         if (regRes.ok && regData?.sessionToken && typeof window !== 'undefined') {
@@ -445,8 +458,25 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setEmailAuthFeedback(null);
     try {
       const res = await onGoogleSignIn();
+      if (res.redirectInProgress) {
+        setEmailAuthFeedback({
+          type: 'info',
+          text: 'Google giriş sayfasına yönlendiriliyorsun...',
+        });
+        return;
+      }
       if (res.ok) {
         sounds.playVictory();
+        if (res.needsUsername) {
+          setEmailAuthFeedback({
+            type: 'ok',
+            text: `${res.email || 'Google'} hesabın doğrulandı! Devam etmek için kullanıcı adını seç.`,
+          });
+          setTimeout(() => {
+            setModalMode('profile');
+          }, 350);
+          return;
+        }
         setEmailAuthFeedback({
           type: 'ok',
           text: `${res.email || 'Google'} hesabın bağlandı ve tüm verilerin korundu!`,
@@ -463,6 +493,60 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       }
     } finally {
       setIsGoogleLoading(false);
+    }
+  };
+
+  const handleCheckEmailVerificationClick = async () => {
+    if (emailAuthBusy) return;
+    setEmailAuthBusy(true);
+    setEmailAuthFeedback(null);
+    try {
+      const checkRes: {
+        verified: boolean;
+        email?: string;
+        needsUsername?: boolean;
+        error?: string;
+      } = onCheckEmailVerification
+        ? await onCheckEmailVerification()
+        : await refreshCurrentFirebaseUser().then((u) => ({
+            verified: Boolean(u && !u.isAnonymous && u.emailVerified),
+            email: u?.email || undefined,
+            needsUsername: initialIsGeneric,
+          }));
+      if (checkRes.error) {
+        sounds.playWrong();
+        setEmailAuthFeedback({ type: 'err', text: checkRes.error });
+        return;
+      }
+      if (!checkRes.verified) {
+        setAwaitingEmailVerification(true);
+        setEmailAuthFeedback({
+          type: 'info',
+          text: 'Doğrulama henüz görünmedi. E-posta gelen kutundaki (veya Spam klasöründeki) bağlantıya tıklayıp tekrar kontrol et.',
+        });
+        return;
+      }
+      setAwaitingEmailVerification(false);
+      sounds.playVictory();
+      if (checkRes.needsUsername) {
+        setEmailAuthFeedback({
+          type: 'ok',
+          text: `${checkRes.email || 'E-posta'} doğrulandı! Şimdi kullanıcı adını seç ve oyuna başla.`,
+        });
+        setTimeout(() => {
+          setModalMode('profile');
+        }, 350);
+      } else {
+        setEmailAuthFeedback({
+          type: 'ok',
+          text: `${checkRes.email || 'E-posta'} doğrulandı ve hesabın bulutla senkronize edildi!`,
+        });
+        setTimeout(() => {
+          onClose?.();
+        }, 450);
+      }
+    } finally {
+      setEmailAuthBusy(false);
     }
   };
 
@@ -486,22 +570,42 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           password: passwordInput,
           displayName: name.trim() || currentProfile.name,
         });
+        setAwaitingEmailVerification(!res.user.emailVerified);
         sounds.playVictory();
         setEmailAuthFeedback({
           type: 'ok',
           text: res.verificationSent
-            ? `Hesap oluşturuldu (${res.user.email})! Gelen kutuna doğrulama bağlantısı gönderildi.`
-            : `Hesap oluşturuldu (${res.user.email})! Buradan veya Ayarlar'dan doğrulama e-postası gönderebilirsin.`,
+            ? `Hesap oluşturuldu (${res.user.email})! Gelen kutundaki doğrulama bağlantısına tıkladıktan sonra aşağıdaki "Doğrulamayı Kontrol Et" butonuna bas.`
+            : `Hesap oluşturuldu (${res.user.email})! Aşağıdan doğrulama e-postası gönderip onayladıktan sonra girişi tamamla.`,
         });
       } else {
         const user = await signInWithEmail(cleanEmail, passwordInput);
+        setAwaitingEmailVerification(!user.emailVerified);
         sounds.playVictory();
-        setEmailAuthFeedback({
-          type: user.emailVerified ? 'ok' : 'info',
-          text: user.emailVerified
-            ? `Hoş geldin ${user.email}! Hesabın bulut ile senkronize edildi.`
-            : `Giriş başarılı (${user.email}). Bulut yedekleme için lütfen e-postanı doğrula.`,
-        });
+        if (user.emailVerified) {
+          if (initialIsGeneric) {
+            setEmailAuthFeedback({
+              type: 'ok',
+              text: `Hoş geldin ${user.email}! Devam etmek için kullanıcı adını seç.`,
+            });
+            setTimeout(() => {
+              setModalMode('profile');
+            }, 350);
+          } else {
+            setEmailAuthFeedback({
+              type: 'ok',
+              text: `Hoş geldin ${user.email}! Hesabın bulut ile senkronize edildi.`,
+            });
+            setTimeout(() => {
+              onClose?.();
+            }, 450);
+          }
+        } else {
+          setEmailAuthFeedback({
+            type: 'info',
+            text: `Giriş başarılı (${user.email}). Bulut yedekleme için gelen kutundaki bağlantıyı onayla ve "Doğrulamayı Kontrol Et"e bas.`,
+          });
+        }
       }
     } catch (err) {
       sounds.playWrong();
@@ -756,6 +860,23 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 <span>E-posta Doğrulama Gönder</span>
               </button>
             </div>
+
+            {awaitingEmailVerification && (
+              <button
+                type="button"
+                data-testid="auth-check-verification-btn"
+                disabled={emailAuthBusy}
+                onClick={handleCheckEmailVerificationClick}
+                className="w-full py-2.5 px-4 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/60 text-amber-200 font-black text-xs flex items-center justify-center gap-2 cursor-pointer transition active:scale-95 disabled:opacity-60"
+              >
+                {emailAuthBusy ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                )}
+                <span>Doğrulamayı Kontrol Et &amp; Girişi Tamamla</span>
+              </button>
+            )}
 
             {onClose && (
               <button
