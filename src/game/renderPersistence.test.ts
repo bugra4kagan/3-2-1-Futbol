@@ -273,6 +273,19 @@ test('ServerMatchLedger enforces Firestore verified room scores for online match
   });
   assert.equal(missingRoomScores.ok, false);
 
+  // Submit 3 server-verified answers for onlineSession1
+  for (let i = 0; i < 3; i++) {
+    const pid = onlineSession1.rounds[i]?.pairing?.validPlayerIds[0];
+    assert.ok(pid);
+    const ans = ledger.submitVerifiedAnswer({
+      sessionId: onlineSession1.sessionId,
+      accountId: 'acc_online_1',
+      roundIndex: i,
+      answer: pid,
+    });
+    assert.equal(ans.ok, true);
+  }
+
   // Supplying Firestore-verified room outcome succeeds once for ROOM1:seq1
   const validOnline = ledger.consumeVerifiedMatchSession({
     sessionId: onlineSession1.sessionId,
@@ -296,14 +309,118 @@ test('ServerMatchLedger enforces Firestore verified room scores for online match
     mode: 'online_room',
     now: startedAt,
   });
+  for (let i = 0; i < 3; i++) {
+    const pid = secondSession.rounds[i]?.pairing?.validPlayerIds[0];
+    if (pid) {
+      ledger.submitVerifiedAnswer({
+        sessionId: secondSession.sessionId,
+        accountId: 'acc_online_1',
+        roundIndex: i,
+        answer: pid,
+      });
+    }
+  }
   const duplicateRoomClaim = ledger.consumeVerifiedMatchSession({
     sessionId: secondSession.sessionId,
     accountId: 'acc_online_1',
     hasMultiplier2x: false,
-    roomVerifiedScores: { playerScore: 5, opponentScore: 0 },
+    roomVerifiedScores: { playerScore: 3, opponentScore: 0 },
     roomClaimKey: 'ROOM1:1:acc_online_1',
     minDurationMs: 1000,
     now: Date.now(),
   });
   assert.equal(duplicateRoomClaim.ok, false);
+});
+
+test('ServerMatchLedger rejects forged Firestore room scores higher than server-verified answers & supports XOX + roundIds', () => {
+  const ledger = new ServerMatchLedger();
+  const startedAt = Date.now() - 12_000;
+
+  // 1. Cheater alters Firestore rooms/{code}.scores to 3 without submitting valid answers to /api/matches/answer
+  const cheaterSession = ledger.issueSession({
+    accountId: 'acc_cheat_room',
+    minigameType: 'two_clubs',
+    mode: 'online_room',
+    now: startedAt,
+  });
+  const forgedRoomOutcome = ledger.consumeVerifiedMatchSession({
+    sessionId: cheaterSession.sessionId,
+    accountId: 'acc_cheat_room',
+    hasMultiplier2x: false,
+    roomVerifiedScores: { playerScore: 3, opponentScore: 1 },
+    roomClaimKey: 'ROOMFAKE:1:acc_cheat_room',
+    minDurationMs: 1000,
+    now: Date.now(),
+  });
+  assert.equal(forgedRoomOutcome.ok, false);
+
+  // 2. Legitimate online match with matching /api/matches/answer verification + roundIds
+  const legitRounds = ledger.issueSession({
+    accountId: 'acc_legit_online',
+    minigameType: 'two_clubs',
+    mode: 'online_room',
+    roundIds: cheaterSession.rounds.slice(0, 3).map((r) => r.pairing?.id || '').filter(Boolean),
+    now: startedAt,
+  });
+  assert.ok(legitRounds.rounds.length >= 1);
+  const validId = legitRounds.rounds[0]?.pairing?.validPlayerIds[0];
+  assert.ok(validId);
+  const ans = ledger.submitVerifiedAnswer({
+    sessionId: legitRounds.sessionId,
+    accountId: 'acc_legit_online',
+    roundIndex: 0,
+    answer: validId,
+  });
+  assert.equal(ans.ok, true);
+  if (ans.ok) assert.equal(ans.valid, true);
+
+  const legitComplete = ledger.consumeVerifiedMatchSession({
+    sessionId: legitRounds.sessionId,
+    accountId: 'acc_legit_online',
+    hasMultiplier2x: false,
+    roomVerifiedScores: { playerScore: 1, opponentScore: 0 },
+    roomClaimKey: 'ROOMLEGIT:1:acc_legit_online',
+    minDurationMs: 1000,
+    now: Date.now(),
+  });
+  assert.equal(legitComplete.ok, true);
+  if (legitComplete.ok) {
+    assert.equal(legitComplete.won, true);
+    assert.equal(legitComplete.verifiedScore, 1);
+  }
+
+  // 3. Bot matches give coins but strictly 0 league points
+  const botSession = ledger.issueSession({
+    accountId: 'acc_bot_player',
+    minigameType: 'xox',
+    mode: 'bot',
+    now: startedAt,
+  });
+  const xoxBoard = botSession.rounds[0]?.xoxBoard;
+  assert.ok(xoxBoard);
+  for (let col = 0; col < 3; col++) {
+    const pid = xoxBoard.cellValidPlayerIds[`0_${col}`]?.[0];
+    if (pid) {
+      const xoxAns = ledger.submitVerifiedAnswer({
+        sessionId: botSession.sessionId,
+        accountId: 'acc_bot_player',
+        roundIndex: 0,
+        answer: pid,
+        cellPos: { row: 0, col },
+      });
+      assert.equal(xoxAns.ok, true);
+    }
+  }
+  const botRes = ledger.consumeVerifiedMatchSession({
+    sessionId: botSession.sessionId,
+    accountId: 'acc_bot_player',
+    hasMultiplier2x: false,
+    minDurationMs: 1000,
+    now: Date.now(),
+  });
+  assert.equal(botRes.ok, true);
+  if (botRes.ok) {
+    assert.equal(botRes.pointsAwarded, 0);
+    assert.ok(botRes.coinsAwarded > 0);
+  }
 });

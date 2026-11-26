@@ -247,6 +247,19 @@ function buildAccountApiHeaders(accountId: string): Record<string, string> {
   }
   return headers;
 }
+
+async function buildSignedAccountApiHeaders(accountId: string): Promise<Record<string, string>> {
+  const headers = buildAccountApiHeaders(accountId);
+  try {
+    const idToken = await auth.currentUser?.getIdToken().catch(() => null);
+    if (idToken) {
+      headers['X-Firebase-Id-Token'] = idToken;
+    }
+  } catch {
+    // ignore auth token failures
+  }
+  return headers;
+}
 import { getAuthoritativeServerNowMs } from './game/serverTime';
 import { ONLINE_MATCHMAKING_TIMEOUT_MS } from './game/realtimeSyncHelpers';
 import {
@@ -767,6 +780,120 @@ export default function App() {
   const minigameTypeRef = useRef<MinigameType>(minigameType);
   const xoxStateRef = useRef<XoxRuntimeState | null>(xoxState);
   const soloXoxTimeoutsRef = useRef<number>(0);
+  const serverMatchSessionIdRef = useRef<string | null>(null);
+  const serverMatchStartPromiseRef = useRef<Promise<string | null> | null>(null);
+  const serverMatchAnswerPromisesRef = useRef<Promise<unknown>[]>([]);
+
+  const startServerVerifiedMatchSession = useCallback(
+    (matchMinigame: MinigameType, matchMode: string, roundIds: string[]) => {
+      const aid = sessionPlayerIdRef.current;
+      serverMatchSessionIdRef.current = null;
+      serverMatchAnswerPromisesRef.current = [];
+      if (!aid) {
+        serverMatchStartPromiseRef.current = null;
+        return;
+      }
+      const startPromise = (async () => {
+        try {
+          const headers = await buildSignedAccountApiHeaders(aid);
+          const res = await fetchBackendWithWakeupRetry(
+            '/api/matches/start',
+            {
+              method: 'POST',
+              headers,
+              body: JSON.stringify({
+                accountId: aid,
+                minigameType: matchMinigame,
+                mode: matchMode,
+                roundIds,
+              }),
+            },
+            { timeoutMs: 25000, retries: 2, retryDelayMs: 2000 }
+          );
+          if (!res.ok) return null;
+          const data = await res.json().catch(() => null);
+          const sid = typeof data?.matchSessionId === 'string' ? data.matchSessionId : null;
+          if (sid) {
+            serverMatchSessionIdRef.current = sid;
+          }
+          return sid;
+        } catch {
+          return null;
+        }
+      })();
+      serverMatchStartPromiseRef.current = startPromise;
+    },
+    []
+  );
+
+  const submitServerVerifiedMatchAnswer = useCallback(
+    (roundIndex: number, answer: string, cellPos?: { row: number; col: number }) => {
+      const aid = sessionPlayerIdRef.current;
+      if (!aid || !answer.trim()) return;
+      const submitPromise = (async () => {
+        try {
+          const sid =
+            serverMatchSessionIdRef.current ||
+            (serverMatchStartPromiseRef.current ? await serverMatchStartPromiseRef.current : null);
+          if (!sid) return;
+          const headers = await buildSignedAccountApiHeaders(aid);
+          await fetchBackendWithWakeupRetry(
+            '/api/matches/answer',
+            {
+              method: 'POST',
+              headers,
+              body: JSON.stringify({
+                accountId: aid,
+                matchSessionId: sid,
+                roundIndex,
+                answer,
+                cellPos,
+              }),
+            },
+            { timeoutMs: 25000, retries: 2, retryDelayMs: 2000 }
+          );
+        } catch {
+          // Non-blocking fallback
+        }
+      })();
+      serverMatchAnswerPromisesRef.current.push(submitPromise);
+    },
+    []
+  );
+
+  const completeServerVerifiedMatchSession = useCallback(async (matchRoomCode?: string | null) => {
+    const aid = sessionPlayerIdRef.current;
+    if (!aid) return;
+    try {
+      const sid =
+        serverMatchSessionIdRef.current ||
+        (serverMatchStartPromiseRef.current ? await serverMatchStartPromiseRef.current : null);
+      if (!sid) return;
+      if (serverMatchAnswerPromisesRef.current.length > 0) {
+        await Promise.allSettled(serverMatchAnswerPromisesRef.current);
+      }
+      const headers = await buildSignedAccountApiHeaders(aid);
+      const res = await fetchBackendWithWakeupRetry(
+        '/api/matches/complete',
+        {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            accountId: aid,
+            matchSessionId: sid,
+            roomCode: matchRoomCode || undefined,
+          }),
+        },
+        { timeoutMs: 25000, retries: 2, retryDelayMs: 2000 }
+      );
+      if (res.ok) {
+        serverMatchSessionIdRef.current = null;
+        serverMatchStartPromiseRef.current = null;
+      }
+    } catch {
+      // Non-blocking cold-start / offline fallback
+    }
+  }, []);
 
   // Timers
   const roundTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -1855,6 +1982,9 @@ trackGameEvent('match_complete', {
     syncServerLeaderboard(finalProgression, player1, {
       suppressAutoHighScore: hsMilestone.isHighScore,
     });
+    void completeServerVerifiedMatchSession(
+      mode === 'online_match' || mode === 'online_room' ? activeRoomCodeRef.current : undefined
+    );
 
     if (hsMilestone.isHighScore) {
       const eventId = `hs_${player1.id}_${Math.round(hsMilestone.scoreValue)}_${matchInstanceIdRef.current}`;
@@ -2296,6 +2426,11 @@ trackGameEvent('match_complete', {
     setXoxNotice(null);
     setScreen('playing');
 trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficulty: selectedBotDifficulty });
+    startServerVerifiedMatchSession(
+      selectedMinigame,
+      'bot',
+      generatedRounds.map((r) => getRoundItemId(r))
+    );
     runRoundCountdown(0, generatedRounds, selectedMinigame);
   };
 
@@ -2615,6 +2750,9 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
       let matchFinished = false;
 
       if (winnerPlayerId === curP1.id) {
+        if (mode === 'bot' && activeMinigame !== 'xox') {
+          submitServerVerifiedMatchAnswer(currentRoundIndexRef.current, playerName || answer);
+        }
         if (exactElapsedSec < FAST_COMBO_THRESHOLD_SEC) {
           const nextCombo = fastComboStreakRef.current + 1;
           fastComboStreakRef.current = nextCombo;
@@ -2741,6 +2879,23 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
       playerName: string,
       wasCorrect: boolean
     ) => {
+      if (wasCorrect) {
+        const prevBoard = xoxStateRef.current?.board;
+        const myId = player1Ref.current.id;
+        for (let r = 0; r < 3; r++) {
+          for (let c = 0; c < 3; c++) {
+            const nowCell = nextState.board[r]?.[c];
+            const prevCell = prevBoard?.[r]?.[c];
+            if (nowCell?.ownerId === myId && !prevCell) {
+              submitServerVerifiedMatchAnswer(currentRoundIndexRef.current, playerName, {
+                row: r,
+                col: c,
+              });
+              break;
+            }
+          }
+        }
+      }
       setXoxState(nextState);
       xoxStateRef.current = nextState;
 
@@ -2951,6 +3106,11 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
           setMatchHighlights([]);
           setRematchState('idle');
           trackGameEvent('match_start', { mode: 'online', minigame: room.minigameType });
+          startServerVerifiedMatchSession(
+            room.minigameType,
+            room.source === 'private' ? 'online_room' : 'online_random',
+            Array.isArray(room.roundIds) ? room.roundIds : []
+          );
         }
         setCurrentRoundIndex(room.currentRoundIndex || 0);
         setScreen('playing');
@@ -3296,6 +3456,13 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
           elapsedSec,
           cellPos,
         });
+        if (res.accepted) {
+          submitServerVerifiedMatchAnswer(
+            currentRoundIndexRef.current,
+            answer,
+            cellPos
+          );
+        }
         // Opponent already won the round / not our XOX turn: not a wrong answer
         if (!res.accepted && res.reason !== 'not_playing' && res.reason !== 'not_your_turn') {
           fastComboStreakRef.current = 0;
@@ -3383,6 +3550,22 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
         handleUpdateProfile({ avatar: res.gift.value });
       }
       syncServerLeaderboard(res.progression, nextProfile);
+      const aid = sessionPlayerIdRef.current;
+      if (aid) {
+        void buildSignedAccountApiHeaders(aid)
+          .then((headers) =>
+            fetchBackendWithWakeupRetry(
+              '/api/store/spend-coins',
+              {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({ accountId: aid, itemId: giftId }),
+              },
+              { timeoutMs: 25000, retries: 2, retryDelayMs: 2000 }
+            )
+          )
+          .catch(() => {});
+      }
     }
     return { ok: res.ok, reason: res.reason };
   };
@@ -3531,6 +3714,22 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
         handleUpdateProfile({ avatar: res.gift.value });
       }
       syncServerLeaderboard(res.progression, nextProfile);
+      const aid = sessionPlayerIdRef.current;
+      if (aid) {
+        void buildSignedAccountApiHeaders(aid)
+          .then((headers) =>
+            fetchBackendWithWakeupRetry(
+              '/api/store/spend-coins',
+              {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({ accountId: aid, itemId }),
+              },
+              { timeoutMs: 25000, retries: 2, retryDelayMs: 2000 }
+            )
+          )
+          .catch(() => {});
+      }
     }
     return { ok: res.ok, reason: res.reason, gift: res.gift };
   };

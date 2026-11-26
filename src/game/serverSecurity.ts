@@ -1,6 +1,12 @@
 import crypto from 'node:crypto';
 import type { Request, Response, NextFunction } from 'express';
-import { generateMinigameRounds, validateMinigameAnswer } from './minigameEngine.js';
+import {
+  checkXoxBoardWinner,
+  createEmptyXoxBoard,
+  generateMinigameRounds,
+  resolveRoundsByIds,
+  validateMinigameAnswer,
+} from './minigameEngine.js';
 import type { MinigameRoundPayload, MinigameType, UserProgression } from './types';
 
 export const MAX_COINS = 20_000_000;
@@ -39,6 +45,7 @@ export interface ServerMatchSession {
   startedAt: number;
   rounds: MinigameRoundPayload[];
   scoredRounds: Set<number>;
+  scoredXoxCells?: Set<string>;
   verifiedPlayerScore: number;
   verifiedCorrectAnswers: number;
   completed: boolean;
@@ -55,6 +62,7 @@ const SUPPORTED_MATCH_TYPES = new Set<MinigameType>([
   'xox',
   'career',
   'country_club',
+  'silhouette',
 ]);
 
 export class ServerMatchLedger {
@@ -118,6 +126,7 @@ export class ServerMatchLedger {
     minigameType: string;
     mode: string;
     rounds?: MinigameRoundPayload[];
+    roundIds?: string[];
     now?: number;
   }): ServerMatchSession {
     const now = params.now ?? Date.now();
@@ -125,7 +134,10 @@ export class ServerMatchLedger {
       ? (params.minigameType as MinigameType)
       : 'two_clubs';
     const sessionId = `match_${crypto.randomBytes(16).toString('hex')}`;
-    const rounds = params.rounds ?? generateMinigameRounds(cleanType, 10, []);
+    const resolvedRounds = params.roundIds
+      ? resolveRoundsByIds(cleanType, params.roundIds)
+      : null;
+    const rounds = params.rounds ?? resolvedRounds ?? generateMinigameRounds(cleanType, 10, []);
 
     const session: ServerMatchSession = {
       sessionId,
@@ -135,6 +147,7 @@ export class ServerMatchLedger {
       startedAt: now,
       rounds,
       scoredRounds: new Set<number>(),
+      scoredXoxCells: new Set<string>(),
       verifiedPlayerScore: 0,
       verifiedCorrectAnswers: 0,
       completed: false,
@@ -190,10 +203,44 @@ export class ServerMatchLedger {
     );
 
     if (validation.isValid) {
-      session.scoredRounds.add(rIdx);
-      session.verifiedPlayerScore += 1;
-      session.verifiedCorrectAnswers += 1;
-      this.queueCloudSave(session);
+      if (round.minigameType === 'xox' && params.cellPos) {
+        const cellKey = `${rIdx}:${Math.round(params.cellPos.row)}_${Math.round(params.cellPos.col)}`;
+        if (!session.scoredXoxCells) session.scoredXoxCells = new Set<string>();
+        if (!session.scoredXoxCells.has(cellKey)) {
+          session.scoredXoxCells.add(cellKey);
+          session.verifiedCorrectAnswers += 1;
+
+          // Build player's verified marks for this XOX round board
+          const board = createEmptyXoxBoard();
+          let roundValidCount = 0;
+          for (const key of session.scoredXoxCells) {
+            const [prefix, coord] = key.split(':');
+            if (Number(prefix) !== rIdx || !coord) continue;
+            const [rs, cs] = coord.split('_');
+            const rr = Number(rs);
+            const cc = Number(cs);
+            if (rr >= 0 && rr < 3 && cc >= 0 && cc < 3) {
+              board[rr]![cc] = {
+                ownerId: cleanId,
+                playerName: validation.player?.name || '',
+                symbol: 'X',
+              };
+              roundValidCount += 1;
+            }
+          }
+          const xoxWin = checkXoxBoardWinner(board);
+          if (xoxWin.winnerId === cleanId || roundValidCount >= 3) {
+            session.scoredRounds.add(rIdx);
+            session.verifiedPlayerScore += 1;
+          }
+          this.queueCloudSave(session);
+        }
+      } else {
+        session.scoredRounds.add(rIdx);
+        session.verifiedPlayerScore += 1;
+        session.verifiedCorrectAnswers += 1;
+        this.queueCloudSave(session);
+      }
     }
 
     return {
@@ -231,6 +278,20 @@ export class ServerMatchLedger {
         reason: 'Çevrimiçi maç ödülü için sunucu tarafından doğrulanmış oda sonucu zorunludur.',
       };
     }
+    if (params.roomVerifiedScores) {
+      const reportedRoomScore = Math.max(
+        0,
+        Math.min(20, Math.round(params.roomVerifiedScores.playerScore))
+      );
+      // İstemci tarafından değiştirilebilen Firestore oda skoruna tek başına ASLA güvenilmez:
+      // Oda skoru sunucu tarafından /api/matches/answer ile doğrulanmış skordan yüksekse reddedilir.
+      if (reportedRoomScore > session.verifiedPlayerScore) {
+        return {
+          ok: false,
+          reason: 'Çevrimiçi oda skoru sunucu tarafından doğrulanan cevaplarla uyuşmuyor.',
+        };
+      }
+    }
     if (params.roomClaimKey) {
       if (this.claimedRoomOutcomes.has(params.roomClaimKey)) {
         return {
@@ -259,10 +320,12 @@ export class ServerMatchLedger {
     }
     this.queueCloudSave(session);
 
-    // İstemcinin beyan ettiği sahte skor ASLA kullanılmaz:
-    // Online modda yalnızca Firestore `rooms` sunucu sonucu, offline/solo modda yalnızca sunucu doğrulamalı yanıt sayısı geçerlidir.
+    // Online modda skor hem sunucu cevabı hem Firestore oda sınırıyla doğrulanır (hangisi küçükse).
     const verifiedScore = params.roomVerifiedScores
-      ? Math.max(0, Math.min(20, Math.round(params.roomVerifiedScores.playerScore)))
+      ? Math.min(
+          session.verifiedPlayerScore,
+          Math.max(0, Math.min(20, Math.round(params.roomVerifiedScores.playerScore)))
+        )
       : session.verifiedPlayerScore;
     const oppScore = params.roomVerifiedScores
       ? Math.max(0, Math.min(20, Math.round(params.roomVerifiedScores.opponentScore)))
@@ -270,8 +333,8 @@ export class ServerMatchLedger {
       ? Math.max(0, verifiedScore - 1)
       : 3;
 
-    const won = verifiedScore > oppScore;
-    const drew = verifiedScore === oppScore;
+    const won = verifiedScore > oppScore && verifiedScore > 0;
+    const drew = verifiedScore === oppScore && verifiedScore > 0;
 
     const baseCoins = won
       ? 180 + verifiedScore * 35
@@ -280,13 +343,16 @@ export class ServerMatchLedger {
       : verifiedScore > 0
       ? 40 + verifiedScore * 15
       : 15;
-    const basePoints = won
-      ? 120 + verifiedScore * 20
-      : drew
-      ? 50
-      : verifiedScore > 0
-      ? 15
-      : 0;
+    const basePoints =
+      session.mode === 'bot'
+        ? 0
+        : won
+        ? 120 + verifiedScore * 20
+        : drew
+        ? 50
+        : verifiedScore > 0
+        ? 15
+        : 0;
     const mult = params.hasMultiplier2x ? 2 : 1;
 
     return {

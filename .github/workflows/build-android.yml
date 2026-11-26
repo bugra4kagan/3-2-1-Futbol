@@ -45,6 +45,7 @@ jobs:
       - name: Build Debug Web Bundle (Official AdMob Test IDs)
         env:
           VITE_ADMOB_ALLOW_TEST_FALLBACK: "true"
+          VITE_API_BASE_URL: ${{ secrets.VITE_API_BASE_URL }}
         run: npm run build
 
       - name: Sync Capacitor Android (Debug)
@@ -69,7 +70,11 @@ jobs:
           VITE_PLAY_BILLING_AD_FREE_SKU: ${{ secrets.PLAY_BILLING_AD_FREE_SKU || secrets.VITE_PLAY_BILLING_AD_FREE_SKU }}
           VITE_FIREBASE_ANDROID_APP_ID: ${{ secrets.FIREBASE_ANDROID_APP_ID || secrets.VITE_FIREBASE_ANDROID_APP_ID }}
           VITE_FIREBASE_APPCHECK_ENABLED: "true"
+          VITE_API_BASE_URL: ${{ secrets.VITE_API_BASE_URL }}
         run: |
+          if [ -z "$VITE_API_BASE_URL" ]; then
+            echo "::warning::VITE_API_BASE_URL GitHub Secret tanimli degil! Mobil uygulama Render backend yerine yalnizca yerel/Firestore yedek akisina dusecektir."
+          fi
           if [ -z "$VITE_ADMOB_APP_ID" ] || [ -z "$VITE_ADMOB_REWARDED_ID" ] || [ -z "$VITE_ADMOB_INTERSTITIAL_ID" ]; then
             echo "::warning::Production AdMob secrets (ADMOB_APP_ID / VITE_ADMOB_APP_ID, ADMOB_REWARDED_ID / VITE_ADMOB_REWARDED_ID, ADMOB_INTERSTITIAL_ID / VITE_ADMOB_INTERSTITIAL_ID) eksik! Release JS paketi Test ID fallback yapmayacak; gercek reklam ID'leri girilene kadar AdMob reklam birimleri devre disi kalacaktir."
           fi

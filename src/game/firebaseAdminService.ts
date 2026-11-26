@@ -290,7 +290,14 @@ export async function verifyOnlineRoomOutcomeAdmin(params: {
   uid: string;
   playerId: string;
 }): Promise<
-  | { ok: true; matchSeq: number; playerScore: number; opponentScore: number }
+  | {
+      ok: true;
+      matchSeq: number;
+      minigameType: string;
+      roundIdsCount: number;
+      playerScore: number;
+      opponentScore: number;
+    }
   | { ok: false; error: string }
 > {
   const adminApp = getFirebaseAdminApp();
@@ -312,6 +319,10 @@ export async function verifyOnlineRoomOutcomeAdmin(params: {
     if (room.state !== 'game_over') {
       return { ok: false, error: 'Çevrimiçi maç henüz tamamlanmamış.' };
     }
+    const roundIds = Array.isArray(room.roundIds) ? room.roundIds : [];
+    if (roundIds.length === 0) {
+      return { ok: false, error: 'Çevrimiçi oda soru dizisi doğrulanamadı.' };
+    }
 
     const scores = (room.scores && typeof room.scores === 'object' ? room.scores : {}) as Record<
       string,
@@ -330,6 +341,8 @@ export async function verifyOnlineRoomOutcomeAdmin(params: {
     return {
       ok: true,
       matchSeq: Math.max(1, Math.round(Number(room.matchSeq) || 1)),
+      minigameType: String(room.minigameType || 'two_clubs'),
+      roundIdsCount: roundIds.length,
       playerScore: Math.max(0, Math.round(Number(scores[callerKey]) || 0)),
       opponentScore: Math.max(0, Math.round(Number(scores[oppKey]) || 0)),
     };

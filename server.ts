@@ -42,7 +42,13 @@ import {
   verifyOnlineRoomOutcomeAdmin,
 } from './src/game/firebaseAdminService.js';
 
-const VALID_MINIGAMES: MinigameType[] = ['two_clubs', 'xox', 'career', 'country_club'];
+const VALID_MINIGAMES: MinigameType[] = [
+  'two_clubs',
+  'xox',
+  'career',
+  'country_club',
+  'silhouette',
+];
 
 function parseMinigameType(raw: unknown): MinigameType {
   const s = String(raw || 'two_clubs') as MinigameType;
@@ -683,7 +689,7 @@ app.post('/api/validate', (req, res) => {
 // ── Sunucu Doğrulamalı Maç Oturumu & Ödül İşlemleri ──
 app.post('/api/matches/start', async (req, res) => {
   if (!enforceRateLimit(accountWriteLimiter, req, res)) return;
-  const { accountId, minigameType, mode } = req.body || {};
+  const { accountId, minigameType, mode, roundIds } = req.body || {};
   const cleanId = String(accountId || '').trim().slice(0, 64);
   if (!cleanId) {
     return res.status(400).json({ ok: false, error: 'Geçersiz oyuncu kimliği.' });
@@ -696,6 +702,7 @@ app.post('/api/matches/start', async (req, res) => {
     accountId: cleanId,
     minigameType: String(minigameType || 'two_clubs'),
     mode: String(mode || 'solo'),
+    roundIds: Array.isArray(roundIds) ? roundIds : undefined,
   });
   res.json({
     ok: true,

@@ -541,6 +541,10 @@ test('Firebase Admin Firestore Emulator persists accounts, coins, purchases & on
     mode: 'online_room',
     now: Date.now() - 10_000,
   });
+  const roomRoundIds = session.rounds
+    .slice(0, 5)
+    .map((r) => r.pairing?.id || '')
+    .filter(Boolean);
 
   // Seed finished authoritative room outcome in Firestore Emulator
   await testEnv.withSecurityRulesDisabled(async (adminCtx) => {
@@ -551,9 +555,11 @@ test('Firebase Admin Firestore Emulator persists accounts, coins, purchases & on
       guestId: 'acc_emu_2',
       guestUid: 'uid_bob',
       memberUids: ['uid_alice', 'uid_bob'],
+      minigameType: 'two_clubs',
+      roundIds: roomRoundIds,
       state: 'game_over',
       matchSeq: 1,
-      scores: { acc_emu_1: 4, acc_emu_2: 2 },
+      scores: { acc_emu_1: 3, acc_emu_2: 1 },
     });
   });
 
@@ -564,8 +570,37 @@ test('Firebase Admin Firestore Emulator persists accounts, coins, purchases & on
   });
   assert.equal(roomOutcome.ok, true);
   if (!roomOutcome.ok) return;
-  assert.equal(roomOutcome.playerScore, 4);
-  assert.equal(roomOutcome.opponentScore, 2);
+  assert.equal(roomOutcome.playerScore, 3);
+  assert.equal(roomOutcome.opponentScore, 1);
+
+  // Forged Firestore room score without server-verified answers MUST fail
+  const tamperedFail = ledger1.consumeVerifiedMatchSession({
+    sessionId: session.sessionId,
+    accountId: 'acc_emu_1',
+    hasMultiplier2x: false,
+    roomVerifiedScores: {
+      playerScore: roomOutcome.playerScore,
+      opponentScore: roomOutcome.opponentScore,
+    },
+    roomClaimKey: `EMU999:${roomOutcome.matchSeq}:acc_emu_1`,
+    minDurationMs: 1000,
+    now: Date.now(),
+  });
+  assert.equal(tamperedFail.ok, false);
+
+  // Submit 3 valid answers matching the server session rounds
+  for (let i = 0; i < 3; i++) {
+    const pid = session.rounds[i]?.pairing?.validPlayerIds[0];
+    assert.ok(pid);
+    const ansRes = ledger1.submitVerifiedAnswer({
+      sessionId: session.sessionId,
+      accountId: 'acc_emu_1',
+      roundIndex: i,
+      answer: pid,
+    });
+    assert.equal(ansRes.ok, true);
+    if (ansRes.ok) assert.equal(ansRes.valid, true);
+  }
 
   const reward = ledger1.consumeVerifiedMatchSession({
     sessionId: session.sessionId,

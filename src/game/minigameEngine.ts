@@ -198,6 +198,39 @@ export function generateMinigameRounds(
   }));
 }
 
+export function resolveRoundsByIds(
+  minigameType: MinigameType,
+  rawRoundIds: unknown
+): MinigameRoundPayload[] | null {
+  if (!Array.isArray(rawRoundIds) || rawRoundIds.length === 0) return null;
+  const ids = rawRoundIds
+    .filter((x): x is string => typeof x === 'string' && x.trim().length > 0)
+    .map((x) => x.trim())
+    .slice(0, 12);
+  if (ids.length === 0) return null;
+
+  const out: MinigameRoundPayload[] = [];
+  for (const id of ids) {
+    if (minigameType === 'two_clubs') {
+      const found = MATCH_PAIRINGS.find((p) => p.id === id);
+      if (found) out.push({ minigameType: 'two_clubs', pairing: found });
+    } else if (minigameType === 'silhouette') {
+      const found = SILHOUETTE_CHALLENGES.find((s) => s.id === id);
+      if (found) out.push({ minigameType: 'silhouette', silhouette: found });
+    } else if (minigameType === 'career') {
+      const found = CAREER_CHALLENGES.find((c) => c.id === id);
+      if (found) out.push({ minigameType: 'career', career: found });
+    } else if (minigameType === 'country_club') {
+      const found = COUNTRY_CLUB_CHALLENGES.find((cc) => cc.id === id);
+      if (found) out.push({ minigameType: 'country_club', countryClub: found });
+    } else if (minigameType === 'xox') {
+      const found = XOX_BOARDS.find((b) => b.id === id);
+      if (found) out.push({ minigameType: 'xox', xoxBoard: found });
+    }
+  }
+  return out.length > 0 ? out : null;
+}
+
 export function getRoundValidPlayerIds(
   round: MinigameRoundPayload,
   cellPos?: { row: number; col: number }

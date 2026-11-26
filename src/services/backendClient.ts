@@ -70,9 +70,9 @@ export async function fetchBackendWithWakeupRetry(
   }
 
   const url = /^https?:\/\//i.test(path) ? path : resolveBackendApiUrl(path, options.baseUrl);
-  const timeoutMs = Math.max(1000, options.timeoutMs ?? 15000);
+  const timeoutMs = Math.max(1000, options.timeoutMs ?? 25000);
   const retries = Math.max(0, Math.min(4, options.retries ?? 2));
-  const retryDelayMs = Math.max(50, options.retryDelayMs ?? 1500);
+  const retryDelayMs = Math.max(50, options.retryDelayMs ?? 2000);
 
   let lastError: unknown;
 
