@@ -574,6 +574,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 321futboloyunu@gmail.com
               </a>
             </p>
+            <p className="text-[10px] text-slate-400 leading-relaxed pt-1 border-t border-white/10">
+              Veri Kaynağı ve Lisanslar: OpenFootball players.db (CC0 1.0), Wikidata (CC0 1.0) ve Wikipedia futbolcu biyografileri (CC BY-SA 4.0).
+            </p>
           </section>
 
           {/* 6. Permanent Account & Data Deletion (Google Play Data Safety) */}

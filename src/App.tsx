@@ -33,6 +33,7 @@ import {
   UserReportReason,
 } from './game/types';
 import { CLUBS, PLAYERS_LIST } from './game/database';
+import { ensureExpandedRosterLoaded } from './game/rosterLoader';
 import {
   createEmptyXoxBoard,
   generateMinigameRounds,
@@ -1096,6 +1097,15 @@ export default function App() {
     const connectNotifSocket = () => {
       if (disposed) return;
       prewarmBackendHealthz();
+      if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+        (window as Window & { requestIdleCallback: (cb: () => void) => void }).requestIdleCallback(() => {
+          if (!disposed) void ensureExpandedRosterLoaded();
+        });
+      } else {
+        setTimeout(() => {
+          if (!disposed) void ensureExpandedRosterLoaded();
+        }, 120);
+      }
       const sock = new WebSocket(resolveBackendWsUrl('/ws'));
       notifWsRef.current = sock;
 
@@ -2473,6 +2483,7 @@ trackGameEvent('match_complete', {
     setBotDiff(selectedBotDifficulty);
     setMinigameType(selectedMinigame);
     minigameTypeRef.current = selectedMinigame;
+    void ensureExpandedRosterLoaded();
 
     const seenIds = getSeenIdsForMinigame(selectedMinigame);
     const generatedRounds = generateMinigameRounds(selectedMinigame, 12, seenIds, {
@@ -3574,6 +3585,9 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
         id: sessionPlayerIdRef.current,
         score: 0,
       };
+
+      await ensureExpandedRosterLoaded();
+      if (isStaleRequest()) return;
 
       try {
         if (isQuick) {

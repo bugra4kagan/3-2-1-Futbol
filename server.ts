@@ -6,6 +6,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { getRandomPairings, validateAnswerForPairing } from './src/game/validator.js';
 import { MATCH_PAIRINGS } from './src/game/database.js';
+import { ensureExpandedRosterSync } from './src/game/rosterNodeLoader.js';
 import {
   FriendActivityEvent,
   FriendRequestEntry,
@@ -119,6 +120,7 @@ app.use(express.json({ limit: '512kb' }));
 const recoverLimiter = new SlidingRateLimiter(10, 5 * 60 * 1000);
 const accountWriteLimiter = new SlidingRateLimiter(45, 60 * 1000);
 const socialLimiter = new SlidingRateLimiter(30, 60 * 1000);
+const serverRosterStatus = ensureExpandedRosterSync();
 const serverMatchLedger = new ServerMatchLedger();
 
 function getClientRateKey(req: express.Request): string {
@@ -184,6 +186,9 @@ app.get('/healthz', (_req, res) => {
     cloudPersistenceReady: !blocked,
     unsafeLocalStorageBlocked: blocked,
     localDiskFallbackEnabled: accountStore.hasLocalDiskPersistence(),
+    rosterVersion: serverRosterStatus.version,
+    totalPlayers: serverRosterStatus.totalPlayers,
+    totalClubs: serverRosterStatus.totalClubs,
   });
 });
 
@@ -198,6 +203,9 @@ app.get('/api/health', (_req, res) => {
     cloudPersistenceReady: !blocked,
     unsafeLocalStorageBlocked: blocked,
     localDiskFallbackEnabled: accountStore.hasLocalDiskPersistence(),
+    rosterVersion: serverRosterStatus.version,
+    totalPlayers: serverRosterStatus.totalPlayers,
+    totalClubs: serverRosterStatus.totalClubs,
   });
 });
 
@@ -714,6 +722,7 @@ app.post('/api/matches/start', async (req, res) => {
     matchSessionId: session.sessionId,
     startedAt: session.startedAt,
     roundsCount: session.rounds.length,
+    rosterVersion: serverRosterStatus.version,
   });
 });
 

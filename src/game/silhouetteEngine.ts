@@ -240,8 +240,8 @@ export function compareSilhouetteGuess(
   };
 }
 
-const ALL_PLAYERS_LIST: Player[] = Object.values(PLAYERS);
-const ALL_PLAYER_IDS: string[] = Object.keys(PLAYERS);
+let ALL_PLAYERS_LIST: Player[] = [];
+let ALL_PLAYER_IDS: string[] = [];
 
 interface IndexedPlayerSearchEntry {
   player: Player;
@@ -251,20 +251,25 @@ interface IndexedPlayerSearchEntry {
   normAliases: string[];
 }
 
-// Precompute normalized search strings once at startup for zero-lag autocomplete across 3,000+ players
-const PRECOMPUTED_PLAYER_SEARCH: IndexedPlayerSearchEntry[] = ALL_PLAYERS_LIST.map((player) => {
-  const normName = normalizeText(player.name);
-  return {
-    player,
-    normName,
-    nameWords: normName.split(' ').filter(Boolean),
-    normCommon: player.commonName ? normalizeText(player.commonName) : '',
-    normAliases: player.aliases.map(normalizeText),
-  };
-});
+let PRECOMPUTED_PLAYER_SEARCH: IndexedPlayerSearchEntry[] = [];
+let PLAYER_BIGRAM_INDEX: Map<string, number[]> = new Map();
 
-// 2-character inverted index over normalized names/common names/aliases to avoid O(N) scans per keystroke
-const PLAYER_BIGRAM_INDEX: Map<string, number[]> = (() => {
+export function rebuildPlayerSearchIndex(sourcePlayers?: readonly Player[]): number {
+  const list = sourcePlayers ? [...sourcePlayers] : Object.values(PLAYERS);
+  ALL_PLAYERS_LIST = list;
+  ALL_PLAYER_IDS = list.map((p) => p.id);
+
+  PRECOMPUTED_PLAYER_SEARCH = list.map((player) => {
+    const normName = normalizeText(player.name);
+    return {
+      player,
+      normName,
+      nameWords: normName.split(' ').filter(Boolean),
+      normCommon: player.commonName ? normalizeText(player.commonName) : '',
+      normAliases: (player.aliases || []).map(normalizeText),
+    };
+  });
+
   const map = new Map<string, number[]>();
   const addStringBigrams = (str: string, idx: number, seenForPlayer: Set<string>) => {
     if (!str || str.length < 2) return;
@@ -280,6 +285,7 @@ const PLAYER_BIGRAM_INDEX: Map<string, number[]> = (() => {
       bucket.push(idx);
     }
   };
+
   for (let i = 0; i < PRECOMPUTED_PLAYER_SEARCH.length; i += 1) {
     const entry = PRECOMPUTED_PLAYER_SEARCH[i];
     const seen = new Set<string>();
@@ -289,23 +295,52 @@ const PLAYER_BIGRAM_INDEX: Map<string, number[]> = (() => {
       addStringBigrams(alias, i, seen);
     }
   }
-  return map;
-})();
+  PLAYER_BIGRAM_INDEX = map;
+  return ALL_PLAYERS_LIST.length;
+}
+
+export function getSearchIndexSize(): number {
+  return ALL_PLAYERS_LIST.length;
+}
+
+rebuildPlayerSearchIndex();
 
 function getCandidateIndicesForQuery(normQuery: string): number[] | null {
   const tokens = normQuery.split(' ').filter((t) => t.length >= 2);
   if (tokens.length === 0) return null;
-  let smallestBucket: number[] | null = null;
+  const buckets: number[][] = [];
   for (const tok of tokens) {
     for (let i = 0; i < tok.length - 1; i += 1) {
       const bucket = PLAYER_BIGRAM_INDEX.get(tok.slice(i, i + 2));
       if (!bucket || bucket.length === 0) return [];
-      if (!smallestBucket || bucket.length < smallestBucket.length) {
-        smallestBucket = bucket;
-      }
+      buckets.push(bucket);
     }
   }
-  return smallestBucket;
+  if (buckets.length === 0) return null;
+  buckets.sort((a, b) => a.length - b.length);
+  let result = buckets[0];
+  // Intersect top smallest sorted buckets (since insertion order i is strictly increasing!)
+  const maxIntersectBuckets = Math.min(buckets.length, 4);
+  for (let bIdx = 1; bIdx < maxIntersectBuckets && result.length > 24; bIdx += 1) {
+    const other = buckets[bIdx];
+    const next: number[] = [];
+    let i = 0;
+    let j = 0;
+    while (i < result.length && j < other.length) {
+      if (result[i] === other[j]) {
+        next.push(result[i]);
+        i += 1;
+        j += 1;
+      } else if (result[i] < other[j]) {
+        i += 1;
+      } else {
+        j += 1;
+      }
+    }
+    result = next;
+    if (result.length === 0) return [];
+  }
+  return result;
 }
 
 /**

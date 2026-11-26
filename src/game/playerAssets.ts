@@ -21,7 +21,7 @@ import { EXTRA_PLAYERS_NINETEENTH_250 } from './extraPlayersNineteenth250';
 import { EXTRA_PLAYERS_TWENTIETH_BATCH } from './extraPlayersTwentieth';
 import { Player } from './types';
 
-export const DEFAULT_PLAYER_PHOTO = '/players/default.png';
+export const DEFAULT_PLAYER_PHOTO = '/players/default.webp';
 
 export interface PlayerAssetMeta {
   photoUrl: string;
@@ -60,7 +60,7 @@ export const PLAYER_ASSETS: Record<string, PlayerAssetMeta> = Object.fromEntries
   playersList.map((player) => [
     player.id,
     {
-      photoUrl: player.photoUrl || `/players/${player.id}.png`,
+      photoUrl: (player.photoUrl || `/players/${player.id}.webp`).replace(/^(\/players\/[^?#]+)\.png$/i, '$1.webp'),
       age: player.age ?? 28,
       shirtNumber: player.shirtNumber ?? 10,
       clubName: player.clubName ?? 'Kulüp',

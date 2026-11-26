@@ -134,6 +134,10 @@ export function isFuzzyMatch(userInput: string, targetAlias: string): boolean {
 
 let cachedSharedSurnames: Set<string> | null = null;
 
+export function invalidateValidatorIndexCache(): void {
+  cachedSharedSurnames = null;
+}
+
 function getSharedSurnameSet(): Set<string> {
   if (cachedSharedSurnames) return cachedSharedSurnames;
   const counts = new Map<string, number>();

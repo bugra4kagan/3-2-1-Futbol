@@ -165,7 +165,7 @@ export function isPhotoAvatar(avatar?: string): boolean {
 export function resolveAvatarPhotoUrl(avatar?: string): string | null {
   if (!avatar || !avatar.startsWith('pp:')) return null;
   const pid = avatar.slice(3);
-  return PLAYER_ASSETS[pid]?.photoUrl || `/players/${pid}.png`;
+  return PLAYER_ASSETS[pid]?.photoUrl || `/players/${pid}.webp`;
 }
 
 export function getAvatarDisplayLabel(avatar?: string): string {
