@@ -29,11 +29,13 @@ import {
 import {
   chooseBotXoxCell,
   computeHumanizedBotDelayMs,
+  decideBotRoundAction,
   getBotRoundPlan,
   getBotXoxTurnConfig,
   pickBotValidPlayer,
   pickBotWrongPlayer,
 } from '../game/botEngine';
+import { classifyQuestionDifficulty } from '../game/questionDifficulty';
 import {
   BotDifficulty,
   MinigameRoundPayload,
@@ -79,7 +81,7 @@ interface MinigameArenaViewProps {
   onSubmitOnlineAnswer?: (answer: string, cellPos?: { row: number; col: number }) => void;
   serverWrongFeedback?: { attempt: string; seq: number } | null;
   opponentMissedPulse?: number;
-  onWrongAttempt?: () => void;
+  onWrongAttempt?: (guessedAnswer?: string) => void;
   onSilhouetteExhausted?: () => void;
   onlineSilhouetteExhausted?: boolean;
   // XOX state & solo callbacks
@@ -309,7 +311,8 @@ export const MinigameArenaView: React.FC<MinigameArenaViewProps> = ({
     }
 
     botOnStatusRef.current?.('thinking');
-    const plan = getBotRoundPlan(botDifficulty, activeRound.minigameType, validPlayers.length);
+    const qDiff = classifyQuestionDifficulty(activeRound);
+    const plan = getBotRoundPlan(botDifficulty, activeRound.minigameType, validPlayers.length, qDiff);
     const maxRemainingMs = Math.max(900, botTimeRemainingRef.current * 1000);
     const delay = computeHumanizedBotDelayMs(plan, Math.random, maxRemainingMs);
 
@@ -317,9 +320,15 @@ export const MinigameArenaView: React.FC<MinigameArenaViewProps> = ({
       const latestBot = botP2Ref.current;
       if (botDisabledRef.current || botAttemptedRoundKeyRef.current === roundKey) return;
       botAttemptedRoundKeyRef.current = roundKey;
-      botOnStatusRef.current?.('answered');
 
-      if (Math.random() < plan.accuracy) {
+      const decision = decideBotRoundAction(plan);
+      if (decision === 'pass') {
+        botOnStatusRef.current?.('idle');
+        return;
+      }
+
+      botOnStatusRef.current?.('answered');
+      if (decision === 'correct') {
         const chosen = pickBotValidPlayer(validPlayers);
         if (chosen) {
           botOnWinnerRef.current(latestBot.id, chosen.name, chosen.name);
@@ -449,7 +458,7 @@ export const MinigameArenaView: React.FC<MinigameArenaViewProps> = ({
     if (!picked) {
       sounds.playWrong();
       haptics.wrong();
-      onWrongAttempt?.();
+      onWrongAttempt?.(fallbackText);
       setIsShake(true);
       setErrorToast(
         isOnlineMatch
@@ -498,7 +507,7 @@ export const MinigameArenaView: React.FC<MinigameArenaViewProps> = ({
 
     sounds.playWrong();
     haptics.wrong();
-    onWrongAttempt?.();
+    onWrongAttempt?.(picked.name);
     setIsShake(true);
     setTimeout(() => setIsShake(false), 450);
 
@@ -574,7 +583,7 @@ export const MinigameArenaView: React.FC<MinigameArenaViewProps> = ({
       } else {
         sounds.playWrong();
         haptics.wrong();
-        onWrongAttempt?.();
+        onWrongAttempt?.(val);
         setIsShake(true);
         setErrorToast(`Yanlış Tahmin! -3 sn • "${val}" bu kare için geçersiz!`);
         setTimeout(() => setIsShake(false), 450);
@@ -615,7 +624,7 @@ export const MinigameArenaView: React.FC<MinigameArenaViewProps> = ({
     } else {
       sounds.playWrong();
       haptics.wrong();
-      onWrongAttempt?.();
+      onWrongAttempt?.(val);
       setIsShake(true);
       setErrorToast(`Yanlış Tahmin! -3 sn • "${val}" doğru cevap değil!`);
       setTimeout(() => setIsShake(false), 450);

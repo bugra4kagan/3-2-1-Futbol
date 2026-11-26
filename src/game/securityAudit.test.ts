@@ -5,6 +5,7 @@ import path from 'node:path';
 import { AccountStore } from './accountStore';
 import { createInitialProgression } from './retentionEngine';
 import {
+  ServerMatchLedger,
   SlidingRateLimiter,
   createAccountSessionToken,
   generateAccountAuthSecret,
@@ -12,6 +13,7 @@ import {
   sanitizeProgressionUpdate,
   verifyAccountSessionToken,
 } from './serverSecurity';
+import { MATCH_PAIRINGS, PLAYERS } from './database';
 
 test('HMAC account session tokens validate only matching accountId + secret via timing-safe compare', () => {
   const secret = generateAccountAuthSecret();
@@ -114,4 +116,97 @@ test('firestore.rules maintains default-deny, email verification, score bounds, 
   assert.ok(rules.includes('incoming().memberUids == [request.auth.uid]'), 'Waiting room must start with host only');
   assert.ok(rules.includes('request.query.limit != null && request.query.limit <= 25'), 'Queue list limit check missing');
   assert.ok(rules.includes('lastActivityScore <= 50000000'), 'Public activity score cap missing');
+});
+
+test('dual-player online score binding verifies BOTH players via server ledger and blocks rematch double rewards', () => {
+  const ledger = new ServerMatchLedger();
+  const pairing0 = MATCH_PAIRINGS[0];
+  const validAnswerName = PLAYERS[pairing0.validPlayerIds[0]].name;
+  const roundIds = MATCH_PAIRINGS.slice(0, 5).map((p) => p.id);
+
+  const hostSession = ledger.issueSession({
+    accountId: 'acc_host',
+    minigameType: 'two_clubs',
+    mode: 'online_room',
+    roomCode: 'RMCH01',
+    matchSeq: 1,
+    roundIds,
+    now: 1_700_000_000_000,
+  });
+  const guestSession = ledger.issueSession({
+    accountId: 'acc_guest',
+    minigameType: 'two_clubs',
+    mode: 'online_room',
+    roomCode: 'RMCH01',
+    matchSeq: 1,
+    roundIds,
+    now: 1_700_000_000_000,
+  });
+
+  // Guest legitimately answers 2 rounds on the server; host answers 1 round
+  const ansH0 = ledger.submitVerifiedAnswer({
+    sessionId: hostSession.sessionId,
+    accountId: 'acc_host',
+    roundIndex: 0,
+    answer: validAnswerName,
+  });
+  assert.equal(ansH0.ok && ansH0.valid, true);
+
+  const p1Name = PLAYERS[MATCH_PAIRINGS[1].validPlayerIds[0]].name;
+  const p2Name = PLAYERS[MATCH_PAIRINGS[2].validPlayerIds[0]].name;
+  ledger.submitVerifiedAnswer({ sessionId: guestSession.sessionId, accountId: 'acc_guest', roundIndex: 1, answer: p1Name });
+  ledger.submitVerifiedAnswer({ sessionId: guestSession.sessionId, accountId: 'acc_guest', roundIndex: 2, answer: p2Name });
+
+  // Server cross-check detects opponent actually scored 2 even if Firestore reported 0
+  const detectedOppScore = ledger.findOpponentVerifiedScore('RMCH01', 1, 'acc_host');
+  assert.equal(detectedOppScore, 2);
+
+  // Trying to claim 3 goals when server only verified 1 is rejected
+  const forged = ledger.consumeVerifiedMatchSession({
+    sessionId: hostSession.sessionId,
+    accountId: 'acc_host',
+    hasMultiplier2x: false,
+    roomVerifiedScores: { playerScore: 3, opponentScore: 0 },
+    roomClaimKey: 'RMCH01:1:acc_host',
+    now: 1_700_000_020_000,
+  });
+  assert.equal(forged.ok, false);
+
+  // Legitimate claim with server-bounded opponentScore (2) accurately registers host loss (won: false)
+  const legitHostClaim = ledger.consumeVerifiedMatchSession({
+    sessionId: hostSession.sessionId,
+    accountId: 'acc_host',
+    hasMultiplier2x: false,
+    roomVerifiedScores: { playerScore: 1, opponentScore: Math.max(0, detectedOppScore ?? 0) },
+    roomClaimKey: 'RMCH01:1:acc_host',
+    now: 1_700_000_020_000,
+  });
+  assert.equal(legitHostClaim.ok, true);
+  if (legitHostClaim.ok) {
+    assert.equal(legitHostClaim.won, false);
+    assert.equal(legitHostClaim.verifiedScore, 1);
+  }
+
+  // Re-claiming same matchSeq session fails (blocks double reward)
+  const replay = ledger.consumeVerifiedMatchSession({
+    sessionId: hostSession.sessionId,
+    accountId: 'acc_host',
+    hasMultiplier2x: false,
+    roomVerifiedScores: { playerScore: 1, opponentScore: 2 },
+    roomClaimKey: 'RMCH01:1:acc_host',
+    now: 1_700_000_025_000,
+  });
+  assert.equal(replay.ok, false);
+
+  // Rematch (matchSeq: 2) issues a brand-new unique sessionId so both matches stay independent
+  const rematchSession = ledger.issueSession({
+    accountId: 'acc_host',
+    minigameType: 'two_clubs',
+    mode: 'online_room',
+    roomCode: 'RMCH01',
+    matchSeq: 2,
+    roundIds: MATCH_PAIRINGS.slice(5, 10).map((p) => p.id),
+    now: 1_700_000_030_000,
+  });
+  assert.notEqual(rematchSession.sessionId, hostSession.sessionId);
 });

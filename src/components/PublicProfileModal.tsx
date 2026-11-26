@@ -78,6 +78,11 @@ export const PublicProfileModal: React.FC<PublicProfileModalProps> = ({
 
   if (!isOpen || !profile) return null;
 
+  const isBotProfile = Boolean(
+    profile.isBot ||
+      profile.id.startsWith('bot_') ||
+      profile.friendCode?.toUpperCase().startsWith('BOT')
+  );
   const safeProfileName = sanitizePublicDisplayName(profile.name, profile.id);
   const favoriteClub = profile.favoriteClubId ? CLUBS[profile.favoriteClubId] : undefined;
   const crestInfo = getCrestBadgeInfo(profile.equippedCrest);
@@ -93,7 +98,7 @@ export const PublicProfileModal: React.FC<PublicProfileModalProps> = ({
       : 0;
 
   const handleAddFriendClick = () => {
-    if (!onAddFriend || isFriend || isPendingFriend || isSelf || profile.isBot) return;
+    if (!onAddFriend || isFriend || isPendingFriend || isSelf || isBotProfile) return;
     const res = onAddFriend(profile);
     if (!res.ok) {
       setFriendToast({ type: 'err', text: res.error || 'İstek gönderilemedi.' });
@@ -450,7 +455,7 @@ export const PublicProfileModal: React.FC<PublicProfileModalProps> = ({
         </div>
 
         {/* Friend & 1v1 Action Bar */}
-        {!isSelf && !profile.isBot && (onAddFriend || onChallengePlayer) && (
+        {!isSelf && !isBotProfile && (onAddFriend || onChallengePlayer) && (
           <div className="mt-4 pt-3 border-t border-slate-800/80 space-y-2">
             {friendToast && (
               <p

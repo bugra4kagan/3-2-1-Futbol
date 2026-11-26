@@ -23,6 +23,7 @@ import {
 import {
   formatPoints,
   hasPendingOutgoingRequest,
+  isBotFriendRecord,
 } from '../game/retentionEngine';
 import { sanitizePublicDisplayName } from '../game/usernameFilter';
 import { PlayerAvatar } from './PlayerAvatar';
@@ -143,16 +144,23 @@ export const FriendsView: React.FC<FriendsViewProps> = ({
   };
 
   const blockedIds = new Set(progression.blockedPlayerIds || []);
-  const addedIds = new Set(progression.friends.map((f) => f.id));
+  const realFriends = progression.friends.filter((f) => !isBotFriendRecord(f));
+  const addedIds = new Set(realFriends.map((f) => f.id));
   const incomingRequests = (progression.incomingFriendRequests ?? []).filter(
-    (r) => r.status === 'pending' && !blockedIds.has(r.fromPlayerId)
+    (r) => r.status === 'pending' && !blockedIds.has(r.fromPlayerId) && !isBotFriendRecord(r)
   );
   const outgoingRequests = (progression.outgoingFriendRequests ?? []).filter(
-    (r) => r.status === 'pending'
+    (r) => r.status === 'pending' && !isBotFriendRecord(r)
   );
 
   const realOnlinePlayers = liveServerPlayers
-    .filter((p) => p.id !== selfPlayerId && !addedIds.has(p.id) && !blockedIds.has(p.id))
+    .filter(
+      (p) =>
+        p.id !== selfPlayerId &&
+        !addedIds.has(p.id) &&
+        !blockedIds.has(p.id) &&
+        !isBotFriendRecord(p)
+    )
     .slice(0, 6);
 
   return (
@@ -425,7 +433,7 @@ export const FriendsView: React.FC<FriendsViewProps> = ({
               <p className="text-xs text-slate-400 px-1">Eşleşen oyuncu bulunamadı.</p>
             ) : (
               searchResults
-                .filter((p) => !blockedIds.has(p.id))
+                .filter((p) => !blockedIds.has(p.id) && !isBotFriendRecord(p))
                 .map((p) => {
                 const safeName = sanitizePublicDisplayName(p.name, p.id);
                 const alreadyFriend = addedIds.has(p.id);
@@ -504,14 +512,14 @@ export const FriendsView: React.FC<FriendsViewProps> = ({
         <div className="flex items-center justify-between px-1 mb-2">
           <h3 className="text-xs font-black uppercase tracking-widest text-slate-400 flex items-center gap-1.5">
             <Users className="w-3.5 h-3.5 text-emerald-400" />
-            <span>ARKADAŞLARIN ({progression.friends.length})</span>
+            <span>ARKADAŞLARIN ({realFriends.length})</span>
           </h3>
           <span className="text-[11px] text-slate-400 font-semibold">
             Lig → Arkadaşlar sekmesinde yarışırlar
           </span>
         </div>
 
-        {progression.friends.length === 0 ? (
+        {realFriends.length === 0 ? (
           <div
             data-testid="friends-empty-state"
             className="p-6 rounded-2xl bg-slate-900/70 border border-slate-800 text-center text-xs text-slate-400 leading-relaxed"
@@ -520,7 +528,7 @@ export const FriendsView: React.FC<FriendsViewProps> = ({
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-            {progression.friends.map((friend) => {
+            {realFriends.map((friend) => {
               const safeFriendName = sanitizePublicDisplayName(friend.name, friend.id);
               return (
                 <div

@@ -123,7 +123,8 @@ export const ClubBadge: React.FC<ClubBadgeProps> = React.memo(({
     >
       <svg
         viewBox="0 0 120 138"
-        className="w-full h-full overflow-visible"
+        preserveAspectRatio="xMidYMid meet"
+        className="w-full h-full overflow-visible block"
         role="img"
         aria-label={`${meta.name} kulüp rozeti`}
       >

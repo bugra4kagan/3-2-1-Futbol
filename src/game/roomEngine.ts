@@ -44,10 +44,33 @@ export const ROOM_COUNTDOWN_SECONDS = 3;
 export const ROOM_JOIN_MAX_AGE_MS = 3 * 60 * 60 * 1000;
 /** Two consecutive XOX turn timeouts end the round as a timeout. */
 export const ROOM_XOX_MAX_CONSECUTIVE_TIMEOUTS = 2;
+export const REMATCH_OFFER_TIMEOUT_MS = 20000;
+export const REMATCH_REQUEST_COOLDOWN_MS = 5000;
+export const DISCONNECT_GRACE_TIMEOUT_MS = 30000;
+export const DISCONNECT_GRACE_MAX_TOTAL_MS_PER_PLAYER = 60000;
 
 export type RoomState = 'waiting' | 'countdown' | 'playing' | 'round_ended' | 'game_over';
 export type RoomEndReason = 'scored' | 'timeout' | 'attempts_exhausted' | 'draw';
 export type RoomSource = 'private' | 'matchmaking';
+
+export interface RoomRematchOffer {
+  requestedByKey: string;
+  requestedByName: string;
+  requestedAt: number;
+  expiresAt: number;
+  status: 'pending' | 'declined' | 'expired';
+  cooldownUntil?: number;
+}
+
+export interface RoomDisconnectGrace {
+  disconnectedKey: string;
+  disconnectedName: string;
+  startedAt: number;
+  expiresAt: number;
+  pausedPhase: 'countdown' | 'playing' | 'round_ended';
+  pauseStartedRemainingMs: number;
+  totalPauseUsedMsByPlayer?: Record<string, number>;
+}
 
 export interface RoomPlayerRecord {
   id: string;
@@ -98,6 +121,8 @@ export interface RoomRecord {
   xoxConsecutiveTimeouts: number;
   wrongAttemptPulse: { byPlayerId: string; seq: number } | null;
   silhouetteAttempts: Record<string, number>;
+  rematchOffer?: RoomRematchOffer | null;
+  disconnectGrace?: RoomDisconnectGrace | null;
   createdAt: number;
   updatedAt: number;
   /** Firestore Timestamp (TTL field) — opaque to the pure engine */
@@ -662,25 +687,13 @@ export function applyRoomAdvance(room: RoomRecord, phase: RoomPhase, now: number
   };
 }
 
-/** Marks a rematch vote; when both players voted, a fresh match starts. */
-export function applyRoomRematch(
+function startRematchRoomRecord(
   room: RoomRecord,
-  rawPlayerId: string,
+  players: Record<string, RoomPlayerRecord>,
   now: number,
-  seed: number = randomRoomSeed()
-): RoomRecord | null {
-  if (room.state !== 'game_over') return null;
-  const playerKey = getRoomPlayerKey(rawPlayerId);
-  const players = { ...(room.players || {}) };
-  if (!players[playerKey]) return null;
-  players[playerKey] = { ...players[playerKey], rematchRequested: true };
-
+  seed: number
+): RoomRecord {
   const keys = Object.keys(players);
-  const allReady = keys.length >= 2 && keys.every((k) => players[k].rematchRequested);
-  if (!allReady) {
-    return { ...room, players, updatedAt: now };
-  }
-
   const resetPlayers: Record<string, RoomPlayerRecord> = {};
   const resetScores: Record<string, number> = {};
   for (const k of keys) {
@@ -693,11 +706,18 @@ export function applyRoomRematch(
     resetScores[k] = 0;
   }
   const isXox = room.minigameType === 'xox';
+  const excludeIds = new Set(room.roundIds || []);
 
   return {
     ...room,
     questionSeed: seed,
-    roundIds: generateSeededRoundIds(room.minigameType, ROOM_ROUND_POOL_SIZE, seed),
+    roundIds: generateSeededRoundIds(
+      room.minigameType,
+      ROOM_ROUND_POOL_SIZE,
+      seed,
+      excludeIds,
+      'online'
+    ),
     players: resetPlayers,
     scores: resetScores,
     state: 'countdown',
@@ -718,6 +738,256 @@ export function applyRoomRematch(
     xoxConsecutiveTimeouts: 0,
     wrongAttemptPulse: null,
     silhouetteAttempts: {},
+    rematchOffer: null,
+    disconnectGrace: null,
+    updatedAt: now,
+  };
+}
+
+/**
+ * Initiates a rematch request (20s timeout + anti-spam cooldown) or accepts
+ * if the opponent already has a pending request.
+ */
+export function applyRoomRematch(
+  room: RoomRecord,
+  rawPlayerId: string,
+  now: number,
+  seed: number = randomRoomSeed()
+): RoomRecord | null {
+  if (room.state !== 'game_over') return null;
+  const playerKey = getRoomPlayerKey(rawPlayerId);
+  const players = { ...(room.players || {}) };
+  const selfPlayer = players[playerKey];
+  if (!selfPlayer) return null;
+
+  const currentOffer = room.rematchOffer ?? null;
+  // Expire stale pending offer first
+  const activeOffer =
+    currentOffer && currentOffer.status === 'pending' && now >= currentOffer.expiresAt
+      ? null
+      : currentOffer;
+
+  // Cooldown guard against rematch spam from the same requester
+  if (
+    activeOffer &&
+    activeOffer.requestedByKey === playerKey &&
+    (activeOffer.status === 'pending' ||
+      (typeof activeOffer.cooldownUntil === 'number' && now < activeOffer.cooldownUntil))
+  ) {
+    return null;
+  }
+
+  const keys = Object.keys(players);
+  if (keys.length < 2) return null;
+
+  const oppPending =
+    (activeOffer &&
+      activeOffer.status === 'pending' &&
+      activeOffer.requestedByKey !== playerKey) ||
+    keys.some((k) => k !== playerKey && Boolean(players[k]?.rematchRequested));
+
+  if (oppPending) {
+    return startRematchRoomRecord(room, players, now, seed);
+  }
+
+  for (const k of keys) {
+    players[k] = {
+      ...players[k],
+      rematchRequested: k === playerKey,
+    };
+  }
+
+  return {
+    ...room,
+    players,
+    rematchOffer: {
+      requestedByKey: playerKey,
+      requestedByName: selfPlayer.name,
+      requestedAt: now,
+      expiresAt: now + REMATCH_OFFER_TIMEOUT_MS,
+      status: 'pending',
+      cooldownUntil: now + REMATCH_REQUEST_COOLDOWN_MS,
+    },
+    updatedAt: now,
+  };
+}
+
+export function applyRoomRematchResponse(
+  room: RoomRecord,
+  rawPlayerId: string,
+  action: 'accept' | 'decline' | 'expire',
+  now: number,
+  seed: number = randomRoomSeed()
+): RoomRecord | null {
+  if (room.state !== 'game_over') return null;
+  const playerKey = getRoomPlayerKey(rawPlayerId);
+  const players = { ...(room.players || {}) };
+  if (!players[playerKey]) return null;
+
+  const offer = room.rematchOffer;
+  if (!offer || offer.status !== 'pending') return null;
+
+  if (action === 'expire') {
+    if (now < offer.expiresAt) return null;
+    for (const k of Object.keys(players)) {
+      players[k] = { ...players[k], rematchRequested: false };
+    }
+    return {
+      ...room,
+      players,
+      rematchOffer: { ...offer, status: 'expired' },
+      updatedAt: now,
+    };
+  }
+
+  if (now >= offer.expiresAt) {
+    for (const k of Object.keys(players)) {
+      players[k] = { ...players[k], rematchRequested: false };
+    }
+    return {
+      ...room,
+      players,
+      rematchOffer: { ...offer, status: 'expired' },
+      updatedAt: now,
+    };
+  }
+
+  // Only the opponent can accept or decline a pending offer
+  if (offer.requestedByKey === playerKey) return null;
+
+  if (action === 'decline') {
+    for (const k of Object.keys(players)) {
+      players[k] = { ...players[k], rematchRequested: false };
+    }
+    return {
+      ...room,
+      players,
+      rematchOffer: {
+        ...offer,
+        status: 'declined',
+        cooldownUntil: now + REMATCH_REQUEST_COOLDOWN_MS,
+      },
+      updatedAt: now,
+    };
+  }
+
+  return startRematchRoomRecord(room, players, now, seed);
+}
+
+/** Marks or updates a 30s disconnect pause window without leaving valid Firestore states. */
+export function applyRoomDisconnectGrace(
+  room: RoomRecord,
+  disconnectedRawId: string,
+  remainingMs: number,
+  now: number
+): RoomRecord | null {
+  if (
+    room.state !== 'countdown' &&
+    room.state !== 'playing' &&
+    room.state !== 'round_ended'
+  ) {
+    return null;
+  }
+  if (!room.guestId) return null;
+  if (room.disconnectGrace && now < room.disconnectGrace.expiresAt) return null;
+
+  const disconnectedKey = getRoomPlayerKey(disconnectedRawId);
+  const target = room.players?.[disconnectedKey];
+  if (!target) return null;
+
+  const prevUsedMap = room.disconnectGrace?.totalPauseUsedMsByPlayer ?? {};
+  const prevUsed = prevUsedMap[disconnectedKey] ?? 0;
+  if (prevUsed >= DISCONNECT_GRACE_MAX_TOTAL_MS_PER_PLAYER) {
+    return null;
+  }
+
+  return {
+    ...room,
+    disconnectGrace: {
+      disconnectedKey,
+      disconnectedName: target.name,
+      startedAt: now,
+      expiresAt: now + DISCONNECT_GRACE_TIMEOUT_MS,
+      pausedPhase: room.state,
+      pauseStartedRemainingMs: Math.max(1000, Math.round(remainingMs)),
+      totalPauseUsedMsByPlayer: prevUsedMap,
+    },
+    updatedAt: now,
+  };
+}
+
+/** Resumes the paused clock cleanly when the disconnected player reconnects within 30s. */
+export function applyRoomResumeFromDisconnect(
+  room: RoomRecord,
+  returningRawId: string,
+  now: number
+): RoomRecord | null {
+  const grace = room.disconnectGrace;
+  if (!grace) return null;
+  const returningKey = getRoomPlayerKey(returningRawId);
+  if (grace.disconnectedKey !== returningKey) return null;
+
+  const pausedDuration = Math.max(0, now - grace.startedAt);
+  const prevUsed = grace.totalPauseUsedMsByPlayer?.[returningKey] ?? 0;
+  const nextUsedMap = {
+    ...(grace.totalPauseUsedMsByPlayer ?? {}),
+    [returningKey]: prevUsed + pausedDuration,
+  };
+
+  const shiftedCountdownEnd =
+    typeof room.countdownEndsAt === 'number' ? room.countdownEndsAt + pausedDuration : room.countdownEndsAt;
+  const shiftedRoundStart =
+    typeof room.roundStartedAt === 'number' ? room.roundStartedAt + pausedDuration : room.roundStartedAt;
+
+  return {
+    ...room,
+    countdownEndsAt: shiftedCountdownEnd ?? null,
+    roundStartedAt: shiftedRoundStart ?? null,
+    disconnectGrace: null,
+    // Keep accumulated pause budget on next pause via room metadata if re-paused? Tracked in-flight or clean reset if desired.
+    xoxNotice:
+      prevUsed >= 0 && room.minigameType === 'xox'
+        ? `${grace.disconnectedName} yeniden bağlandı (${nextUsedMap[returningKey] ? 'maç devam ediyor' : ''}).`
+        : room.xoxNotice,
+    updatedAt: now,
+  };
+}
+
+/** Forfeits the match cleanly after the 30s grace window expires, staying within Firestore score rules. */
+export function applyRoomDisconnectForfeit(
+  room: RoomRecord,
+  now: number
+): RoomRecord | null {
+  const grace = room.disconnectGrace;
+  if (!grace || now < grace.expiresAt || room.state === 'game_over') return null;
+
+  const players = { ...(room.players || {}) };
+  const scores = { ...(room.scores || {}) };
+  const connectedKey = Object.keys(players).find((k) => k !== grace.disconnectedKey);
+  if (!connectedKey) return null;
+
+  const connectedScore = scores[connectedKey] ?? 0;
+  const disconnectedScore = scores[grace.disconnectedKey] ?? 0;
+  // Firestore rules allow at most +1 increment per transition: ensure winner stays strictly ahead
+  const nextWinnerScore =
+    connectedScore <= disconnectedScore ? Math.min(10, disconnectedScore + 1) : connectedScore;
+  const boundedWinnerScore = Math.min(connectedScore + 1, Math.max(connectedScore, nextWinnerScore));
+
+  scores[connectedKey] = boundedWinnerScore;
+  players[connectedKey] = {
+    ...players[connectedKey],
+    score: boundedWinnerScore,
+  };
+
+  return {
+    ...room,
+    players,
+    scores,
+    state: 'game_over',
+    roundEndReason: 'timeout',
+    roundWinnerId: players[connectedKey]?.id ?? connectedKey,
+    acceptedPlayerName: `${grace.disconnectedName} bağlantıyı kaybetti`,
+    disconnectGrace: null,
     updatedAt: now,
   };
 }

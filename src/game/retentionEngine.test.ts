@@ -28,6 +28,8 @@ import {
   grantExtraRewards,
   grantFreeAdCoins,
   hasPendingOutgoingRequest,
+  isBotFriendRecord,
+  sanitizeBotFriendsProgression,
   hasUnlimitedEnergy,
   linkSocialAccount,
   purchaseGift,
@@ -863,6 +865,94 @@ test('bot matches award coins without inflating or penalizing weekly league poin
   assert.equal(botLoss.earnedPoints, 0);
   assert.equal(botLoss.progression.weeklyPoints, 240);
   assert.equal(botLoss.progression.totalPoints, 500);
+});
+
+test('bot friend accounts and requests are blocked and stripped while real friends and favorite clubs stay intact', () => {
+  const base = createInitialProgression('user_real_1');
+  const legacyWithBot = {
+    ...base,
+    friends: [
+      {
+        id: 'bot_cirak_1',
+        friendCode: 'BOT1024',
+        name: 'Çırak Bot',
+        avatar: 'ball',
+        weeklyPoints: 200,
+        totalPoints: 400,
+        statusText: 'Bot Rakip',
+        isOnline: false,
+        isBot: true,
+      },
+      {
+        id: 'real_friend_1',
+        friendCode: 'FC7788',
+        name: 'EmreGS',
+        avatar: 'trophy',
+        weeklyPoints: 450,
+        totalPoints: 1200,
+        statusText: 'Çevrim içi oyuncu',
+        isOnline: true,
+      },
+    ],
+    incomingFriendRequests: [
+      {
+        id: 'fr_bot_1',
+        fromPlayerId: 'bot_cirak_1',
+        fromFriendCode: 'BOT1024',
+        fromName: 'Çırak Bot',
+        fromAvatar: 'ball',
+        toPlayerId: 'user_real_1',
+        toFriendCode: base.friendCode,
+        toName: 'Oyuncu',
+        toAvatar: 'ball',
+        weeklyPoints: 200,
+        totalPoints: 400,
+        subtitle: 'Bot',
+        status: 'pending' as const,
+        isBot: true,
+        createdAt: Date.now(),
+      },
+    ],
+  };
+
+  assert.equal(isBotFriendRecord({ id: 'bot_medium_2', friendCode: 'FC1111' }), true);
+  assert.equal(isBotFriendRecord({ id: 'real_u1', friendCode: 'BOT4321' }), true);
+  assert.equal(isBotFriendRecord({ id: 'real_u1', friendCode: 'FC9988' }), false);
+
+  const sanitized = sanitizeBotFriendsProgression(legacyWithBot);
+  assert.equal(sanitized.friends.length, 1);
+  assert.equal(sanitized.friends[0].id, 'real_friend_1');
+  assert.equal(sanitized.incomingFriendRequests?.length, 0);
+
+  // Attempting to add or send friend request to a bot must be rejected
+  assert.equal(addFriendByCodeOrEntry(sanitized, 'BOT4433').ok, false);
+  const botResolve = resolveFriendTargetCandidate(sanitized, {
+    id: 'bot_hard_9',
+    friendCode: 'BOT9900',
+    name: 'Efsane Bot',
+    isBot: true,
+  });
+  assert.equal(botResolve.ok, false);
+
+  // League standings keep real friend's favoriteClubId synced from livePlayers
+  const standings = buildLeagueStandings(
+    sanitized,
+    { id: 'user_real_1', name: 'Sen', avatar: 'ball', score: 0, favoriteClubId: 'galatasaray' },
+    'friends',
+    [
+      {
+        id: 'real_friend_1',
+        friendCode: 'FC7788',
+        name: 'EmreGS',
+        avatar: 'trophy',
+        favoriteClubId: 'fenerbahce',
+        weeklyPoints: 500,
+        totalPoints: 1300,
+      },
+    ]
+  );
+  assert.equal(standings.entries.find((e) => e.isUser)?.favoriteClubId, 'galatasaray');
+  assert.equal(standings.entries.find((e) => e.id === 'real_friend_1')?.favoriteClubId, 'fenerbahce');
 });
 
 

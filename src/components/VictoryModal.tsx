@@ -20,6 +20,7 @@ import {
   UserSearch,
   X,
   Swords,
+  BookOpen,
 } from 'lucide-react';
 import { PlayerProfile, MatchPlayerStats, MatchRoundHighlight } from '../game/types';
 import { calculatePlayerBadges, getBadgeCategoryLabel } from '../game/badges';
@@ -49,7 +50,11 @@ interface VictoryModalProps {
   matchHighlights?: MatchRoundHighlight[];
   isOnlineMatch?: boolean;
   isBotMatch?: boolean;
-  rematchState?: 'idle' | 'waiting' | 'opponent_requested' | 'opponent_left';
+  rematchState?: 'idle' | 'waiting' | 'opponent_requested' | 'declined' | 'expired' | 'opponent_left';
+  rematchSecondsLeft?: number | null;
+  onDeclineRematch?: () => void;
+  onOpenReview?: () => void;
+  reviewRoundsCount?: number;
   matchRewards?: {
     earnedPoints: number;
     earnedCoins: number;
@@ -91,6 +96,10 @@ export const VictoryModal: React.FC<VictoryModalProps> = ({
   isOnlineMatch = false,
   isBotMatch = false,
   rematchState = 'idle',
+  rematchSecondsLeft = null,
+  onDeclineRematch,
+  onOpenReview,
+  reviewRoundsCount = 0,
   matchRewards = null,
   player1Frame,
   goalEffect,
@@ -893,38 +902,100 @@ Ortak futbolcuları benden hızlı bulabilir misin? Meydan okuyorum! 🔥`;
         {/* Online Rematch Status Banner */}
         {isOnlineMatch && rematchState !== 'idle' && (
           <div
-            className={`mb-2.5 px-3 py-2 rounded-xl border text-xs font-bold ${
-              rematchState === 'opponent_left'
-                ? 'bg-rose-950/70 border-rose-500/40 text-rose-300'
+            data-testid="online-rematch-banner"
+            className={`mb-2.5 px-3 py-2.5 rounded-xl border text-xs font-bold ${
+              rematchState === 'opponent_left' || rematchState === 'declined'
+                ? 'bg-rose-950/70 border-rose-500/40 text-rose-200'
                 : rematchState === 'opponent_requested'
-                ? 'bg-emerald-950/70 border-emerald-500/50 text-emerald-300 animate-pulse'
-                : 'bg-amber-950/60 border-amber-500/40 text-amber-300'
+                ? 'bg-emerald-950/75 border-emerald-500/50 text-emerald-200'
+                : rematchState === 'expired'
+                ? 'bg-slate-900/90 border-slate-700 text-slate-300'
+                : 'bg-amber-950/60 border-amber-500/40 text-amber-200'
             }`}
           >
-            {rematchState === 'waiting' && 'Rakibin rövanş onayı bekleniyor...'}
-            {rematchState === 'opponent_requested' && `${player2.name} rövanş maçı istiyor!`}
-            {rematchState === 'opponent_left' && `${player2.name} odadan ayrıldı.`}
+            {rematchState === 'waiting' && (
+              <span>
+                Rakibin rövanş onayı bekleniyor
+                {typeof rematchSecondsLeft === 'number' && rematchSecondsLeft > 0
+                  ? ` (${rematchSecondsLeft} sn)`
+                  : '...'}
+              </span>
+            )}
+            {rematchState === 'opponent_requested' && (
+              <span>
+                {p2Name} rövanş istiyor!
+                {typeof rematchSecondsLeft === 'number' && rematchSecondsLeft > 0
+                  ? ` • ${rematchSecondsLeft} sn kaldı`
+                  : ''}
+              </span>
+            )}
+            {rematchState === 'declined' && `${p2Name} rövanş isteğini reddetti.`}
+            {rematchState === 'expired' &&
+              'Rövanş isteğinin süresi doldu (20 sn). Yeni rövanş isteyebilirsin.'}
+            {rematchState === 'opponent_left' && `${p2Name} odadan ayrıldı.`}
           </div>
+        )}
+
+        {/* Question Review Action (zero coins/points, completed rounds only) */}
+        {onOpenReview && reviewRoundsCount > 0 && (
+          <button
+            type="button"
+            data-testid="victory-review-btn"
+            onClick={onOpenReview}
+            className="w-full mb-2.5 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-sky-500/15 hover:bg-sky-500/25 border border-sky-400/40 text-sky-200 font-black text-xs sm:text-sm transition active:scale-95 cursor-pointer"
+          >
+            <BookOpen className="w-4 h-4 text-sky-300" />
+            <span>Soruları İncele ({reviewRoundsCount} Tur)</span>
+          </button>
         )}
 
         {/* Action Buttons */}
         <div className="flex flex-col sm:flex-row gap-2.5">
-          <button
-            onClick={onRematch}
-            disabled={isOnlineMatch && (rematchState === 'waiting' || rematchState === 'opponent_left')}
-            className="flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-[#22C55E] hover:bg-[#16a34a] disabled:opacity-50 disabled:cursor-not-allowed text-[#080E14] font-black text-sm transition transform active:scale-95 cursor-pointer"
-          >
-            <RotateCcw className="w-4 h-4" />
-            <span>
-              {isOnlineMatch && rematchState === 'waiting'
-                ? 'Onay Bekleniyor...'
-                : isOnlineMatch && rematchState === 'opponent_requested'
-                ? 'Rövanşı Kabul Et'
-                : 'Tekrar Oyna'}
-            </span>
-          </button>
+          {isOnlineMatch && rematchState === 'opponent_requested' ? (
+            <>
+              <button
+                type="button"
+                data-testid="victory-rematch-accept-btn"
+                onClick={onRematch}
+                className="flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-[#22C55E] hover:bg-[#16a34a] text-[#080E14] font-black text-sm transition transform active:scale-95 cursor-pointer"
+              >
+                <Check className="w-4 h-4" />
+                <span>Kabul Et</span>
+              </button>
+              {onDeclineRematch && (
+                <button
+                  type="button"
+                  data-testid="victory-rematch-decline-btn"
+                  onClick={onDeclineRematch}
+                  className="flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-rose-600/90 hover:bg-rose-500 text-white font-black text-sm transition active:scale-95 cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                  <span>Reddet</span>
+                </button>
+              )}
+            </>
+          ) : (
+            <button
+              type="button"
+              data-testid="victory-rematch-btn"
+              onClick={onRematch}
+              disabled={isOnlineMatch && (rematchState === 'waiting' || rematchState === 'opponent_left')}
+              className="flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-[#22C55E] hover:bg-[#16a34a] disabled:opacity-50 disabled:cursor-not-allowed text-[#080E14] font-black text-sm transition transform active:scale-95 cursor-pointer"
+            >
+              <RotateCcw className="w-4 h-4" />
+              <span>
+                {isOnlineMatch
+                  ? rematchState === 'waiting'
+                    ? 'Rövanş Bekleniyor...'
+                    : 'Rövanş İste'
+                  : 'Tekrar Oyna'}
+              </span>
+            </button>
+          )}
 
           <button
+            type="button"
+            data-testid="victory-home-btn"
             onClick={onHome}
             className="flex items-center justify-center gap-2 py-3 px-4 rounded-xl bg-[#14232C] hover:bg-[#080E14] text-[#F8FAFC] font-bold text-sm transition active:scale-95 border border-white/10 cursor-pointer"
           >

@@ -9,10 +9,12 @@ import { searchPlayersForAutocomplete } from '../game/silhouetteEngine';
 import { getPlayerAsset } from '../game/playerAssets';
 import {
   computeHumanizedBotDelayMs,
+  decideBotRoundAction,
   getBotRoundPlan,
   pickBotValidPlayer,
   pickBotWrongPlayer,
 } from '../game/botEngine';
+import { classifyPairingDifficulty } from '../game/questionDifficulty';
 import { sounds } from '../utils/audio';
 import { haptics } from '../utils/haptics';
 import { Send, AlertCircle, Sparkles } from 'lucide-react';
@@ -43,7 +45,7 @@ interface SinglePlayerViewProps {
   onSubmitOnlineAnswer?: (answer: string) => void;
   serverWrongFeedback?: { attempt: string; seq: number } | null;
   opponentMissedPulse?: number;
-  onWrongAttempt?: () => void;
+  onWrongAttempt?: (guessedAnswer?: string) => void;
   onTimeExpired: () => void;
   disabled?: boolean;
 }
@@ -176,7 +178,8 @@ export const SinglePlayerView: React.FC<SinglePlayerViewProps> = ({
     }
 
     onBotStatusChangeRef.current?.('thinking');
-    const plan = getBotRoundPlan(botDifficulty, 'two_clubs', validPlayers.length);
+    const qDiff = classifyPairingDifficulty(activePairing);
+    const plan = getBotRoundPlan(botDifficulty, 'two_clubs', validPlayers.length, qDiff);
     const maxRemainingMs = Math.max(900, timeRemainingRef.current * 1000);
     const delay = computeHumanizedBotDelayMs(plan, Math.random, maxRemainingMs);
 
@@ -185,10 +188,16 @@ export const SinglePlayerView: React.FC<SinglePlayerViewProps> = ({
       const latestBot = player2Ref.current;
       if (disabledRef.current || botAttemptedRoundRef.current === latestPairing.id) return;
       botAttemptedRoundRef.current = latestPairing.id;
-      onBotStatusChangeRef.current?.('answered');
 
-      const willKnow = Math.random() < plan.accuracy;
-      if (willKnow) {
+      const decision = decideBotRoundAction(plan);
+      if (decision === 'pass') {
+        // Realistically cannot recall this round: let timer run naturally without guessing
+        onBotStatusChangeRef.current?.('idle');
+        return;
+      }
+
+      onBotStatusChangeRef.current?.('answered');
+      if (decision === 'correct') {
         const chosen = pickBotValidPlayer(validPlayers);
         if (chosen) {
           onAnswerWinnerRef.current(latestBot.id, chosen.name, chosen.name);
@@ -242,7 +251,7 @@ export const SinglePlayerView: React.FC<SinglePlayerViewProps> = ({
     } else {
       sounds.playWrong();
       haptics.wrong();
-      onWrongAttempt?.();
+      onWrongAttempt?.(val);
       setIsShake(true);
       setErrorToast(`Yanlış Tahmin! -3 sn • "${val}" bu iki kulüpte de oynamadı!`);
       if (shakeTimerRef.current) clearTimeout(shakeTimerRef.current);

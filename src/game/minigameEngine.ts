@@ -5,14 +5,24 @@ import {
   XoxCellMark,
 } from './types';
 import { MATCH_PAIRINGS, PLAYERS } from './database';
-import { getRandomPairings, validateAnswerForPlayerIds } from './validator';
+import { validateAnswerForPlayerIds } from './validator';
 import {
   CAREER_CHALLENGES,
   COUNTRY_CLUB_CHALLENGES,
   SILHOUETTE_CHALLENGES,
   XOX_BOARDS,
 } from './minigamesData';
-import { getRoundItemId, selectDiverseItems } from './questionHistory';
+import { canonicalTwoClubsKey, getRoundItemId } from './questionHistory';
+import {
+  classifyCareerDifficulty,
+  classifyCountryClubDifficulty,
+  classifyPairingDifficulty,
+  classifySilhouetteDifficulty,
+  classifyXoxDifficulty,
+  DifficultyProfile,
+  isPopularOnlineItem,
+  selectDifficultyWeightedItems,
+} from './questionDifficulty';
 
 export { getRoundItemId };
 
@@ -119,10 +129,34 @@ export function isSouthAmericaLocalOnlyPlayer(player?: Player | null): boolean {
 export function generateMinigameRounds(
   minigameType: MinigameType,
   count: number = 12,
-  excludeIds: ReadonlySet<string> | readonly string[] = []
+  excludeIds: ReadonlySet<string> | readonly string[] = [],
+  options?: {
+    profile?: DifficultyProfile;
+    rng?: () => number;
+  }
 ): MinigameRoundPayload[] {
+  const profile: DifficultyProfile = options?.profile ?? 'balanced';
+  const rng = options?.rng ?? Math.random;
+  const preferPopular = profile === 'online';
+
   if (minigameType === 'two_clubs') {
-    return getRandomPairings(count, excludeIds).map((pairing) => ({
+    const items = selectDifficultyWeightedItems(
+      MATCH_PAIRINGS,
+      count,
+      excludeIds,
+      (p) => p.id,
+      classifyPairingDifficulty,
+      profile,
+      rng,
+      {
+        getCanonicalKey: (p) => canonicalTwoClubsKey(p.club1Id, p.club2Id),
+        getClubKeys: (p) => [p.club1Id, p.club2Id],
+        prioritizePredicate: preferPopular
+          ? (p) => isPopularOnlineItem({ minigameType: 'two_clubs', pairing: p })
+          : undefined,
+      }
+    );
+    return items.map((pairing) => ({
       minigameType: 'two_clubs',
       pairing,
     }));
@@ -132,11 +166,14 @@ export function generateMinigameRounds(
     const eligible = SILHOUETTE_CHALLENGES.filter(
       (s) => !isSouthAmericaLocalOnlyPlayer(PLAYERS[s.playerId])
     );
-    const { items } = selectDiverseItems(
+    const items = selectDifficultyWeightedItems(
       eligible,
       count,
       excludeIds,
-      (s) => s.id
+      (s) => s.id,
+      classifySilhouetteDifficulty,
+      profile,
+      rng
     );
     return items.map((silhouette) => ({
       minigameType: 'silhouette',
@@ -148,14 +185,19 @@ export function generateMinigameRounds(
     const eligible = CAREER_CHALLENGES.filter(
       (c) => !isSouthAmericaLocalOnlyPlayer(PLAYERS[c.playerId])
     );
-    const { items } = selectDiverseItems(
+    const items = selectDifficultyWeightedItems(
       eligible,
       count,
       excludeIds,
       (c) => c.id,
-      Math.random,
+      classifyCareerDifficulty,
+      profile,
+      rng,
       {
         getClubKeys: (c) => c.steps.map((st) => st.clubId || st.clubName),
+        prioritizePredicate: preferPopular
+          ? (c) => isPopularOnlineItem({ minigameType: 'career', career: c })
+          : undefined,
       }
     );
     return items.map((career) => ({
@@ -165,15 +207,20 @@ export function generateMinigameRounds(
   }
 
   if (minigameType === 'country_club') {
-    const { items } = selectDiverseItems(
+    const items = selectDifficultyWeightedItems(
       COUNTRY_CLUB_CHALLENGES,
       count,
       excludeIds,
       (cc) => cc.id,
-      Math.random,
+      classifyCountryClubDifficulty,
+      profile,
+      rng,
       {
         getCanonicalKey: (cc) => `cc:${cc.country}||${cc.clubId}`,
         getClubKeys: (cc) => [cc.clubId],
+        prioritizePredicate: preferPopular
+          ? (cc) => isPopularOnlineItem({ minigameType: 'country_club', countryClub: cc })
+          : undefined,
       }
     );
     return items.map((countryClub) => ({
@@ -182,14 +229,19 @@ export function generateMinigameRounds(
     }));
   }
 
-  const { items } = selectDiverseItems(
+  const items = selectDifficultyWeightedItems(
     XOX_BOARDS,
     count,
     excludeIds,
     (b) => b.id,
-    Math.random,
+    classifyXoxDifficulty,
+    profile,
+    rng,
     {
       getClubKeys: (b) => b.rows.map((r) => r.id),
+      prioritizePredicate: preferPopular
+        ? (b) => isPopularOnlineItem({ minigameType: 'xox', xoxBoard: b })
+        : undefined,
     }
   );
   return items.map((xoxBoard) => ({

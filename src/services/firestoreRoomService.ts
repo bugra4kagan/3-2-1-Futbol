@@ -44,9 +44,13 @@ import {
   applyRoomAdvance,
   applyRoomAnswer,
   applyRoomBeginRound,
+  applyRoomDisconnectForfeit,
+  applyRoomDisconnectGrace,
   applyRoomExpire,
   applyRoomJoin,
   applyRoomRematch,
+  applyRoomRematchResponse,
+  applyRoomResumeFromDisconnect,
   createRoomRecord,
   getRoomPlayerKey,
   isValidRoomCode,
@@ -60,10 +64,37 @@ const ROOMS_COLLECTION = 'rooms';
 /** Optional Firestore TTL policy on `expiresAt` deletes abandoned rooms automatically. */
 const ROOM_TTL_MS = 6 * 60 * 60 * 1000;
 const QUEUE_TTL_MS = 60 * 1000;
-const PRESENCE_HEARTBEAT_MS = 5000;
-/** Generous so a short app switch (WhatsApp, a call) doesn't end the match. */
+const PRESENCE_HEARTBEAT_MS = 4000;
+/** Short disconnect triggers pause + 30s grace; stale hard drop backs it up cleanly. */
+const PRESENCE_SUSPECTED_DROP_MS = 10000;
 const PRESENCE_STALE_MS = 60000;
 const MATCHMAKING_QUERY_LIMIT = 20;
+const ACTIVE_ROOM_SESSION_KEY = '321_active_online_room_v1';
+
+export function saveActiveRoomSession(code: string | null): void {
+  if (typeof window === 'undefined' || !window.sessionStorage) return;
+  try {
+    if (code) {
+      window.sessionStorage.setItem(ACTIVE_ROOM_SESSION_KEY, normalizeRoomCode(code));
+    } else {
+      window.sessionStorage.removeItem(ACTIVE_ROOM_SESSION_KEY);
+    }
+  } catch {
+    // ignore storage errors
+  }
+}
+
+export function loadActiveRoomSession(): string | null {
+  if (typeof window === 'undefined' || !window.sessionStorage) return null;
+  try {
+    const raw = window.sessionStorage.getItem(ACTIVE_ROOM_SESSION_KEY);
+    if (!raw) return null;
+    const clean = normalizeRoomCode(raw);
+    return isValidRoomCode(clean) ? clean : null;
+  } catch {
+    return null;
+  }
+}
 
 let activeQueueCleanup: (() => void) | null = null;
 
@@ -317,6 +348,67 @@ export function requestRoomRematch(code: string, rawPlayerId: string): Promise<v
   );
 }
 
+export function respondRoomRematch(
+  code: string,
+  rawPlayerId: string,
+  action: 'accept' | 'decline' | 'expire'
+): Promise<void> {
+  return mutateRoom(
+    code,
+    (room) => ({
+      next: applyRoomRematchResponse(room, rawPlayerId, action, getAuthoritativeServerNowMs()),
+      result: undefined,
+    }),
+    undefined
+  );
+}
+
+export function pauseRoomForDisconnect(
+  code: string,
+  disconnectedRawPlayerId: string,
+  remainingMs: number
+): Promise<void> {
+  return mutateRoom(
+    code,
+    (room) => ({
+      next: applyRoomDisconnectGrace(
+        room,
+        disconnectedRawPlayerId,
+        remainingMs,
+        getAuthoritativeServerNowMs()
+      ),
+      result: undefined,
+    }),
+    undefined
+  );
+}
+
+export function resumeRoomFromDisconnect(code: string, returningRawPlayerId: string): Promise<void> {
+  return mutateRoom(
+    code,
+    (room) => ({
+      next: applyRoomResumeFromDisconnect(
+        room,
+        returningRawPlayerId,
+        getAuthoritativeServerNowMs()
+      ),
+      result: undefined,
+    }),
+    undefined
+  );
+}
+
+export function forfeitRoomAfterDisconnectGrace(code: string): Promise<void> {
+  return mutateRoom(
+    code,
+    (room) => ({
+      next: applyRoomDisconnectForfeit(room, getAuthoritativeServerNowMs()),
+      result: undefined,
+    }),
+    undefined
+  );
+}
+
 /** Deletes the room; the other device's listener receives `null` and leaves. */
 export async function deleteRoom(code: string): Promise<void> {
   const clean = normalizeRoomCode(code);
@@ -338,12 +430,15 @@ export async function deleteRoom(code: string): Promise<void> {
 export function startRoomPresence(params: {
   code: string;
   playerKey: string;
+  onOpponentSuspectedDrop?: (oppKey: string) => void;
+  onOpponentResumed?: (oppKey: string) => void;
   onOpponentLost: () => void;
 }): () => void {
   const ref = roomRef(params.code);
   const presencePath = new FieldPath('presence', params.playerKey);
   let stopped = false;
   let lostFired = false;
+  let suspectedFired = false;
   let roomState: RoomState | null = null;
   let oppKey: string | null = null;
   let oppLastValue: number | undefined;
@@ -368,12 +463,17 @@ export function startRoomPresence(params: {
         oppKey = nextOpp;
         oppLastValue = undefined;
         oppLastChangeAt = Date.now();
+        suspectedFired = false;
       }
       if (oppKey) {
         const value = room.presence?.[oppKey];
         if (value !== oppLastValue) {
           oppLastValue = value;
           oppLastChangeAt = Date.now();
+          if (suspectedFired) {
+            suspectedFired = false;
+            params.onOpponentResumed?.(oppKey);
+          }
         }
       }
     },
@@ -383,14 +483,19 @@ export function startRoomPresence(params: {
   const watchdog = setInterval(() => {
     const now = Date.now();
     // This device was suspended (app in background): give the opponent a fresh grace period
-    if (now - lastWatchdogTick > PRESENCE_HEARTBEAT_MS + 2000) oppLastChangeAt = now;
+    if (now - lastWatchdogTick > PRESENCE_HEARTBEAT_MS + 2500) oppLastChangeAt = now;
     lastWatchdogTick = now;
     if (stopped || lostFired || !oppKey || roomState === null || roomState === 'waiting') return;
-    if (now - oppLastChangeAt > PRESENCE_STALE_MS) {
+    const elapsed = now - oppLastChangeAt;
+    if (!suspectedFired && elapsed > PRESENCE_SUSPECTED_DROP_MS) {
+      suspectedFired = true;
+      params.onOpponentSuspectedDrop?.(oppKey);
+    }
+    if (elapsed > PRESENCE_STALE_MS) {
       lostFired = true;
       params.onOpponentLost();
     }
-  }, 2000);
+  }, 1500);
 
   return () => {
     stopped = true;

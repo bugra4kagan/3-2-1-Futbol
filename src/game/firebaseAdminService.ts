@@ -178,23 +178,24 @@ export async function syncAuthoritativeUserStateAdmin(params: {
       await db.collection('users').doc(cleanUid).set(userPayload, { merge: true });
 
       if (usernameKey.length >= 3 && usernameKey.length <= 32) {
+        const publicProfilePayload: Record<string, unknown> = {
+          usernameKey,
+          ownerUid: cleanUid,
+          displayName: displayName.slice(0, 32),
+          avatar: (params.profile?.avatar || '⚽').slice(0, 64),
+          friendCode: params.progression.friendCode || '',
+          hasCrown: safeUnlocked.includes('gift_title_legend'),
+          weeklyPoints: safeWeekly,
+          totalPoints: safeTotal,
+          updatedAt: FieldValue.serverTimestamp(),
+        };
+        if (params.profile?.favoriteClubId) {
+          publicProfilePayload.favoriteClubId = params.profile.favoriteClubId.slice(0, 64);
+        }
         await db
           .collection('publicProfiles')
           .doc(usernameKey)
-          .set(
-            {
-              usernameKey,
-              ownerUid: cleanUid,
-              displayName: displayName.slice(0, 32),
-              avatar: (params.profile?.avatar || '⚽').slice(0, 64),
-              friendCode: params.progression.friendCode || '',
-              hasCrown: safeUnlocked.includes('gift_title_legend'),
-              weeklyPoints: safeWeekly,
-              totalPoints: safeTotal,
-              updatedAt: FieldValue.serverTimestamp(),
-            },
-            { merge: true }
-          );
+          .set(publicProfilePayload, { merge: true });
       }
       syncedFirestore = true;
     } catch {
@@ -205,7 +206,7 @@ export async function syncAuthoritativeUserStateAdmin(params: {
   try {
     const rtdb = getDatabase(adminApp);
     const key = sanitizeRtdbKey(params.accountId || cleanUid || displayName);
-    await rtdb.ref(`leaderboard/${key}`).update({
+    const rtdbPayload: Record<string, unknown> = {
       id: params.accountId,
       ownerUid: cleanUid || params.accountId,
       friendCode: params.progression.friendCode || null,
@@ -214,7 +215,11 @@ export async function syncAuthoritativeUserStateAdmin(params: {
       weeklyPoints: safeWeekly,
       totalPoints: safeTotal,
       updatedAt: Date.now(),
-    });
+    };
+    if (params.profile?.favoriteClubId) {
+      rtdbPayload.favoriteClubId = params.profile.favoriteClubId.slice(0, 64);
+    }
+    await rtdb.ref(`leaderboard/${key}`).update(rtdbPayload);
     syncedRtdb = true;
   } catch {
     syncedRtdb = false;
@@ -606,6 +611,8 @@ function serializeMatchSessionForCloud(session: ServerMatchSession): Record<stri
     accountId: session.accountId,
     minigameType: session.minigameType,
     mode: session.mode,
+    roomCode: session.roomCode || null,
+    matchSeq: session.matchSeq ?? null,
     startedAt: session.startedAt,
     roundsJson: JSON.stringify(session.rounds).slice(0, 240000),
     scoredRounds: Array.from(session.scoredRounds),
@@ -632,6 +639,8 @@ function deserializeMatchSessionFromCloud(data: Record<string, unknown> | undefi
       accountId: data.accountId,
       minigameType: (String(data.minigameType || 'two_clubs') as MinigameType),
       mode: String(data.mode || 'solo'),
+      roomCode: typeof data.roomCode === 'string' && data.roomCode ? data.roomCode : undefined,
+      matchSeq: typeof data.matchSeq === 'number' && Number.isFinite(data.matchSeq) ? data.matchSeq : undefined,
       startedAt: Number(data.startedAt) || Date.now(),
       rounds: Array.isArray(rounds) ? rounds : [],
       scoredRounds: new Set<number>(scoredArr),

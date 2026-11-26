@@ -4,7 +4,9 @@ import {
   normalizeText,
   levenshteinDistance,
   isFuzzyMatch,
+  isAmbiguousSharedSurname,
   validateAnswerForPairing,
+  validateAnswerForPlayerIds,
 } from './validator';
 import { MATCH_PAIRINGS } from './database';
 
@@ -97,5 +99,55 @@ test('Galatasaray vs Fenerbahce accepts Burak Yilmaz and Batshuayi', () => {
   const resBats = validateAnswerForPairing('Batshuayi', gsFb);
   assert.equal(resBats.isValid, true);
   assert.equal(resBats.player?.id, 'michy_batshuayi');
+});
+
+test('normalizeText handles Turkish I/İ/ı/i and all international diacritics identically', () => {
+  assert.equal(normalizeText('Sørloth'), normalizeText('Sorloth'));
+  assert.equal(normalizeText('João Félix'), normalizeText('Joao Felix'));
+  assert.equal(normalizeText('İlkay Gündoğan'), normalizeText('Ilkay Gundogan'));
+  assert.equal(normalizeText('Mesut Özil'), normalizeText('Mesut Ozil'));
+  assert.equal(normalizeText('Kylian Mbappé'), normalizeText('Kylian Mbappe'));
+  assert.equal(normalizeText('Luka Modrić'), normalizeText('Luka Modric'));
+  assert.equal(normalizeText('Erling Håland'), normalizeText('Erling Haland'));
+  assert.equal(normalizeText('Wojciech Szczęsny'), normalizeText('Wojciech Szczesny'));
+  assert.equal(normalizeText('İSMAİL IŞIK ısparta'), 'ismail isik isparta');
+});
+
+test('validateAnswerForPlayerIds matches international and Turkish-normalized player names', () => {
+  assert.equal(validateAnswerForPlayerIds('Sorloth', ['alexander_sorloth']).player?.id, 'alexander_sorloth');
+  assert.equal(validateAnswerForPlayerIds('Sørloth', ['alexander_sorloth']).player?.id, 'alexander_sorloth');
+  assert.equal(validateAnswerForPlayerIds('Joao Felix', ['joao_felix']).player?.id, 'joao_felix');
+  assert.equal(validateAnswerForPlayerIds('Ilkay Gundogan', ['ilkay_gundogan']).player?.id, 'ilkay_gundogan');
+  assert.equal(validateAnswerForPlayerIds('Mesut Ozil', ['mesut_ozil']).player?.id, 'mesut_ozil');
+  assert.equal(validateAnswerForPlayerIds('Kylian Mbappe', ['kylian_mbappe']).player?.id, 'kylian_mbappe');
+  assert.equal(validateAnswerForPlayerIds('Luka Modric', ['luka_modric']).player?.id, 'luka_modric');
+  assert.equal(validateAnswerForPlayerIds('Erling Haland', ['erling_haaland']).player?.id, 'erling_haaland');
+  assert.equal(validateAnswerForPlayerIds('Erling Håland', ['erling_haaland']).player?.id, 'erling_haaland');
+  assert.equal(validateAnswerForPlayerIds('Wojciech Szczesny', ['wojciech_szczesny']).player?.id, 'wojciech_szczesny');
+});
+
+test('strict anti-collision blocks partial prefixes and ambiguous shared single surnames', () => {
+  assert.equal(isFuzzyMatch('mert', 'Dries Mertens'), false);
+  assert.equal(validateAnswerForPlayerIds('mert', ['dries_mertens']).isValid, false);
+  assert.equal(validateAnswerForPlayerIds('Mertens', ['dries_mertens']).isValid, true);
+
+  assert.equal(isAmbiguousSharedSurname('Silva'), true);
+  assert.equal(isAmbiguousSharedSurname('Torres'), true);
+  assert.equal(isAmbiguousSharedSurname('Dembele'), true);
+
+  // Bare shared surname must not blindly match a specific player
+  assert.equal(validateAnswerForPlayerIds('Silva', ['thiago_silva']).isValid, false);
+  assert.equal(validateAnswerForPlayerIds('Torres', ['fernando_torres']).isValid, false);
+  assert.equal(validateAnswerForPlayerIds('Dembele', ['ousmane_dembele']).isValid, false);
+  assert.equal(validateAnswerForPlayerIds('Martinez', ['lautaro_martinez']).isValid, false);
+
+  // Wrong first name with shared surname must also be rejected
+  assert.equal(validateAnswerForPlayerIds('Thiago Silva', ['david_silva']).isValid, false);
+  assert.equal(validateAnswerForPlayerIds('Fernando Torres', ['ferran_torres']).isValid, false);
+  assert.equal(validateAnswerForPlayerIds('Ousmane Dembele', ['moussa_dembele_fr']).isValid, false);
+
+  // Explicit full name matches accurately
+  assert.equal(validateAnswerForPlayerIds('Thiago Silva', ['thiago_silva']).player?.id, 'thiago_silva');
+  assert.equal(validateAnswerForPlayerIds('Ferran Torres', ['ferran_torres']).player?.id, 'ferran_torres');
 });
 

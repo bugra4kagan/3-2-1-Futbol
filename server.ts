@@ -689,7 +689,7 @@ app.post('/api/validate', (req, res) => {
 // ── Sunucu Doğrulamalı Maç Oturumu & Ödül İşlemleri ──
 app.post('/api/matches/start', async (req, res) => {
   if (!enforceRateLimit(accountWriteLimiter, req, res)) return;
-  const { accountId, minigameType, mode, roundIds } = req.body || {};
+  const { accountId, minigameType, mode, roundIds, roomCode, matchSeq } = req.body || {};
   const cleanId = String(accountId || '').trim().slice(0, 64);
   if (!cleanId) {
     return res.status(400).json({ ok: false, error: 'Geçersiz oyuncu kimliği.' });
@@ -702,6 +702,8 @@ app.post('/api/matches/start', async (req, res) => {
     accountId: cleanId,
     minigameType: String(minigameType || 'two_clubs'),
     mode: String(mode || 'solo'),
+    roomCode: typeof roomCode === 'string' ? roomCode : undefined,
+    matchSeq: typeof matchSeq === 'number' ? matchSeq : undefined,
     roundIds: Array.isArray(roundIds) ? roundIds : undefined,
   });
   res.json({
@@ -776,9 +778,17 @@ app.post('/api/matches/complete', async (req, res) => {
     if (!roomCheck.ok) {
       return res.status(403).json({ ok: false, error: roomCheck.error });
     }
+    const opponentServerScore = serverMatchLedger.findOpponentVerifiedScore(
+      cleanRoomCode,
+      roomCheck.matchSeq,
+      cleanId
+    );
     roomVerifiedScores = {
       playerScore: roomCheck.playerScore,
-      opponentScore: roomCheck.opponentScore,
+      opponentScore:
+        opponentServerScore !== null
+          ? Math.max(roomCheck.opponentScore, opponentServerScore)
+          : roomCheck.opponentScore,
     };
     roomClaimKey = `${cleanRoomCode}:${roomCheck.matchSeq}:${cleanId}`;
   }

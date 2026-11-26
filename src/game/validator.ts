@@ -14,7 +14,7 @@ export function normalizeText(text: string): string {
 
   let normalized = text.trim();
 
-  // Turkish character mapping
+  // Turkish & European special character mapping before NFD decomposition
   normalized = normalized
     .replace(/İ/g, 'i')
     .replace(/I/g, 'i')
@@ -30,7 +30,11 @@ export function normalizeText(text: string): string {
     .replace(/Ç/g, 'c')
     .replace(/ç/g, 'c')
     .replace(/[øØ]/g, 'o')
+    .replace(/[åÅ]/g, 'a')
     .replace(/[æÆ]/g, 'ae')
+    .replace(/[œŒ]/g, 'oe')
+    .replace(/[đĐ]/g, 'd')
+    .replace(/[łŁ]/g, 'l')
     .replace(/ß/g, 'ss');
 
   // Decompose accents & remove combining diacritical marks
@@ -81,26 +85,77 @@ export function levenshteinDistance(s1: string, s2: string): number {
 
 /**
  * Checks if input is an exact or fuzzy match for a target token/alias.
- * Allows 1 typo for words of length 4-7, and 2 typos for words > 7.
+ * Uses word-boundary token alignment so partial prefixes ("mert" -> "mertens")
+ * and wrong first names ("Thiago Silva" -> "silva" / "Fernando Torres" -> "Ferran Torres")
+ * cannot wrongly match another footballer.
  */
 export function isFuzzyMatch(userInput: string, targetAlias: string): boolean {
   const cleanUser = normalizeText(userInput);
   const cleanTarget = normalizeText(targetAlias);
 
   if (!cleanUser || !cleanTarget) return false;
-
-  // Exact match
   if (cleanUser === cleanTarget) return true;
 
-  // User input matches target when prefix or suffix is included
-  if (cleanUser.length >= 4 && cleanTarget.includes(cleanUser)) return true;
-  if (cleanTarget.length >= 4 && cleanUser.includes(cleanTarget)) return true;
+  const userTokens = cleanUser.split(' ');
+  const targetTokens = cleanTarget.split(' ');
 
-  // Levenshtein threshold based on length
-  const maxDistance = cleanTarget.length <= 4 ? 0 : cleanTarget.length <= 7 ? 1 : 2;
-  const distance = levenshteinDistance(cleanUser, cleanTarget);
+  if (userTokens.length !== targetTokens.length) {
+    return false;
+  }
 
-  return distance <= maxDistance;
+  if (userTokens.length === 1) {
+    const maxDistance = cleanTarget.length <= 4 ? 0 : cleanTarget.length <= 7 ? 1 : 2;
+    return levenshteinDistance(cleanUser, cleanTarget) <= maxDistance;
+  }
+
+  let totalDistance = 0;
+  for (let i = 0; i < targetTokens.length; i++) {
+    const ut = userTokens[i];
+    const tt = targetTokens[i];
+    if (ut === tt) continue;
+    const isLastToken = i === targetTokens.length - 1;
+    const tokenMaxDistance = isLastToken
+      ? tt.length <= 4
+        ? 0
+        : tt.length <= 7
+        ? 1
+        : 2
+      : tt.length <= 5
+      ? 0
+      : 1;
+    const dist = levenshteinDistance(ut, tt);
+    if (dist > tokenMaxDistance) return false;
+    totalDistance += dist;
+  }
+
+  const maxTotalDistance = cleanTarget.length <= 7 ? 1 : 2;
+  return totalDistance <= maxTotalDistance;
+}
+
+let cachedSharedSurnames: Set<string> | null = null;
+
+function getSharedSurnameSet(): Set<string> {
+  if (cachedSharedSurnames) return cachedSharedSurnames;
+  const counts = new Map<string, number>();
+  for (const player of Object.values(PLAYERS)) {
+    const tokens = normalizeText(player.name).split(' ').filter(Boolean);
+    if (tokens.length < 2) continue;
+    const lastToken = tokens[tokens.length - 1];
+    if (!lastToken || lastToken.length < 2) continue;
+    counts.set(lastToken, (counts.get(lastToken) ?? 0) + 1);
+  }
+  const shared = new Set<string>();
+  for (const [surname, count] of counts.entries()) {
+    if (count >= 2) shared.add(surname);
+  }
+  cachedSharedSurnames = shared;
+  return shared;
+}
+
+export function isAmbiguousSharedSurname(singleToken: string): boolean {
+  const norm = normalizeText(singleToken);
+  if (!norm || norm.includes(' ')) return false;
+  return getSharedSurnameSet().has(norm);
 }
 
 export interface ValidationResult {
@@ -119,21 +174,46 @@ export function validateAnswerForPlayerIds(
     return { isValid: false, player: null, normalizedInput: norm };
   }
 
+  const isSingleToken = !norm.includes(' ');
+  const sharedSurnames = getSharedSurnameSet();
+  const isBareSharedSurname = isSingleToken && sharedSurnames.has(norm);
+
   const eligiblePlayers = validPlayerIds
     .map((id) => PLAYERS[id])
     .filter(Boolean);
 
   for (const player of eligiblePlayers) {
+    const normFullName = normalizeText(player.name);
+    const isTrueMononym = !normFullName.includes(' ') && normFullName === norm;
+
+    if (isBareSharedSurname && !isTrueMononym) {
+      continue;
+    }
+
     if (isFuzzyMatch(norm, player.name)) {
       return { isValid: true, player, matchedAlias: player.name, normalizedInput: norm };
     }
 
-    if (player.commonName && isFuzzyMatch(norm, player.commonName)) {
-      return { isValid: true, player, matchedAlias: player.commonName, normalizedInput: norm };
+    if (player.commonName) {
+      const normCommon = normalizeText(player.commonName);
+      const commonBlocked =
+        isSingleToken &&
+        !isTrueMononym &&
+        !normCommon.includes(' ') &&
+        sharedSurnames.has(normCommon);
+      if (!commonBlocked && isFuzzyMatch(norm, player.commonName)) {
+        return { isValid: true, player, matchedAlias: player.commonName, normalizedInput: norm };
+      }
     }
 
     for (const alias of player.aliases) {
-      if (isFuzzyMatch(norm, alias)) {
+      const normAlias = normalizeText(alias);
+      const aliasBlocked =
+        isSingleToken &&
+        !isTrueMononym &&
+        !normAlias.includes(' ') &&
+        sharedSurnames.has(normAlias);
+      if (!aliasBlocked && isFuzzyMatch(norm, alias)) {
         return { isValid: true, player, matchedAlias: alias, normalizedInput: norm };
       }
     }

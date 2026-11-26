@@ -9,9 +9,16 @@ import {
   applyRoomAdvance,
   applyRoomAnswer,
   applyRoomBeginRound,
+  applyRoomDisconnectForfeit,
+  applyRoomDisconnectGrace,
   applyRoomExpire,
   applyRoomJoin,
   applyRoomRematch,
+  applyRoomRematchResponse,
+  applyRoomResumeFromDisconnect,
+  DISCONNECT_GRACE_TIMEOUT_MS,
+  REMATCH_OFFER_TIMEOUT_MS,
+  REMATCH_REQUEST_COOLDOWN_MS,
   createRoomRecord,
   getRoomPhase,
   getRoomPhaseKey,
@@ -231,21 +238,84 @@ test('advance goes to next countdown, and to game over at 3 points', () => {
   assert.equal(over?.state, 'game_over');
 });
 
-test('rematch waits for both votes, then resets into a new match', () => {
+test('rematch waits for both votes, then resets into a new match excluding prior roundIds', () => {
   const room = playingRoom();
   const over: RoomRecord = { ...room, state: 'game_over', scores: { u_host01: 3, u_guest02: 1 } };
   const oneVote = applyRoomRematch(over, host.id, NOW + 1000, 7);
   assert.ok(oneVote);
   assert.equal(oneVote.state, 'game_over');
   assert.equal(oneVote.players.u_host01.rematchRequested, true);
+  assert.equal(oneVote.rematchOffer?.status, 'pending');
+  assert.equal(oneVote.rematchOffer?.expiresAt, NOW + 1000 + REMATCH_OFFER_TIMEOUT_MS);
 
-  const both = applyRoomRematch(oneVote, guest.id, NOW + 2000, 7);
+  // Anti-spam cooldown rejects repeated requests from same player
+  assert.equal(applyRoomRematch(oneVote, host.id, NOW + 2000, 8), null);
+
+  const both = applyRoomRematch(oneVote, guest.id, NOW + 2000, 777);
   assert.ok(both);
   assert.equal(both.state, 'countdown');
   assert.equal(both.matchSeq, over.matchSeq + 1);
   assert.equal(both.currentRoundIndex, 0);
   assert.deepEqual(both.scores, { u_host01: 0, u_guest02: 0 });
   assert.equal(both.players.u_guest02.rematchRequested, false);
+  assert.equal(both.rematchOffer, null);
+  const oldSet = new Set(over.roundIds);
+  assert.equal(both.roundIds.some((id) => oldSet.has(id)), false);
+});
+
+test('rematch decline and 20s timeout expire cleanly without restarting', () => {
+  const room = playingRoom();
+  const over: RoomRecord = { ...room, state: 'game_over', scores: { u_host01: 3, u_guest02: 2 } };
+
+  const offered = applyRoomRematch(over, host.id, NOW + 1000, 11);
+  assert.ok(offered);
+
+  const declined = applyRoomRematchResponse(offered, guest.id, 'decline', NOW + 3000);
+  assert.ok(declined);
+  assert.equal(declined.state, 'game_over');
+  assert.equal(declined.rematchOffer?.status, 'declined');
+  assert.equal(declined.players.u_host01.rematchRequested, false);
+  // Cooldown prevents instant re-spam before REMATCH_REQUEST_COOLDOWN_MS elapses
+  assert.equal(applyRoomRematch(declined, host.id, NOW + 3500, 12), null);
+  assert.ok(applyRoomRematch(declined, host.id, NOW + 3000 + REMATCH_REQUEST_COOLDOWN_MS + 500, 12));
+
+  // Timeout after 20s marks offer expired
+  const expiredEarly = applyRoomRematchResponse(offered, guest.id, 'expire', NOW + 1000 + REMATCH_OFFER_TIMEOUT_MS - 1);
+  assert.equal(expiredEarly, null);
+  const expired = applyRoomRematchResponse(offered, guest.id, 'expire', NOW + 1000 + REMATCH_OFFER_TIMEOUT_MS + 1);
+  assert.ok(expired);
+  assert.equal(expired.state, 'game_over');
+  assert.equal(expired.rematchOffer?.status, 'expired');
+  assert.equal(DISCONNECT_GRACE_TIMEOUT_MS, 30000);
+});
+
+test('30s disconnect grace pauses timer, restores room without state change, and forfeits after 30s', () => {
+  const room = playingRoom();
+  const baseRoundStartedAt = room.roundStartedAt!;
+
+  // Trigger 30s grace when guest drops
+  const paused = applyRoomDisconnectGrace(room, guest.id, 11000, NOW + 5000);
+  assert.ok(paused);
+  // Firestore rule compatibility: room.state remains in allowed enum
+  assert.equal(paused.state, 'playing');
+  assert.equal(paused.disconnectGrace?.disconnectedKey, 'u_guest02');
+  assert.equal(paused.disconnectGrace?.expiresAt, NOW + 5000 + DISCONNECT_GRACE_TIMEOUT_MS);
+
+  // Cannot forfeit before 30s expires
+  assert.equal(applyRoomDisconnectForfeit(paused, NOW + 25000), null);
+
+  // Reconnect at +12s shifts timer forward cleanly so player doesn't lose elapsed pause seconds
+  const resumed = applyRoomResumeFromDisconnect(paused, guest.id, NOW + 17000);
+  assert.ok(resumed);
+  assert.equal(resumed.disconnectGrace, null);
+  assert.equal(resumed.roundStartedAt, baseRoundStartedAt + 12000);
+
+  // If disconnected player stays offline >30s, connected host wins cleanly by <= +1 step (Firestore rule compliant)
+  const forfeited = applyRoomDisconnectForfeit(paused, NOW + 5000 + DISCONNECT_GRACE_TIMEOUT_MS + 100);
+  assert.ok(forfeited);
+  assert.equal(forfeited.state, 'game_over');
+  assert.equal(forfeited.scores.u_host01, 1);
+  assert.equal(forfeited.disconnectGrace, null);
 });
 
 test('normalizeRoomRecord fills defaults for partial documents', () => {

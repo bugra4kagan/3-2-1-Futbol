@@ -5,7 +5,8 @@ import {
   SILHOUETTE_CHALLENGES,
   XOX_BOARDS,
 } from './minigamesData';
-import { isSouthAmericaLocalOnlyPlayer } from './minigameEngine';
+import { generateMinigameRounds, getRoundItemId } from './minigameEngine';
+import { DifficultyProfile } from './questionDifficulty';
 import { serializeAnimeAvatar, DEFAULT_ANIME_AVATAR_CONFIG } from './animeAvatarCatalog';
 import {
   BotDifficulty,
@@ -47,33 +48,16 @@ export function createSeededRng(seed: number): () => number {
 export function generateSeededRoundIds(
   minigameType: MinigameType,
   count: number = 12,
-  seed: number = Date.now()
+  seed: number = Date.now(),
+  excludeIds: ReadonlySet<string> | readonly string[] = [],
+  profile: DifficultyProfile = 'online'
 ): string[] {
   const rng = createSeededRng(seed);
-  let poolIds: string[] = [];
-
-  if (minigameType === 'two_clubs') {
-    poolIds = MATCH_PAIRINGS.map((p) => p.id);
-  } else if (minigameType === 'silhouette') {
-    poolIds = SILHOUETTE_CHALLENGES.filter(
-      (s) => !isSouthAmericaLocalOnlyPlayer(PLAYERS[s.playerId])
-    ).map((s) => s.id);
-  } else if (minigameType === 'career') {
-    poolIds = CAREER_CHALLENGES.filter(
-      (c) => !isSouthAmericaLocalOnlyPlayer(PLAYERS[c.playerId])
-    ).map((c) => c.id);
-  } else if (minigameType === 'country_club') {
-    poolIds = COUNTRY_CLUB_CHALLENGES.map((cc) => cc.id);
-  } else {
-    poolIds = XOX_BOARDS.map((b) => b.id);
-  }
-
-  const copy = [...poolIds];
-  for (let i = copy.length - 1; i > 0; i--) {
-    const j = Math.floor(rng() * (i + 1));
-    [copy[i], copy[j]] = [copy[j], copy[i]];
-  }
-  return copy.slice(0, Math.min(count, copy.length));
+  const rounds = generateMinigameRounds(minigameType, count, excludeIds, {
+    profile,
+    rng,
+  });
+  return rounds.map((r) => getRoundItemId(r)).filter(Boolean);
 }
 
 export function resolveRoundPayloadById(

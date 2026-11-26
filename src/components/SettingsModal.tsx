@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import {
-  Bell,
   BookOpen,
   CloudCheck,
   ExternalLink,
@@ -14,6 +13,7 @@ import {
   RotateCcw,
   Settings,
   ShieldCheck,
+  Smartphone,
   Trash2,
   Volume2,
   VolumeX,
@@ -25,6 +25,7 @@ import { LANGUAGE_OPTIONS } from '../game/i18n';
 import { UiTheme } from '../game/themeEngine';
 import { useLanguage } from '../game/LanguageContext';
 import { sounds } from '../utils/audio';
+import { haptics, isHapticsEnabled, setHapticsEnabled } from '../utils/haptics';
 import { GameLogoAppIconPreview } from './GameLogo';
 
 export interface CloudUserSummary {
@@ -33,8 +34,6 @@ export interface CloudUserSummary {
   displayName: string | null;
   emailVerified: boolean;
 }
-
-export const REMINDER_PREF_STORAGE_KEY = '321_reminder_enabled';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -84,15 +83,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 }) => {
   const { language, setLanguage, t } = useLanguage();
   const [busyProvider, setBusyProvider] = useState<'google' | null>(null);
-  const [reminderEnabled, setReminderEnabled] = useState<boolean>(() => {
-    if (typeof window === 'undefined') return false;
-    try {
-      return localStorage.getItem(REMINDER_PREF_STORAGE_KEY) === 'true';
-    } catch {
-      return false;
-    }
-  });
-  const [reminderFeedback, setReminderFeedback] = useState<string | null>(null);
+  const [hapticsOn, setHapticsOn] = useState<boolean>(() => isHapticsEnabled());
   const [restoreFeedback, setRestoreFeedback] = useState<{
     type: 'ok' | 'err';
     text: string;
@@ -240,6 +231,52 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               }`}
             >
               {isMuted ? t('soundOffLabel') : t('soundOnLabel')}
+            </button>
+          </section>
+
+          {/* 1.6 Haptic Vibration Toggle */}
+          <section className="p-3.5 rounded-2xl bg-slate-950/85 border border-slate-800 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <div
+                className={`w-10 h-10 rounded-xl border flex items-center justify-center shrink-0 ${
+                  hapticsOn
+                    ? 'bg-emerald-500/15 border-emerald-400/45 text-emerald-300'
+                    : 'bg-slate-900 border-slate-700 text-slate-400'
+                }`}
+              >
+                <Smartphone className="w-5 h-5" />
+              </div>
+              <div className="min-w-0">
+                <span className="block text-sm font-black text-white">
+                  Titreşim
+                </span>
+                <span className="block text-[11px] text-slate-400 leading-snug">
+                  {hapticsOn
+                    ? 'Doğru/yanlış cevap, geri sayım ve galibiyette titreşim açık.'
+                    : 'Dokunsal titreşim geri bildirimi kapalı.'}
+                </span>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              data-testid="settings-haptics-toggle"
+              aria-pressed={hapticsOn}
+              onClick={() => {
+                const next = !hapticsOn;
+                setHapticsEnabled(next);
+                setHapticsOn(next);
+                if (next) {
+                  haptics.tap();
+                }
+              }}
+              className={`px-3.5 py-2 rounded-xl border text-xs font-black transition cursor-pointer shrink-0 active:scale-95 ${
+                hapticsOn
+                  ? 'bg-emerald-500 hover:bg-emerald-400 border-emerald-300 text-slate-950 shadow-md shadow-emerald-500/20'
+                  : 'bg-slate-900 hover:bg-slate-800 border-slate-700 text-slate-300'
+              }`}
+            >
+              {hapticsOn ? 'Açık' : 'Kapalı'}
             </button>
           </section>
 
@@ -459,78 +496,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 )}
               </div>
             </div>
-          </section>
-
-          {/* 4. Daily Streak & Lucky Wheel Notification Reminder */}
-          <section className="p-3.5 rounded-2xl bg-slate-950/85 border border-slate-800 space-y-2">
-            <div className="flex items-center justify-between gap-3">
-              <div className="flex items-center gap-3 min-w-0">
-                <div
-                  className={`w-10 h-10 rounded-xl border flex items-center justify-center shrink-0 ${
-                    reminderEnabled
-                      ? 'bg-amber-500/15 border-amber-400/45 text-amber-300'
-                      : 'bg-slate-900 border-slate-700 text-slate-400'
-                  }`}
-                >
-                  <Bell className="w-5 h-5" />
-                </div>
-                <div className="min-w-0">
-                  <span className="block text-sm font-black text-white">
-                    Günlük Seri &amp; Çark Hatırlatıcısı
-                  </span>
-                  <span className="block text-[11px] text-slate-400 leading-snug">
-                    {reminderEnabled
-                      ? 'Günlük ödül ve 24 saatlik Şans Çarkı hazır olduğunda hatırlatılır.'
-                      : 'İsteğe bağlı günlük seri ve şans çarkı hatırlatmalarını aç.'}
-                  </span>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                data-testid="settings-reminder-toggle"
-                aria-pressed={reminderEnabled}
-                onClick={async () => {
-                  const next = !reminderEnabled;
-                  if (next && typeof window !== 'undefined' && 'Notification' in window) {
-                    try {
-                      const perm = await Notification.requestPermission();
-                      if (perm === 'denied') {
-                        setReminderFeedback(
-                          'Tarayıcı/cihaz bildirim izni kapalı; uygulama içi hatırlatma yine aktif edildi.'
-                        );
-                      } else {
-                        setReminderFeedback('Günlük Seri & Şans Çarkı hatırlatıcısı açıldı!');
-                      }
-                    } catch {
-                      setReminderFeedback('Günlük hatırlatıcı tercihlerin kaydedildi.');
-                    }
-                  } else {
-                    setReminderFeedback(
-                      next
-                        ? 'Günlük Seri & Şans Çarkı hatırlatıcısı açıldı!'
-                        : 'Günlük hatırlatıcılar kapatıldı.'
-                    );
-                  }
-                  setReminderEnabled(next);
-                  try {
-                    localStorage.setItem(REMINDER_PREF_STORAGE_KEY, String(next));
-                  } catch {
-                    // ignore
-                  }
-                }}
-                className={`px-3.5 py-2 rounded-xl border text-xs font-black transition cursor-pointer shrink-0 active:scale-95 ${
-                  reminderEnabled
-                    ? 'bg-amber-400 hover:bg-amber-300 border-amber-300 text-slate-950'
-                    : 'bg-slate-900 hover:bg-slate-800 border-slate-700 text-slate-300'
-                }`}
-              >
-                {reminderEnabled ? 'Açık' : 'Kapalı'}
-              </button>
-            </div>
-            {reminderFeedback && (
-              <p className="text-[11px] font-semibold text-amber-300/90">{reminderFeedback}</p>
-            )}
           </section>
 
           {/* 5. Restore Purchases & Privacy Links */}

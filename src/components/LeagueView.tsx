@@ -24,7 +24,9 @@ import {
   getLeagueTierInfo,
   getTimeUntilSundaySeasonEnd,
 } from '../game/retentionEngine';
+import { CLUBS } from '../game/database';
 import { sanitizePublicDisplayName } from '../game/usernameFilter';
+import { ClubBadge } from './ClubBadge';
 import { PlayerAvatar } from './PlayerAvatar';
 import { fetchBackendWithWakeupRetry } from '../services/backendClient';
 
@@ -546,9 +548,22 @@ export const LeagueView: React.FC<LeagueViewProps> = ({
                   }
                 />
 
-                {/* Name & Subtitle */}
+                {/* Name & Favorite Team Crest & Subtitle */}
                 <div className="min-w-0 flex-1 text-left">
                   <div className="flex items-center gap-1.5">
+                    {entry.favoriteClubId && CLUBS[entry.favoriteClubId] && (
+                      <span
+                        data-testid={`league-row-club-${rank}`}
+                        className="inline-flex items-center justify-center shrink-0"
+                        title={CLUBS[entry.favoriteClubId].name}
+                      >
+                        <ClubBadge
+                          club={CLUBS[entry.favoriteClubId]}
+                          size="xs"
+                          className="!w-4 !h-4 sm:!w-[18px] sm:!h-[18px]"
+                        />
+                      </span>
+                    )}
                     <span className="font-bold text-sm sm:text-base text-white truncate">
                       {entry.name}
                     </span>

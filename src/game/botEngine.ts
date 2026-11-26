@@ -1,11 +1,13 @@
 import { BotDifficulty, MinigameRoundPayload, MinigameType, Player, XoxCellMark } from './types';
 import { getRoundValidPlayerIds } from './minigameEngine';
+import { QuestionDifficulty } from './questionDifficulty';
 import { PLAYERS_LIST } from './database';
 
 export interface BotRoundPlan {
   minDelayMs: number;
   maxDelayMs: number;
   accuracy: number;
+  passRate: number;
 }
 
 export interface BotTierMetadata {
@@ -25,6 +27,7 @@ export interface CentralizedBotConfig {
   maxDelayMs: number;
   accuracy: number;
   accuracyPct: number;
+  passRate: number;
   subtitle: string;
   delayLabel: string;
   xoxMinDelayMs: number;
@@ -37,43 +40,46 @@ export const BOT_CONFIG: Record<BotDifficulty, CentralizedBotConfig> = {
     id: 'easy',
     title: 'Çırak',
     emoji: '🌱',
-    minDelayMs: 2800,
-    maxDelayMs: 5000,
-    accuracy: 0.80,
-    accuracyPct: 80,
-    subtitle: '2,8–5 sn • %80 isabet',
-    delayLabel: '2,8–5 sn',
-    xoxMinDelayMs: 2200,
-    xoxMaxDelayMs: 3800,
-    xoxMissRate: 0.20,
+    minDelayMs: 5000,
+    maxDelayMs: 10000,
+    accuracy: 0.55,
+    accuracyPct: 55,
+    passRate: 0.16,
+    subtitle: '5–10 sn • %55 isabet',
+    delayLabel: '5–10 sn',
+    xoxMinDelayMs: 4200,
+    xoxMaxDelayMs: 8500,
+    xoxMissRate: 0.45,
   },
   medium: {
     id: 'medium',
     title: 'Şampiyon',
     emoji: '🏆',
-    minDelayMs: 1800,
-    maxDelayMs: 3500,
-    accuracy: 0.92,
-    accuracyPct: 92,
-    subtitle: '1,8–3,5 sn • %92 isabet',
-    delayLabel: '1,8–3,5 sn',
-    xoxMinDelayMs: 1500,
-    xoxMaxDelayMs: 2700,
-    xoxMissRate: 0.08,
+    minDelayMs: 3000,
+    maxDelayMs: 8000,
+    accuracy: 0.75,
+    accuracyPct: 75,
+    passRate: 0.08,
+    subtitle: '3–8 sn • %75 isabet',
+    delayLabel: '3–8 sn',
+    xoxMinDelayMs: 2800,
+    xoxMaxDelayMs: 6500,
+    xoxMissRate: 0.25,
   },
   hard: {
     id: 'hard',
     title: 'Efsane',
     emoji: '👑',
-    minDelayMs: 1200,
-    maxDelayMs: 2500,
-    accuracy: 0.98,
-    accuracyPct: 98,
-    subtitle: '1,2–2,5 sn • %98 isabet',
-    delayLabel: '1,2–2,5 sn',
-    xoxMinDelayMs: 1000,
-    xoxMaxDelayMs: 1900,
-    xoxMissRate: 0.02,
+    minDelayMs: 2500,
+    maxDelayMs: 6000,
+    accuracy: 0.90,
+    accuracyPct: 90,
+    passRate: 0.03,
+    subtitle: '2,5–6 sn • %90 isabet',
+    delayLabel: '2,5–6 sn',
+    xoxMinDelayMs: 2200,
+    xoxMaxDelayMs: 5000,
+    xoxMissRate: 0.10,
   },
 };
 
@@ -126,39 +132,70 @@ const XOX_LINES: [number, number][][] = [
 /**
  * Soru zorluğuna (geçerli futbolcu havuzu daraldıkça biraz daha uzun düşünme payı) doğal çarpan döndürür.
  */
-export function computeQuestionDifficultyDelayFactor(validCandidateCount?: number): number {
-  if (typeof validCandidateCount !== 'number' || !Number.isFinite(validCandidateCount)) {
-    return 1;
+export function computeQuestionDifficultyDelayFactor(
+  validCandidateCount?: number,
+  questionDifficulty?: QuestionDifficulty
+): number {
+  let factor = 1;
+  if (typeof validCandidateCount === 'number' && Number.isFinite(validCandidateCount)) {
+    if (validCandidateCount <= 1) factor = 1.14;
+    else if (validCandidateCount <= 3) factor = 1.07;
+    else if (validCandidateCount >= 12) factor = 0.95;
   }
-  if (validCandidateCount <= 1) return 1.15;
-  if (validCandidateCount <= 3) return 1.07;
-  if (validCandidateCount >= 12) return 0.95;
-  return 1;
+  if (questionDifficulty === 'hard') factor *= 1.08;
+  else if (questionDifficulty === 'easy') factor *= 0.96;
+  return Number(factor.toFixed(3));
 }
 
 export function getBotRoundPlan(
   difficulty: BotDifficulty,
   minigameType: MinigameType,
-  validCandidateCount?: number
+  validCandidateCount?: number,
+  questionDifficulty?: QuestionDifficulty
 ): BotRoundPlan {
   const cfg = BOT_CONFIG[difficulty];
-  const factor = computeQuestionDifficultyDelayFactor(validCandidateCount);
+  const hasModifiers =
+    typeof validCandidateCount === 'number' || questionDifficulty !== undefined;
+  const factor = hasModifiers
+    ? computeQuestionDifficultyDelayFactor(validCandidateCount, questionDifficulty)
+    : 1;
 
   if (minigameType === 'silhouette') {
-    const baseMin = difficulty === 'easy' ? 3600 : difficulty === 'hard' ? 1600 : 2300;
-    const baseMax = difficulty === 'easy' ? 6000 : difficulty === 'hard' ? 3000 : 4100;
+    const baseMin = difficulty === 'easy' ? 5500 : difficulty === 'hard' ? 2800 : 3500;
+    const baseMax = difficulty === 'easy' ? 10500 : difficulty === 'hard' ? 6500 : 8500;
     return {
       minDelayMs: Math.round(baseMin * factor),
       maxDelayMs: Math.round(baseMax * factor),
       accuracy: cfg.accuracy,
+      passRate: cfg.passRate,
     };
   }
 
   return {
-    minDelayMs: Math.round(cfg.minDelayMs * factor),
-    maxDelayMs: Math.round(cfg.maxDelayMs * factor),
+    minDelayMs: Math.min(13200, Math.round(cfg.minDelayMs * factor)),
+    maxDelayMs: Math.min(14200, Math.round(cfg.maxDelayMs * factor)),
     accuracy: cfg.accuracy,
+    passRate: cfg.passRate,
   };
+}
+
+export type BotRoundOutcome = 'correct' | 'wrong' | 'pass';
+
+/**
+ * Doğal ve tahmin edilemez bot davranışı:
+ * - İlgili doğruluk oranında (`accuracy`) doğru futbolcu söyler
+ * - Kalan turlarda gerçekçi biçimde ya yanlış tahmin yapar ya da cevap bulamayıp pas geçer (timeout)
+ * - Kullanıcının cevabına göre hile veya önceden belirlenmiş senaryo uygulanmaz.
+ */
+export function decideBotRoundAction(
+  plan: BotRoundPlan,
+  rng: () => number = Math.random
+): BotRoundOutcome {
+  const roll = Math.max(0, Math.min(0.999999, rng()));
+  if (roll < plan.accuracy) return 'correct';
+  const remainingRoll = roll - plan.accuracy;
+  if (remainingRoll < plan.passRate) return 'pass';
+  return 'wrong';
 }
 
 /**

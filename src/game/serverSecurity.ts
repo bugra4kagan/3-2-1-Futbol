@@ -42,6 +42,8 @@ export interface ServerMatchSession {
   accountId: string;
   minigameType: MinigameType;
   mode: string;
+  roomCode?: string;
+  matchSeq?: number;
   startedAt: number;
   rounds: MinigameRoundPayload[];
   scoredRounds: Set<number>;
@@ -125,6 +127,8 @@ export class ServerMatchLedger {
     accountId: string;
     minigameType: string;
     mode: string;
+    roomCode?: string;
+    matchSeq?: number;
     rounds?: MinigameRoundPayload[];
     roundIds?: string[];
     now?: number;
@@ -139,11 +143,21 @@ export class ServerMatchLedger {
       : null;
     const rounds = params.rounds ?? resolvedRounds ?? generateMinigameRounds(cleanType, 10, []);
 
+    const cleanRoomCode = params.roomCode
+      ? String(params.roomCode).trim().toUpperCase().slice(0, 12)
+      : undefined;
+    const cleanMatchSeq =
+      typeof params.matchSeq === 'number' && Number.isFinite(params.matchSeq)
+        ? Math.max(1, Math.round(params.matchSeq))
+        : undefined;
+
     const session: ServerMatchSession = {
       sessionId,
       accountId: String(params.accountId || '').trim().slice(0, 64),
       minigameType: cleanType,
       mode: String(params.mode || 'solo').slice(0, 32),
+      roomCode: cleanRoomCode,
+      matchSeq: cleanMatchSeq,
       startedAt: now,
       rounds,
       scoredRounds: new Set<number>(),
@@ -249,6 +263,27 @@ export class ServerMatchLedger {
       verifiedPlayerScore: session.verifiedPlayerScore,
       matchedName: validation.player?.name,
     };
+  }
+
+  public findOpponentVerifiedScore(
+    roomCode: string,
+    matchSeq: number,
+    selfAccountId: string
+  ): number | null {
+    const cleanCode = String(roomCode || '').trim().toUpperCase();
+    const cleanSelf = String(selfAccountId || '').trim();
+    if (!cleanCode) return null;
+    let best: number | null = null;
+    for (const s of this.sessions.values()) {
+      if (
+        s.roomCode === cleanCode &&
+        (s.matchSeq ?? 1) === matchSeq &&
+        s.accountId !== cleanSelf
+      ) {
+        best = best === null ? s.verifiedPlayerScore : Math.max(best, s.verifiedPlayerScore);
+      }
+    }
+    return best;
   }
 
   public consumeVerifiedMatchSession(params: {

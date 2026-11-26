@@ -201,6 +201,10 @@ export interface MatchRoundHighlight {
   wasClutch?: boolean;
   reason: 'scored' | 'timeout' | 'attempts_exhausted' | 'draw';
   scoreAfter: { p1: number; p2: number };
+  roundPayload?: MinigameRoundPayload;
+  userSubmittedAnswers?: string[];
+  didUserWin?: boolean;
+  xoxBoardSnapshot?: (XoxCellMark | null)[][];
 }
 
 export interface PlayerBadge {

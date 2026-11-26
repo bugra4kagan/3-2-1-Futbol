@@ -675,7 +675,7 @@ export function syncProgressionForToday(
     };
   }
 
-  return updated;
+  return sanitizeBotFriendsProgression(updated);
 }
 
 export function canClaimDailyReward(
@@ -1456,6 +1456,58 @@ export function unlinkSocialAccount(
   };
 }
 
+export function isBotFriendRecord(
+  record:
+    | {
+        id?: string | null;
+        friendCode?: string | null;
+        toPlayerId?: string | null;
+        fromPlayerId?: string | null;
+        toFriendCode?: string | null;
+        fromFriendCode?: string | null;
+        isBot?: boolean | null;
+      }
+    | null
+    | undefined
+): boolean {
+  if (!record) return false;
+  if (record.isBot) return true;
+  const ids = [record.id, record.toPlayerId, record.fromPlayerId];
+  if (ids.some((id) => typeof id === 'string' && /^bot_/i.test(id.trim()))) {
+    return true;
+  }
+  const codes = [record.friendCode, record.toFriendCode, record.fromFriendCode];
+  if (codes.some((code) => typeof code === 'string' && /^BOT(\d+|_|$)/i.test(code.trim()))) {
+    return true;
+  }
+  return false;
+}
+
+export function sanitizeBotFriendsProgression(prog: UserProgression): UserProgression {
+  const cleanFriends = prog.friends.filter((f) => !isBotFriendRecord(f));
+  const cleanIncoming = (prog.incomingFriendRequests ?? []).filter(
+    (r) => !isBotFriendRecord(r)
+  );
+  const cleanOutgoing = (prog.outgoingFriendRequests ?? []).filter(
+    (r) => !isBotFriendRecord(r)
+  );
+
+  if (
+    cleanFriends.length === prog.friends.length &&
+    cleanIncoming.length === (prog.incomingFriendRequests ?? []).length &&
+    cleanOutgoing.length === (prog.outgoingFriendRequests ?? []).length
+  ) {
+    return prog;
+  }
+
+  return {
+    ...prog,
+    friends: cleanFriends,
+    incomingFriendRequests: cleanIncoming,
+    outgoingFriendRequests: cleanOutgoing,
+  };
+}
+
 export function addFriendByCodeOrEntry(
   prog: UserProgression,
   codeOrName: string,
@@ -1464,6 +1516,10 @@ export function addFriendByCodeOrEntry(
   const clean = codeOrName.trim();
   if (clean.length < 2) {
     return { ok: false, error: 'Lütfen geçerli bir arkadaş kodu veya isim gir.', progression: prog };
+  }
+
+  if (/^bot_/i.test(clean) || /^BOT\d{3,}$/i.test(clean)) {
+    return { ok: false, error: 'Bot hesaplara arkadaşlık isteği gönderilemez.', progression: prog };
   }
 
   if (clean.toUpperCase() === prog.friendCode.toUpperCase()) {
@@ -1485,6 +1541,10 @@ export function addFriendByCodeOrEntry(
       (p.friendCode && p.friendCode.toLowerCase() === normalized) ||
       p.name.toLowerCase() === normalized
   );
+
+  if (matchedLive && isBotFriendRecord(matchedLive)) {
+    return { ok: false, error: 'Bot hesaplara arkadaşlık isteği gönderilemez.', progression: prog };
+  }
 
   const newFriend: FriendEntry = matchedLive
     ? {
@@ -1650,6 +1710,15 @@ export function resolveFriendTargetCandidate(
   const resolvedAvatar = String(matchedLive?.avatar || objInput?.avatar || '⚽');
 
   if (
+    objInput?.isBot ||
+    isBotFriendRecord(matchedLive) ||
+    isBotFriendRecord({ id: resolvedId, friendCode: resolvedCode }) ||
+    /^BOT\d{3,}$/i.test(rawInput.trim())
+  ) {
+    return { ok: false, error: 'Bot hesaplara arkadaşlık isteği gönderilemez.' };
+  }
+
+  if (
     isAlreadyFriend(prog, { id: resolvedId, friendCode: resolvedCode, name: resolvedName })
   ) {
     return { ok: false, error: `${resolvedName} zaten arkadaş listende!` };
@@ -1671,10 +1740,10 @@ export function resolveFriendTargetCandidate(
       weeklyPoints: Number(matchedLive?.weeklyPoints ?? objInput?.weeklyPoints ?? 0),
       totalPoints: Number(matchedLive?.totalPoints ?? objInput?.totalPoints ?? 0),
       subtitle: String(
-        matchedLive?.subtitle || objInput?.subtitle || (objInput?.isBot ? 'Bot Rakip' : 'Çevrim içi oyuncu')
+        matchedLive?.subtitle || objInput?.subtitle || 'Çevrim içi oyuncu'
       ),
       isOnline: Boolean(matchedLive || objInput?.isOnline),
-      isBot: Boolean(objInput?.isBot || resolvedId.startsWith('bot_')),
+      isBot: false,
     },
   };
 }
@@ -1690,6 +1759,10 @@ export function sendFriendRequest(
   request?: FriendRequestEntry;
   progression: UserProgression;
 } {
+  if (isBotFriendRecord(target)) {
+    return { ok: false, error: 'Bot hesaplara arkadaşlık isteği gönderilemez.', progression: prog };
+  }
+
   if (target.id === sender.id || (target.friendCode && target.friendCode.toUpperCase() === prog.friendCode.toUpperCase())) {
     return { ok: false, error: 'Kendine arkadaşlık isteği gönderemezsin!', progression: prog };
   }
@@ -1750,6 +1823,10 @@ export function receiveIncomingFriendRequest(
   prog: UserProgression,
   request: FriendRequestEntry
 ): UserProgression {
+  if (isBotFriendRecord(request)) {
+    return prog;
+  }
+
   if (
     isAlreadyFriend(prog, {
       id: request.fromPlayerId,
@@ -1969,21 +2046,24 @@ export function buildLeagueStandings(
     const liveMap = new Map(liveServerPlayers.map((p) => [p.id, p]));
     pool = [
       selfEntry,
-      ...prog.friends.map((f) => {
-        const fresh = liveMap.get(f.id);
-        return {
-          ...(fresh || {}),
-          id: f.id,
-          friendCode: fresh?.friendCode || f.friendCode,
-          name: sanitizePublicDisplayName(fresh ? fresh.name : f.name, f.id),
-          avatar: fresh ? fresh.avatar : f.avatar,
-          weeklyPoints: fresh ? fresh.weeklyPoints : f.weeklyPoints,
-          totalPoints: fresh ? fresh.totalPoints : f.totalPoints,
-          subtitle: fresh ? fresh.subtitle : f.statusText,
-          hasCrown: fresh?.hasCrown,
-          isFriend: true,
-        };
-      }),
+      ...prog.friends
+        .filter((f) => !isBotFriendRecord(f))
+        .map((f) => {
+          const fresh = liveMap.get(f.id);
+          return {
+            ...(fresh || {}),
+            id: f.id,
+            friendCode: fresh?.friendCode || f.friendCode,
+            name: sanitizePublicDisplayName(fresh ? fresh.name : f.name, f.id),
+            avatar: fresh ? fresh.avatar : f.avatar,
+            favoriteClubId: fresh?.favoriteClubId,
+            weeklyPoints: fresh ? fresh.weeklyPoints : f.weeklyPoints,
+            totalPoints: fresh ? fresh.totalPoints : f.totalPoints,
+            subtitle: fresh ? fresh.subtitle : f.statusText,
+            hasCrown: fresh?.hasCrown,
+            isFriend: true,
+          };
+        }),
     ];
   } else {
     const seen = new Set<string>([selfEntry.id]);

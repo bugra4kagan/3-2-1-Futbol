@@ -6,11 +6,13 @@ import {
   chooseBotXoxCell,
   computeHumanizedBotDelayMs,
   computeQuestionDifficultyDelayFactor,
+  decideBotRoundAction,
   getBotRoundPlan,
   getBotXoxTurnConfig,
   pickBotValidPlayer,
   pickBotWrongPlayer,
 } from './botEngine';
+import { getDifficultyProfileForBot } from './questionDifficulty';
 import { PLAYERS, PLAYERS_LIST } from './database';
 import {
   checkXoxBoardWinner,
@@ -33,17 +35,17 @@ test('bot speed and accuracy follow central BOT_CONFIG across Çırak < Şampiyo
   const med = getBotRoundPlan('medium', 'two_clubs');
   const hard = getBotRoundPlan('hard', 'two_clubs');
 
-  assert.equal(easy.minDelayMs, 2800);
-  assert.equal(easy.maxDelayMs, 5000);
-  assert.equal(easy.accuracy, 0.80);
+  assert.equal(easy.minDelayMs, 5000);
+  assert.equal(easy.maxDelayMs, 10000);
+  assert.equal(easy.accuracy, 0.55);
 
-  assert.equal(med.minDelayMs, 1800);
-  assert.equal(med.maxDelayMs, 3500);
-  assert.equal(med.accuracy, 0.92);
+  assert.equal(med.minDelayMs, 3000);
+  assert.equal(med.maxDelayMs, 8000);
+  assert.equal(med.accuracy, 0.75);
 
-  assert.equal(hard.minDelayMs, 1200);
-  assert.equal(hard.maxDelayMs, 2500);
-  assert.equal(hard.accuracy, 0.98);
+  assert.equal(hard.minDelayMs, 2500);
+  assert.equal(hard.maxDelayMs, 6000);
+  assert.equal(hard.accuracy, 0.90);
 
   assert.equal(BOT_TIER_METADATA.easy.accuracyPct, BOT_CONFIG.easy.accuracyPct);
   assert.equal(BOT_TIER_METADATA.medium.accuracyPct, BOT_CONFIG.medium.accuracyPct);
@@ -53,7 +55,10 @@ test('bot speed and accuracy follow central BOT_CONFIG across Çırak < Şampiyo
   assert.ok(hard.maxDelayMs < med.maxDelayMs && med.maxDelayMs < easy.maxDelayMs);
   assert.ok(hard.accuracy > med.accuracy && med.accuracy > easy.accuracy);
 
-  assert.ok(computeQuestionDifficultyDelayFactor(1) > computeQuestionDifficultyDelayFactor(15));
+  assert.ok(computeQuestionDifficultyDelayFactor(1, 'hard') > computeQuestionDifficultyDelayFactor(15, 'easy'));
+  assert.equal(decideBotRoundAction(easy, () => 0.1), 'correct');
+  assert.equal(decideBotRoundAction(easy, () => 0.6), 'pass');
+  assert.equal(decideBotRoundAction(easy, () => 0.9), 'wrong');
 
   for (const r of [0, 0.15, 0.5, 0.85, 0.9999]) {
     const d = computeHumanizedBotDelayMs(med, () => r);
@@ -67,9 +72,9 @@ test('bot speed and accuracy follow central BOT_CONFIG across Çırak < Şampiyo
   const xoxHard = getBotXoxTurnConfig('hard', () => 0.5);
   const xoxMed = getBotXoxTurnConfig('medium', () => 0.5);
   const xoxEasy = getBotXoxTurnConfig('easy', () => 0.5);
-  assert.equal(xoxHard.missRate, 0.02);
-  assert.equal(xoxMed.missRate, 0.08);
-  assert.equal(xoxEasy.missRate, 0.20);
+  assert.equal(xoxHard.missRate, 0.10);
+  assert.equal(xoxMed.missRate, 0.25);
+  assert.equal(xoxEasy.missRate, 0.45);
   assert.ok(xoxHard.delayMs < xoxMed.delayMs && xoxMed.delayMs < xoxEasy.delayMs);
 });
 
@@ -132,7 +137,10 @@ test('100-match simulation across all 4 modes x 3 bot tiers verifies accuracy, s
     for (const mode of modes) {
       // Simulate 100 matches per mode per tier (passive/competitive first-to-3 checks)
       for (let m = 0; m < 100; m += 1) {
-        const rounds = generateMinigameRounds(mode, 5);
+        const rounds = generateMinigameRounds(mode, 5, [], {
+          profile: getDifficultyProfileForBot(tier),
+          rng,
+        });
         assert.equal(rounds.length, 5);
         let botScore = 0;
         let humanScore = 0;
@@ -207,15 +215,19 @@ test('100-match simulation across all 4 modes x 3 bot tiers verifies accuracy, s
             totalAttempts += 1;
             totalDelayMs += delay;
 
-            // Human only wins occasionally in simulation if slow/quick threshold hits; verify bot succeeds cleanly at tier rate
-            if (rng() < plan.accuracy) {
+            // Simulate realistic human vs bot outcome: correct at plan.accuracy, remaining divided between wrong guess and timeout pass
+            const outcome = decideBotRoundAction(plan, rng);
+            if (outcome === 'correct') {
               const chosen = pickBotValidPlayer(validPlayers, rng);
               assert.ok(chosen);
               correctAttempts += 1;
               botScore += 1;
-            } else {
+            } else if (outcome === 'wrong') {
               const wrong = pickBotWrongPlayer(validIds, PLAYERS_LIST, rng);
               assert.ok(wrong && !validIds.includes(wrong.id));
+              humanScore += 1;
+            } else {
+              // timeout / pass without answering
               humanScore += 1;
             }
           }

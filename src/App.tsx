@@ -44,6 +44,7 @@ import {
   getSeenIdsForMinigame,
   recordSeenQuestions,
 } from './game/questionHistory';
+import { getDifficultyProfileForBot } from './game/questionDifficulty';
 import {
   TOURNAMENT_OPEN_ENTRY_COINS,
   TOURNAMENT_OPEN_PRIZE_COINS,
@@ -156,6 +157,7 @@ import { DailyChallengeModal } from './components/DailyChallengeModal';
 import { StoreModal } from './components/StoreModal';
 import { RewardedAdModal } from './components/RewardedAdModal';
 import { InterstitialAdModal } from './components/InterstitialAdModal';
+import { MatchReviewModal } from './components/MatchReviewModal';
 import {
   incrementCompletedMatchAdCount,
   setInterstitialPresenter,
@@ -204,14 +206,21 @@ import {
   deleteRoom,
   describeRoomError,
   expireRoomRound,
+  forfeitRoomAfterDisconnectGrace,
   joinRoom,
+  loadActiveRoomSession,
+  pauseRoomForDisconnect,
   requestRoomRematch,
+  respondRoomRematch,
+  resumeRoomFromDisconnect,
+  saveActiveRoomSession,
   startRoomMatchmaking,
   startRoomPresence,
   submitRoomAnswer,
   subscribeRoom,
 } from './services/firestoreRoomService';
 import {
+  DISCONNECT_GRACE_TIMEOUT_MS,
   RoomRecord,
   getRoomPhase,
   getRoomPhaseKey,
@@ -717,6 +726,10 @@ export default function App() {
   // Match & Round States
   const [rounds, setRounds] = useState<MinigameRoundPayload[]>([]);
   const [onlineRound, setOnlineRound] = useState<MinigameRoundPayload | null>(null);
+  const onlineRoundRef = useRef<MinigameRoundPayload | null>(null);
+  useEffect(() => {
+    onlineRoundRef.current = onlineRound;
+  }, [onlineRound]);
   const [xoxState, setXoxState] = useState<XoxRuntimeState | null>(null);
   const [xoxNotice, setXoxNotice] = useState<string | null>(null);
   const [currentRoundIndex, setCurrentRoundIndex] = useState<number>(0);
@@ -753,8 +766,25 @@ export default function App() {
   } | null>(null);
   const [opponentMissedPulse, setOpponentMissedPulse] = useState<number>(0);
   const [rematchState, setRematchState] = useState<
-    'idle' | 'waiting' | 'opponent_requested' | 'opponent_left'
+    'idle' | 'waiting' | 'opponent_requested' | 'declined' | 'expired' | 'opponent_left'
   >('idle');
+  const [rematchExpiresAt, setRematchExpiresAt] = useState<number | null>(null);
+  const [rematchSecondsLeft, setRematchSecondsLeft] = useState<number | null>(null);
+  const [showReviewModal, setShowReviewModal] = useState<boolean>(false);
+  const [disconnectGraceBanner, setDisconnectGraceBanner] = useState<{
+    mode: 'self' | 'opponent';
+    secondsLeft: number;
+    opponentName: string;
+  } | null>(null);
+  const currentRoundUserAnswersRef = useRef<string[]>([]);
+  const disconnectGraceRef = useRef<{
+    disconnectedKey: string;
+    disconnectedName: string;
+    expiresAt: number;
+  } | null>(null);
+  const disconnectForfeitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const disconnectCountdownTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const restoredRoomCheckedRef = useRef<boolean>(false);
   // Firestore rooms/{roomCode} realtime sync
   const activeRoomCodeRef = useRef<string | null>(null);
   const unsubRoomRef = useRef<(() => void) | null>(null);
@@ -785,7 +815,12 @@ export default function App() {
   const serverMatchAnswerPromisesRef = useRef<Promise<unknown>[]>([]);
 
   const startServerVerifiedMatchSession = useCallback(
-    (matchMinigame: MinigameType, matchMode: string, roundIds: string[]) => {
+    (
+      matchMinigame: MinigameType,
+      matchMode: string,
+      roundIds: string[],
+      roomMeta?: { roomCode?: string; matchSeq?: number }
+    ) => {
       const aid = sessionPlayerIdRef.current;
       serverMatchSessionIdRef.current = null;
       serverMatchAnswerPromisesRef.current = [];
@@ -806,6 +841,8 @@ export default function App() {
                 minigameType: matchMinigame,
                 mode: matchMode,
                 roundIds,
+                roomCode: roomMeta?.roomCode,
+                matchSeq: roomMeta?.matchSeq,
               }),
             },
             { timeoutMs: 25000, retries: 2, retryDelayMs: 2000 }
@@ -1154,6 +1191,7 @@ export default function App() {
     if (typeof window !== 'undefined') {
       let hasSavedProfile = false;
       try {
+        localStorage.removeItem('321_reminder_enabled');
         const saved = localStorage.getItem('football_user_profile');
         if (saved) {
           hasSavedProfile = true;
@@ -1232,6 +1270,7 @@ export default function App() {
           clutchAnswers: 0,
           trailedThenWon: false,
         });
+        const demoRounds = generateMinigameRounds('two_clubs', 4);
         setMatchHighlights([
           {
             roundNumber: 1,
@@ -1243,6 +1282,9 @@ export default function App() {
             wasClutch: false,
             reason: 'scored',
             scoreAfter: { p1: 0, p2: 1 },
+            roundPayload: demoRounds[0],
+            userSubmittedAnswers: ['Fernando Muslera'],
+            didUserWin: false,
           },
           {
             roundNumber: 2,
@@ -1254,6 +1296,9 @@ export default function App() {
             wasClutch: false,
             reason: 'scored',
             scoreAfter: { p1: 1, p2: 1 },
+            roundPayload: demoRounds[1],
+            userSubmittedAnswers: ['Didier Drogba'],
+            didUserWin: true,
           },
           {
             roundNumber: 3,
@@ -1265,6 +1310,9 @@ export default function App() {
             wasClutch: false,
             reason: 'scored',
             scoreAfter: { p1: 2, p2: 1 },
+            roundPayload: demoRounds[2],
+            userSubmittedAnswers: ['Arda Turan'],
+            didUserWin: true,
           },
           {
             roundNumber: 4,
@@ -1276,6 +1324,9 @@ export default function App() {
             wasClutch: true,
             reason: 'scored',
             scoreAfter: { p1: 3, p2: 1 },
+            roundPayload: demoRounds[3],
+            userSubmittedAnswers: ['Lukas Podolski'],
+            didUserWin: true,
           },
         ]);
         setScreen('game_over');
@@ -1850,6 +1901,7 @@ trackGameEvent('match_complete', {
       const passRes = awardFootballPassXp(PASS_XP_MATCH_WIN);
       setPassState(passRes.state);
       soundManager.playVictoryFanfare();
+      haptics.victory();
     }
 
     let finalProgression = outcome.progression;
@@ -1905,51 +1957,6 @@ trackGameEvent('match_complete', {
     updateAchievementsState(matchAchRes.state);
     notifyUnlockedAchievements(matchAchRes.newlyUnlocked);
     finalProgression = applyAchievementsToProgression(finalProgression, matchAchRes.state);
-
-    // Realistic bot/local simulation: bot opponent may send a friend request after a match
-    if (
-      mode === 'bot' &&
-      player2.id &&
-      player2.id !== 'p2' &&
-      !finalProgression.friends.some(
-        (f) => f.id === player2.id || f.name.toLowerCase() === player2.name.toLowerCase()
-      ) &&
-      !(finalProgression.incomingFriendRequests ?? []).some(
-        (r) =>
-          r.status === 'pending' &&
-          (r.fromPlayerId === player2.id || r.fromName.toLowerCase() === player2.name.toLowerCase())
-      ) &&
-      !(finalProgression.outgoingFriendRequests ?? []).some(
-        (r) =>
-          r.status === 'pending' &&
-          (r.toPlayerId === player2.id || r.toName.toLowerCase() === player2.name.toLowerCase())
-      )
-    ) {
-      const botCodeNum =
-        (Array.from(player2.id).reduce((acc, ch) => acc + ch.charCodeAt(0), 0) % 9000) + 1000;
-      const botReq: FriendRequestEntry = {
-        id: `fr_bot_${player2.id}_${matchInstanceIdRef.current}`,
-        fromPlayerId: player2.id,
-        fromFriendCode: `BOT${botCodeNum}`,
-        fromName: player2.name,
-        fromAvatar: player2.avatar || '🤖',
-        toPlayerId: player1.id,
-        toFriendCode: finalProgression.friendCode,
-        toName: player1.name,
-        toAvatar: player1.avatar,
-        weeklyPoints: Math.max(140, Math.round(totalEarnedPoints * 1.4)),
-        totalPoints: Math.max(680, Math.round((finalProgression.totalPoints || 500) * 0.85)),
-        subtitle: won ? 'Rövanş İsteyen Rakip' : 'İyi Maçtı • Arkadaş Olalım',
-        status: 'pending',
-        isBot: true,
-        createdAt: Date.now(),
-      };
-      const beforeBotReqCount = getPendingIncomingRequestCount(finalProgression);
-      finalProgression = receiveIncomingFriendRequest(finalProgression, botReq);
-      if (getPendingIncomingRequestCount(finalProgression) > beforeBotReqCount) {
-        sounds.playNotification();
-      }
-    }
 
     persistProgression(finalProgression);
     setLastMatchEnergyDeltaLabel(
@@ -2029,6 +2036,14 @@ trackGameEvent('match_complete', {
       clearInterval(roomActionTimerRef.current);
       roomActionTimerRef.current = null;
     }
+    if (disconnectForfeitTimerRef.current) {
+      clearTimeout(disconnectForfeitTimerRef.current);
+      disconnectForfeitTimerRef.current = null;
+    }
+    if (disconnectCountdownTimerRef.current) {
+      clearInterval(disconnectCountdownTimerRef.current);
+      disconnectCountdownTimerRef.current = null;
+    }
   };
 
   /**
@@ -2038,6 +2053,12 @@ trackGameEvent('match_complete', {
    */
   const teardownOnlineRoom = (options: { deleteRoomDoc?: boolean } = {}) => {
     onlineRequestSeqRef.current += 1;
+    saveActiveRoomSession(null);
+    disconnectGraceRef.current = null;
+    setDisconnectGraceBanner(null);
+    setRematchExpiresAt(null);
+    setRematchSecondsLeft(null);
+    setShowReviewModal(false);
     if (matchmakingTickTimerRef.current) {
       clearInterval(matchmakingTickTimerRef.current);
       matchmakingTickTimerRef.current = null;
@@ -2352,19 +2373,26 @@ trackGameEvent('match_complete', {
   }, []);
 
   const handleUpdateProfile = (partial: Partial<PlayerProfile>) => {
-    setPlayer1((prev) => {
-      const updated = {
-        ...prev,
-        ...partial,
-        avatar: partial.avatar ? normalizeProfileIconId(partial.avatar) : normalizeProfileIconId(prev.avatar),
-      };
-      try {
-        localStorage.setItem('football_user_profile', JSON.stringify(updated));
-      } catch {
-        // ignore
-      }
-      return updated;
-    });
+    const prev = player1Ref.current;
+    const updated: PlayerProfile = {
+      ...prev,
+      ...partial,
+      avatar: partial.avatar ? normalizeProfileIconId(partial.avatar) : normalizeProfileIconId(prev.avatar),
+    };
+    setPlayer1(updated);
+    player1Ref.current = updated;
+    try {
+      localStorage.setItem('football_user_profile', JSON.stringify(updated));
+    } catch {
+      // ignore
+    }
+    if (
+      partial.favoriteClubId !== undefined ||
+      partial.name !== undefined ||
+      partial.avatar !== undefined
+    ) {
+      void syncServerLeaderboard(progressionRef.current, updated);
+    }
   };
 
   // Start Solo Bot or Tournament Match (no energy blocking; transparent BOT badge)
@@ -2388,7 +2416,9 @@ trackGameEvent('match_complete', {
     minigameTypeRef.current = selectedMinigame;
 
     const seenIds = getSeenIdsForMinigame(selectedMinigame);
-    const generatedRounds = generateMinigameRounds(selectedMinigame, 12, seenIds);
+    const generatedRounds = generateMinigameRounds(selectedMinigame, 12, seenIds, {
+      profile: getDifficultyProfileForBot(selectedBotDifficulty),
+    });
     recordSeenQuestions(
       selectedMinigame,
       generatedRounds.flatMap((r) => {
@@ -2454,6 +2484,7 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
     setTimeRemaining(getRoundDurationSeconds(activeMinigame));
     setXoxNotice(null);
     soloXoxTimeoutsRef.current = 0;
+    currentRoundUserAnswersRef.current = [];
 
     if (activeMinigame === 'xox') {
       const starterId = roundIdx % 2 === 0 ? player1Ref.current.id : player2Ref.current.id;
@@ -2478,6 +2509,7 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
     }
 
     setCountdown(3);
+    haptics.countdown();
 
     let currentCount = 3;
     countdownTimerRef.current = setInterval(() => {
@@ -2642,6 +2674,10 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
         elapsedSec: null,
         reason: 'timeout',
         scoreAfter: { p1: player1Ref.current.score, p2: player2Ref.current.score },
+        roundPayload: roundsRef.current[currentRoundIndexRef.current],
+        userSubmittedAnswers: [...currentRoundUserAnswersRef.current],
+        didUserWin: false,
+        xoxBoardSnapshot: xoxStateRef.current?.board?.map((row) => row.map((cell) => cell ? { ...cell } : null)),
       },
     ]);
 
@@ -2680,6 +2716,9 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
         elapsedSec: null,
         reason: 'attempts_exhausted',
         scoreAfter: { p1: player1Ref.current.score, p2: player2Ref.current.score },
+        roundPayload: roundsRef.current[currentRoundIndexRef.current],
+        userSubmittedAnswers: [...currentRoundUserAnswersRef.current],
+        didUserWin: false,
       },
     ]);
 
@@ -2692,8 +2731,11 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
     }, 3500);
   }, [isRoundPlaying]);
 
-  const handleWrongAttempt = (playerId: string) => {
+  const handleWrongAttempt = (playerId: string, guessedAnswer?: string) => {
     if (playerId === player1.id) {
+      if (guessedAnswer && guessedAnswer.trim()) {
+        currentRoundUserAnswersRef.current.push(guessedAnswer.trim());
+      }
       fastComboStreakRef.current = 0;
       setFastComboStreak(0);
       setPlayer1Stats((prev) => ({
@@ -2750,6 +2792,10 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
       let matchFinished = false;
 
       if (winnerPlayerId === curP1.id) {
+        const cleanWinnerAns = (playerName || answer).trim();
+        if (cleanWinnerAns) {
+          currentRoundUserAnswersRef.current.push(cleanWinnerAns);
+        }
         if (mode === 'bot' && activeMinigame !== 'xox') {
           submitServerVerifiedMatchAnswer(currentRoundIndexRef.current, playerName || answer);
         }
@@ -2853,6 +2899,10 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
           wasClutch: isClutch,
           reason: 'scored',
           scoreAfter: { p1: nextP1Score, p2: nextP2Score },
+          roundPayload: roundsRef.current[currentRoundIndexRef.current],
+          userSubmittedAnswers: [...currentRoundUserAnswersRef.current],
+          didUserWin: winnerPlayerId === curP1.id,
+          xoxBoardSnapshot: xoxStateRef.current?.board?.map((row) => row.map((cell) => cell ? { ...cell } : null)),
         },
       ]);
 
@@ -2921,6 +2971,10 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
                 p1: player1Ref.current.score,
                 p2: player2Ref.current.score,
               },
+              roundPayload: roundsRef.current[currentRoundIndexRef.current],
+              userSubmittedAnswers: [...currentRoundUserAnswersRef.current],
+              didUserWin: false,
+              xoxBoardSnapshot: nextState.board.map((row) => row.map((cell) => cell ? { ...cell } : null)),
             },
           ]);
           if (nextRoundTimeoutRef.current) clearTimeout(nextRoundTimeoutRef.current);
@@ -2948,6 +3002,7 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
 
   const attachOnlineRoomListener = useCallback((code: string) => {
     activeRoomCodeRef.current = code;
+    saveActiveRoomSession(code);
     setRoomCode(code);
     roomPhaseKeyRef.current = '';
     roomSyncSignatureRef.current = '';
@@ -2993,17 +3048,35 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
       teardownOnlineRoom({ deleteRoomDoc });
     };
 
-    // Heartbeat + opponent disconnect detection (Firestore has no onDisconnect)
+    // Heartbeat + 30s disconnect pause + forfeit guard (Firestore has no onDisconnect)
     stopRoomPresenceRef.current = startRoomPresence({
       code,
       playerKey: myKey,
+      onOpponentSuspectedDrop: (droppedKey) => {
+        if (activeRoomCodeRef.current !== code) return;
+        if (screenRef.current === 'playing') {
+          void pauseRoomForDisconnect(
+            code,
+            droppedKey,
+            Math.max(1000, timeRemainingRef.current * 1000)
+          );
+        }
+      },
+      onOpponentResumed: (resumedKey) => {
+        if (activeRoomCodeRef.current !== code) return;
+        if (disconnectGraceRef.current?.disconnectedKey === resumedKey) {
+          void resumeRoomFromDisconnect(code, resumedKey);
+        }
+      },
       onOpponentLost: () => {
         if (activeRoomCodeRef.current !== code) return;
         if (screenRef.current === 'game_over') {
+          saveActiveRoomSession(null);
           setRematchState('opponent_left');
+          setRematchExpiresAt(null);
           teardownOnlineRoom();
         } else if (screenRef.current === 'playing' || screenRef.current === 'room_waiting') {
-          leaveRoomToLobby('Rakibin bağlantısı kesildi!', true);
+          leaveRoomToLobby('Rakibin bağlantısı 30 sn içinde geri gelmedi. Maç sonlandırıldı.', true);
         }
       },
     });
@@ -3084,11 +3157,61 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
       }
 
       const phase = getRoomPhase(room);
-      const phaseKey = getRoomPhaseKey(room);
+      const activeGrace = room.disconnectGrace ?? null;
+      const isPausedByGrace = Boolean(activeGrace && room.state !== 'game_over');
+      const phaseKey = `${getRoomPhaseKey(room)}|${isPausedByGrace ? 'paused' : 'live'}`;
       const phaseChanged = roomPhaseKeyRef.current !== phaseKey;
+
+      if (activeGrace && room.state !== 'game_over') {
+        disconnectGraceRef.current = {
+          disconnectedKey: activeGrace.disconnectedKey,
+          disconnectedName: activeGrace.disconnectedName,
+          expiresAt: activeGrace.expiresAt,
+        };
+        const isSelfDropped = activeGrace.disconnectedKey === myKey;
+        const secLeft = Math.max(
+          0,
+          Math.ceil((activeGrace.expiresAt - getAuthoritativeServerNowMs()) / 1000)
+        );
+        setDisconnectGraceBanner({
+          mode: isSelfDropped ? 'self' : 'opponent',
+          secondsLeft: secLeft,
+          opponentName: activeGrace.disconnectedName || player2Ref.current.name,
+        });
+        if (isSelfDropped && typeof navigator !== 'undefined' && navigator.onLine !== false) {
+          void resumeRoomFromDisconnect(code, myId);
+        }
+      } else if (disconnectGraceRef.current) {
+        disconnectGraceRef.current = null;
+        setDisconnectGraceBanner(null);
+      }
 
       if (room.state === 'waiting') {
         setScreen('room_waiting');
+        return;
+      }
+
+      if (phaseChanged && isPausedByGrace && activeGrace) {
+        roomPhaseKeyRef.current = phaseKey;
+        stopOnlineRoomTimers();
+        const serverNow = getAuthoritativeServerNowMs();
+        const msUntilForfeit = Math.max(250, activeGrace.expiresAt - serverNow);
+        disconnectCountdownTimerRef.current = setInterval(() => {
+          const left = Math.max(
+            0,
+            Math.ceil((activeGrace.expiresAt - getAuthoritativeServerNowMs()) / 1000)
+          );
+          setDisconnectGraceBanner((prev) =>
+            prev ? { ...prev, secondsLeft: left } : prev
+          );
+        }, 500);
+        disconnectForfeitTimerRef.current = setTimeout(() => {
+          void forfeitRoomAfterDisconnectGrace(code);
+        }, msUntilForfeit);
+        return;
+      }
+
+      if (isPausedByGrace) {
         return;
       }
 
@@ -3104,12 +3227,16 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
           roomMatchSeqStartedRef.current = room.matchSeq;
           resetMatchComboAndClock();
           setMatchHighlights([]);
+          setShowReviewModal(false);
           setRematchState('idle');
+          setRematchExpiresAt(null);
+          setRematchSecondsLeft(null);
           trackGameEvent('match_start', { mode: 'online', minigame: room.minigameType });
           startServerVerifiedMatchSession(
             room.minigameType,
             room.source === 'private' ? 'online_room' : 'online_random',
-            Array.isArray(room.roundIds) ? room.roundIds : []
+            Array.isArray(room.roundIds) ? room.roundIds : [],
+            { roomCode: room.code, matchSeq: room.matchSeq }
           );
         }
         setCurrentRoundIndex(room.currentRoundIndex || 0);
@@ -3120,6 +3247,7 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
         if (phaseChanged) {
           roomPhaseKeyRef.current = phaseKey;
           stopOnlineRoomTimers();
+          currentRoundUserAnswersRef.current = [];
 
           setShowResultSheet(false);
           setRoundWinnerPlayer(null);
@@ -3151,6 +3279,7 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
           };
 
           setCountdown(Math.max(1, computeCount()));
+          haptics.countdown();
           roomTickTimerRef.current = setInterval(() => {
             const nextVal = computeCount();
             setCountdown(nextVal);
@@ -3262,6 +3391,12 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
               elapsedSec,
               reason: room.roundEndReason || 'draw',
               scoreAfter: { p1: p1After, p2: p2After },
+              roundPayload: getRoomRoundPayload(room) ?? onlineRoundRef.current ?? undefined,
+              userSubmittedAnswers: [...currentRoundUserAnswersRef.current],
+              didUserWin: room.roundWinnerId === myId,
+              xoxBoardSnapshot: parseRoomXoxState(room)?.board?.map((row) =>
+                row.map((cell) => (cell ? { ...cell } : null))
+              ),
             },
           ]);
           setShowResultSheet(true);
@@ -3272,20 +3407,46 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
       }
 
       if (room.state === 'game_over') {
+        const offer = room.rematchOffer ?? null;
         if (phaseChanged) {
           roomPhaseKeyRef.current = phaseKey;
           stopOnlineRoomTimers();
+          disconnectGraceRef.current = null;
+          setDisconnectGraceBanner(null);
           setShowResultSheet(false);
           setIsRoundPlaying(false);
-          // The opponent may already have voted for a rematch (e.g. during our interstitial ad).
-          // The room stays until a player leaves (Home deletes it) or presence times out.
-          setRematchState(oppEntry?.rematchRequested ? 'opponent_requested' : 'idle');
+          if (offer?.status === 'pending') {
+            setRematchExpiresAt(offer.expiresAt);
+            setRematchState(offer.requestedByKey === myKey ? 'waiting' : 'opponent_requested');
+          } else if (offer?.status === 'declined') {
+            setRematchExpiresAt(null);
+            setRematchState('declined');
+          } else if (offer?.status === 'expired') {
+            setRematchExpiresAt(null);
+            setRematchState('expired');
+          } else {
+            setRematchExpiresAt(null);
+            setRematchState(oppEntry?.rematchRequested ? 'opponent_requested' : 'idle');
+          }
           void transitionToGameOver();
         } else {
-          const iReq = Boolean(myEntry?.rematchRequested);
-          const oppReq = Boolean(oppEntry?.rematchRequested);
-          if (iReq) setRematchState('waiting');
-          else if (oppReq) setRematchState('opponent_requested');
+          if (offer?.status === 'pending') {
+            setRematchExpiresAt(offer.expiresAt);
+            setRematchState(offer.requestedByKey === myKey ? 'waiting' : 'opponent_requested');
+          } else if (offer?.status === 'declined') {
+            setRematchExpiresAt(null);
+            setRematchState('declined');
+          } else if (offer?.status === 'expired') {
+            setRematchExpiresAt(null);
+            setRematchState('expired');
+          } else {
+            const iReq = Boolean(myEntry?.rematchRequested);
+            const oppReq = Boolean(oppEntry?.rematchRequested);
+            if (iReq) setRematchState('waiting');
+            else if (oppReq) setRematchState('opponent_requested');
+            else setRematchState('idle');
+            setRematchExpiresAt(null);
+          }
         }
       }
     });
@@ -3450,6 +3611,10 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
     async (answer: string, cellPos?: { row: number; col: number }) => {
       const activeCode = activeRoomCodeRef.current;
       if (!activeCode) return;
+      const cleanAns = answer.trim();
+      if (cleanAns) {
+        currentRoundUserAnswersRef.current.push(cleanAns);
+      }
       const elapsedSec = (Date.now() - roundStartedAtRef.current) / 1000;
       try {
         const res = await submitRoomAnswer(activeCode, sessionPlayerIdRef.current, answer, {
@@ -3506,13 +3671,90 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
     }
   };
 
+  // Auto-rejoin active online match on transient reload / browser reconnect
+  useEffect(() => {
+    if (screen !== 'lobby' || restoredRoomCheckedRef.current) return;
+    restoredRoomCheckedRef.current = true;
+    const savedRoomCode = loadActiveRoomSession();
+    if (savedRoomCode && !activeRoomCodeRef.current && !pendingInviteRoom) {
+      setMode('online_room');
+      attachOnlineRoomListener(savedRoomCode);
+      void resumeRoomFromDisconnect(savedRoomCode, sessionPlayerIdRef.current).catch(() => {});
+    }
+  }, [screen, pendingInviteRoom, attachOnlineRoomListener]);
+
+  // Monitor browser offline/online state during active online match for immediate 30s grace notice
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handleOffline = () => {
+      const code = activeRoomCodeRef.current;
+      if (!code || screenRef.current !== 'playing') return;
+      const fallbackExpires = Date.now() + DISCONNECT_GRACE_TIMEOUT_MS;
+      setDisconnectGraceBanner({
+        mode: 'self',
+        secondsLeft: Math.ceil(DISCONNECT_GRACE_TIMEOUT_MS / 1000),
+        opponentName: player2Ref.current.name,
+      });
+      disconnectGraceRef.current = {
+        disconnectedKey: getRoomPlayerKey(sessionPlayerIdRef.current),
+        disconnectedName: player1Ref.current.name,
+        expiresAt: fallbackExpires,
+      };
+    };
+    const handleOnline = () => {
+      const code = activeRoomCodeRef.current;
+      if (!code) return;
+      void resumeRoomFromDisconnect(code, sessionPlayerIdRef.current).catch(() => {});
+    };
+    window.addEventListener('offline', handleOffline);
+    window.addEventListener('online', handleOnline);
+    return () => {
+      window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('online', handleOnline);
+    };
+  }, []);
+
+  // 20-second Rematch offer expiration countdown
+  useEffect(() => {
+    if (
+      !rematchExpiresAt ||
+      (rematchState !== 'waiting' && rematchState !== 'opponent_requested')
+    ) {
+      setRematchSecondsLeft(null);
+      return;
+    }
+    const updateTick = () => {
+      const now = getAuthoritativeServerNowMs();
+      const left = Math.max(0, Math.ceil((rematchExpiresAt - now) / 1000));
+      setRematchSecondsLeft(left);
+      if (now >= rematchExpiresAt && activeRoomCodeRef.current) {
+        void respondRoomRematch(
+          activeRoomCodeRef.current,
+          sessionPlayerIdRef.current,
+          'expire'
+        ).catch(() => {});
+      }
+    };
+    updateTick();
+    const timer = setInterval(updateTick, 250);
+    return () => clearInterval(timer);
+  }, [rematchExpiresAt, rematchState]);
+
   const handleRematch = () => {
     if (mode === 'online_match' || mode === 'online_room') {
       const activeCode = activeRoomCodeRef.current;
       if (activeCode) {
+        if (rematchState === 'opponent_requested') {
+          void respondRoomRematch(activeCode, sessionPlayerIdRef.current, 'accept').catch(() => {
+            setOnlineError('Rövanş onayı gönderilemedi. Bağlantını kontrol et.');
+          });
+          return;
+        }
         setRematchState('waiting');
+        setRematchExpiresAt(getAuthoritativeServerNowMs() + 20000);
         void requestRoomRematch(activeCode, sessionPlayerIdRef.current).catch(() => {
           setRematchState('idle');
+          setRematchExpiresAt(null);
           setOnlineError('Rövanş isteği gönderilemedi. Bağlantını kontrol et.');
         });
       } else {
@@ -3522,6 +3764,14 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
     } else {
       startBotMatch(botDiff, minigameType);
     }
+  };
+
+  const handleDeclineRematch = () => {
+    const activeCode = activeRoomCodeRef.current;
+    if (!activeCode) return;
+    setRematchExpiresAt(null);
+    setRematchState('declined');
+    void respondRoomRematch(activeCode, sessionPlayerIdRef.current, 'decline').catch(() => {});
   };
 
   const handleClaimDailyRewardAction = () => {
@@ -5095,6 +5345,22 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
         >
           <NightMatchPitchBackground />
 
+          {isOnlineMode && disconnectGraceBanner && (
+            <div
+              data-testid="disconnect-grace-banner"
+              className="fixed top-20 left-1/2 -translate-x-1/2 z-[65] w-[92%] max-w-md px-4 py-3 rounded-2xl bg-slate-950/95 border border-amber-400/60 shadow-2xl text-center backdrop-blur-md"
+            >
+              <p className="text-xs sm:text-sm font-black text-amber-200">
+                {disconnectGraceBanner.mode === 'self'
+                  ? 'Bağlantın kesildi. Yeniden bağlanılıyor...'
+                  : 'Rakibin bağlantısı kesildi. Yeniden bağlanması bekleniyor.'}
+              </p>
+              <p className="text-[11px] font-bold text-slate-300 mt-0.5 tabular-nums">
+                Maç duraklatıldı • Kalan süre: {disconnectGraceBanner.secondsLeft} sn
+              </p>
+            </div>
+          )}
+
           <div className="relative z-10 flex flex-col flex-1 min-h-0 justify-between overflow-hidden">
             <ScoreBoard
               player1={player1}
@@ -5142,9 +5408,9 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
                 onSubmitOnlineAnswer={(ans) => handleSubmitOnlineAnswer(ans)}
                 serverWrongFeedback={serverWrongFeedback}
                 opponentMissedPulse={opponentMissedPulse}
-                onWrongAttempt={() => handleWrongAttempt(player1.id)}
+                onWrongAttempt={(ans) => handleWrongAttempt(player1.id, ans)}
                 onTimeExpired={handleRoundTimeExpired}
-                disabled={!isRoundPlaying}
+                disabled={!isRoundPlaying || Boolean(disconnectGraceBanner)}
               />
             ) : (
               <MinigameArenaView
@@ -5156,7 +5422,7 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
                 isOnlineMatch={isOnlineMode}
                 botDifficulty={botDiff}
                 timeRemaining={timeRemaining}
-                disabled={!isRoundPlaying}
+                disabled={!isRoundPlaying || Boolean(disconnectGraceBanner)}
                 userCoins={progression.coins}
                 freeJokerTickets={progression.freeJokerTickets ?? 0}
                 roundSeed={`${matchInstanceIdRef.current}-${currentRoundIndex}-${currentRound.minigameType}-${currentRound.silhouette?.id || currentRound.career?.id || currentRound.countryClub?.id || currentRound.xoxBoard?.id || 'r'}`}
@@ -5169,7 +5435,7 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
                 onSubmitOnlineAnswer={handleSubmitOnlineAnswer}
                 serverWrongFeedback={serverWrongFeedback}
                 opponentMissedPulse={opponentMissedPulse}
-                onWrongAttempt={() => handleWrongAttempt(player1.id)}
+                onWrongAttempt={(ans) => handleWrongAttempt(player1.id, ans)}
                 onSilhouetteExhausted={handleSilhouetteExhausted}
                 onlineSilhouetteExhausted={onlineSilhouetteExhausted}
                 xoxState={xoxState}
@@ -5210,6 +5476,10 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
           isOnlineMatch={isOnlineMode}
           isBotMatch={mode === 'bot'}
           rematchState={rematchState}
+          rematchSecondsLeft={rematchSecondsLeft}
+          onDeclineRematch={handleDeclineRematch}
+          onOpenReview={() => setShowReviewModal(true)}
+          reviewRoundsCount={matchHighlights.length}
           matchRewards={lastMatchRewards}
           player1Frame={progression.equippedFrame}
           goalEffect={progression.equippedGoalEffect}
@@ -5222,6 +5492,16 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
           onHome={handleExitToLobby}
         />
       )}
+
+      {/* End-of-Match Completed Question Review Modal */}
+      <MatchReviewModal
+        isOpen={showReviewModal}
+        highlights={matchHighlights}
+        player1Id={player1.id}
+        player1Name={player1.name}
+        player2Name={player2.name}
+        onClose={() => setShowReviewModal(false)}
+      />
 
       {/* Daily Check-in & Streak Modal */}
       <DailyRewardsModal

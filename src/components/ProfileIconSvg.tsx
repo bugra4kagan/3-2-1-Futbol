@@ -40,27 +40,42 @@ export const ProfileIconSvg: React.FC<ProfileIconSvgProps> = ({
     );
   }
 
+  const clipId = React.useId();
   const resolved: ProfileIconId = normalizeProfileIconId(iconId);
 
   switch (resolved) {
     case 'ball':
       return (
-        <svg viewBox="0 0 32 32" fill="none" aria-hidden="true" className={className}>
-          <circle cx="16" cy="16" r="12.5" fill="#FFFFFF" stroke="#0B1220" strokeWidth="1.8" />
-          <path d="M22.5 5.5A12.5 12.5 0 0 1 23 26.2A10 10 0 0 0 22.5 5.5Z" fill="#CBD5E1" />
-          <polygon points="16,10 21.5,14 19.4,20.5 12.6,20.5 10.5,14" fill="#0B1220" />
-          <polygon points="16,3.7 19.6,6.8 18.2,8.6 13.8,8.6 12.4,6.8" fill="#0B1220" />
-          <polygon points="27.8,12.2 26.2,17.2 23.8,16 23.8,12.5 26,10.5" fill="#0B1220" />
-          <polygon points="4.2,12.2 6,10.5 8.2,12.5 8.2,16 5.8,17.2" fill="#0B1220" />
-          <polygon points="23.4,25.8 19.2,27.6 18.5,24.2 21.5,22 24.4,23.2" fill="#0B1220" />
-          <polygon points="8.6,25.8 7.6,23.2 10.5,22 13.5,24.2 12.8,27.6" fill="#0B1220" />
-          <path d="M16 8.6V10M21.5 14L23.8 13.5M10.5 14L8.2 13.5M19.4 20.5L21 22.4M12.6 20.5L11 22.4" stroke="#0B1220" strokeWidth="1.5" />
+        <svg
+          viewBox="0 0 32 32"
+          preserveAspectRatio="xMidYMid meet"
+          fill="none"
+          aria-hidden="true"
+          className={className}
+        >
+          <defs>
+            <clipPath id={clipId}>
+              <circle cx="16" cy="16" r="11.6" />
+            </clipPath>
+          </defs>
+          <circle cx="16" cy="16" r="11.6" fill="#FFFFFF" />
+          <g clipPath={`url(#${clipId})`}>
+            <path d="M21.5 5.2A11.6 11.6 0 0 1 22 26.8A9.6 9.6 0 0 0 21.5 5.2Z" fill="#CBD5E1" />
+            <polygon points="16,10.5 21,14.1 19.1,20 12.9,20 11,14.1" fill="#0B1220" />
+            <polygon points="16,3.4 19.4,6.4 18.1,8.6 13.9,8.6 12.6,6.4" fill="#0B1220" />
+            <polygon points="28.6,12.2 26.4,17.2 23.6,16 23.6,12.5 26.2,10.2" fill="#0B1220" />
+            <polygon points="3.4,12.2 5.8,10.2 8.4,12.5 8.4,16 5.6,17.2" fill="#0B1220" />
+            <polygon points="23.6,25.8 19.2,28.2 18.4,24.1 21.2,21.8 24.8,23.2" fill="#0B1220" />
+            <polygon points="8.4,25.8 7.2,23.2 10.8,21.8 13.6,24.1 12.8,28.2" fill="#0B1220" />
+            <path d="M16 8.6V10.5M21 14.1L23.6 13.6M11 14.1L8.4 13.6M19.1 20L21.2 21.8M12.9 20L10.8 21.8" stroke="#0B1220" strokeWidth="1.45" strokeLinecap="round" />
+          </g>
+          <circle cx="16" cy="16" r="11.6" stroke="#0B1220" strokeWidth="1.8" />
         </svg>
       );
 
     case 'trophy':
       return (
-        <svg viewBox="0 0 32 32" fill="none" aria-hidden="true" className={className}>
+        <svg viewBox="0 0 32 32" preserveAspectRatio="xMidYMid meet" fill="none" aria-hidden="true" className={className}>
           <path d="M9.5 7H6a2.2 2.2 0 0 0-2.2 2.2v1.3a4.2 4.2 0 0 0 4.2 4.2h1.8" stroke="#B45309" strokeWidth="2.2" strokeLinecap="round" />
           <path d="M22.5 7H26a2.2 2.2 0 0 1 2.2 2.2v1.3a4.2 4.2 0 0 1-4.2 4.2h-1.8" stroke="#B45309" strokeWidth="2.2" strokeLinecap="round" />
           <path d="M9.5 5.5H22.5V12.5A6.5 6.5 0 0 1 9.5 12.5V5.5Z" fill="#E5B94F" stroke="#B45309" strokeWidth="1.6" />
@@ -72,7 +87,7 @@ export const ProfileIconSvg: React.FC<ProfileIconSvgProps> = ({
 
     case 'crown':
       return (
-        <svg viewBox="0 0 32 32" fill="none" aria-hidden="true" className={className}>
+        <svg viewBox="0 0 32 32" preserveAspectRatio="xMidYMid meet" fill="none" aria-hidden="true" className={className}>
           <path d="M4.5 22L3.8 10.5L10.4 15.8L16 7.5L21.6 15.8L28.2 10.5L27.5 22H4.5Z" fill="#E5B94F" stroke="#B45309" strokeWidth="1.6" strokeLinejoin="round" />
           <path d="M6 22H26V25.8H6V22Z" fill="#DC2626" stroke="#E5B94F" strokeWidth="1.5" strokeLinejoin="round" />
           <circle cx="16" cy="7" r="2" fill="#DC2626" stroke="#FFFFFF" strokeWidth="1" />
@@ -84,7 +99,7 @@ export const ProfileIconSvg: React.FC<ProfileIconSvgProps> = ({
 
     case 'medal':
       return (
-        <svg viewBox="0 0 32 32" fill="none" aria-hidden="true" className={className}>
+        <svg viewBox="0 0 32 32" preserveAspectRatio="xMidYMid meet" fill="none" aria-hidden="true" className={className}>
           <path d="M9.5 4H14.5L16.5 12.5H11.5L9.5 4Z" fill="#3B82F6" stroke="#1D4ED8" strokeWidth="1.3" strokeLinejoin="round" />
           <path d="M22.5 4H17.5L15.5 12.5H20.5L22.5 4Z" fill="#2563EB" stroke="#1D4ED8" strokeWidth="1.3" strokeLinejoin="round" />
           <circle cx="16" cy="20" r="8" fill="#E5B94F" stroke="#B45309" strokeWidth="1.6" />
@@ -95,7 +110,7 @@ export const ProfileIconSvg: React.FC<ProfileIconSvgProps> = ({
 
     case 'boot':
       return (
-        <svg viewBox="0 0 32 32" fill="none" aria-hidden="true" className={className}>
+        <svg viewBox="0 0 32 32" preserveAspectRatio="xMidYMid meet" fill="none" aria-hidden="true" className={className}>
           <path d="M6.5 10L12.5 9L14.5 13.5C16.8 15.2 20.2 15.8 24 16C26.5 16.2 27.8 17.8 27.8 20V22H5.5V16L6.5 10Z" fill="#F97316" stroke="#0B1220" strokeWidth="1.7" strokeLinejoin="round" />
           <path d="M5.5 19.5H27.8V22H5.5V19.5Z" fill="#0B1220" />
           <path d="M13 12.5L15.5 11.7M14.5 14.8L17 14" stroke="#FFFFFF" strokeWidth="1.8" strokeLinecap="round" />
@@ -108,7 +123,7 @@ export const ProfileIconSvg: React.FC<ProfileIconSvgProps> = ({
 
     case 'glove':
       return (
-        <svg viewBox="0 0 32 32" fill="none" aria-hidden="true" className={className}>
+        <svg viewBox="0 0 32 32" preserveAspectRatio="xMidYMid meet" fill="none" aria-hidden="true" className={className}>
           <path
             d="M10 13.5V7A1.8 1.8 0 0 1 13.6 7V12M13.6 12V5.8A1.8 1.8 0 0 1 17.2 5.8V12M17.2 12V7A1.8 1.8 0 0 1 20.8 7V13.8M20.8 13.8V10A1.7 1.7 0 0 1 24.2 10V17.4C24.2 21.1 21.6 23.6 18 24H13.5C10.9 24 8.7 22.5 7.7 20L5.8 15.2A1.8 1.8 0 0 1 9.1 13.8L9.6 15V13.5Z"
             fill="#FFFFFF"
@@ -123,7 +138,7 @@ export const ProfileIconSvg: React.FC<ProfileIconSvgProps> = ({
 
     case 'target':
       return (
-        <svg viewBox="0 0 32 32" fill="none" aria-hidden="true" className={className}>
+        <svg viewBox="0 0 32 32" preserveAspectRatio="xMidYMid meet" fill="none" aria-hidden="true" className={className}>
           <circle cx="16" cy="16" r="12" fill="#DC2626" stroke="#991B1B" strokeWidth="1.4" />
           <circle cx="16" cy="16" r="8.4" fill="#FFFFFF" />
           <circle cx="16" cy="16" r="5" fill="#DC2626" />
@@ -133,7 +148,7 @@ export const ProfileIconSvg: React.FC<ProfileIconSvgProps> = ({
 
     case 'lightning':
       return (
-        <svg viewBox="0 0 32 32" fill="none" aria-hidden="true" className={className}>
+        <svg viewBox="0 0 32 32" preserveAspectRatio="xMidYMid meet" fill="none" aria-hidden="true" className={className}>
           <path
             d="M18.2 3.5L7.5 17.2H14.8L13 28.5L24.5 14H17.2L18.2 3.5Z"
             fill="#FACC15"
@@ -147,7 +162,7 @@ export const ProfileIconSvg: React.FC<ProfileIconSvgProps> = ({
 
     case 'shield':
       return (
-        <svg viewBox="0 0 32 32" fill="none" aria-hidden="true" className={className}>
+        <svg viewBox="0 0 32 32" preserveAspectRatio="xMidYMid meet" fill="none" aria-hidden="true" className={className}>
           <path
             d="M16 4L6 8V15.5C6 21.6 10.1 26.2 16 28C21.9 26.2 26 21.6 26 15.5V8L16 4Z"
             fill="#3B82F6"
@@ -162,7 +177,7 @@ export const ProfileIconSvg: React.FC<ProfileIconSvgProps> = ({
 
     case 'star':
       return (
-        <svg viewBox="0 0 32 32" fill="none" aria-hidden="true" className={className}>
+        <svg viewBox="0 0 32 32" preserveAspectRatio="xMidYMid meet" fill="none" aria-hidden="true" className={className}>
           <path
             d="M16 4.2L19.6 11.6L27.8 12.8L21.9 18.6L23.3 26.7L16 22.9L8.7 26.7L10.1 18.6L4.2 12.8L12.4 11.6L16 4.2Z"
             fill="#E5B94F"
