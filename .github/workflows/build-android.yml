@@ -42,13 +42,33 @@ jobs:
           npx tsc --noEmit
           node --import tsx --test src/game/*.test.ts src/services/*.test.ts src/utils/*.test.ts
 
+      - name: Verify Required 5 GitHub Secrets (Without Exposing Values)
+        env:
+          HAS_KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 != '' }}
+          HAS_KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD != '' }}
+          HAS_KEY_ALIAS: ${{ secrets.KEY_ALIAS != '' }}
+          HAS_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD != '' }}
+          HAS_VITE_API_BASE_URL: ${{ secrets.VITE_API_BASE_URL != '' }}
+        run: |
+          echo "KEYSTORE_BASE64 present: $HAS_KEYSTORE_BASE64"
+          echo "KEYSTORE_PASSWORD present: $HAS_KEYSTORE_PASSWORD"
+          echo "KEY_ALIAS present: $HAS_KEY_ALIAS"
+          echo "KEY_PASSWORD present: $HAS_KEY_PASSWORD"
+          echo "VITE_API_BASE_URL present: $HAS_VITE_API_BASE_URL"
+          if [ "$HAS_KEYSTORE_BASE64" != "true" ] || [ "$HAS_KEYSTORE_PASSWORD" != "true" ] || [ "$HAS_KEY_ALIAS" != "true" ] || [ "$HAS_KEY_PASSWORD" != "true" ] || [ "$HAS_VITE_API_BASE_URL" != "true" ]; then
+            echo "::error::Zorunlu 5 GitHub Secret değerinden en az biri eksik!"
+            exit 1
+          fi
+
       - name: Build Debug Web Bundle (Official AdMob Test IDs)
+        if: github.event_name != 'workflow_dispatch'
         env:
           VITE_ADMOB_ALLOW_TEST_FALLBACK: "true"
           VITE_API_BASE_URL: ${{ secrets.VITE_API_BASE_URL }}
         run: npm run build
 
       - name: Sync Capacitor Android (Debug)
+        if: github.event_name != 'workflow_dispatch'
         run: npx cap sync android
 
       - name: Prepare Gradle wrapper
@@ -57,6 +77,7 @@ jobs:
           chmod +x android/gradlew
 
       - name: Build Debug APK
+        if: github.event_name != 'workflow_dispatch'
         working-directory: android
         run: ./gradlew assembleDebug --no-daemon --stacktrace
 
@@ -93,7 +114,7 @@ jobs:
           fi
           echo "$KEYSTORE_BASE64" | tr -d '\n\r ' | base64 --decode > android/app/release.jks
 
-      - name: Build Signed Release AAB & Verify Signature
+      - name: Build Signed Release AAB & Verify Signature, Metadata & Backend URL
         working-directory: android
         env:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
@@ -101,16 +122,43 @@ jobs:
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
           ADMOB_APP_ID: ${{ secrets.ADMOB_APP_ID || secrets.VITE_ADMOB_APP_ID }}
           VITE_ADMOB_APP_ID: ${{ secrets.ADMOB_APP_ID || secrets.VITE_ADMOB_APP_ID }}
+          EXPECTED_BACKEND_URL: ${{ secrets.VITE_API_BASE_URL }}
         run: |
           if [ -z "$KEYSTORE_PASSWORD" ] || [ -z "$KEY_ALIAS" ] || [ -z "$KEY_PASSWORD" ]; then
             echo "Hata: KEYSTORE_PASSWORD, KEY_ALIAS veya KEY_PASSWORD GitHub Secret eksik!"
             exit 1
           fi
           ./gradlew bundleRelease --no-daemon --stacktrace
-          jarsigner -verify -verbose -certs app/build/outputs/bundle/release/app-release.aab | tail -n 20
+          AAB_PATH="app/build/outputs/bundle/release/app-release.aab"
+          test -f "$AAB_PATH"
+          jarsigner -verify -verbose -certs "$AAB_PATH" | tail -n 25
           rm -f app/release.jks
 
+          AAB_BYTES=$(stat -c%s "$AAB_PATH")
+          echo "AAB_SIZE_BYTES=$AAB_BYTES"
+          ls -lh "$AAB_PATH"
+
+          MERGED_MANIFEST="app/build/intermediates/merged_manifest/release/processReleaseMainManifest/AndroidManifest.xml"
+          if [ -f "$MERGED_MANIFEST" ]; then
+            grep -E 'package=|versionCode=|versionName=' "$MERGED_MANIFEST" | head -n 5
+          fi
+          grep -q 'applicationId "com.futbol321.challenge"' app/build.gradle
+          grep -q 'versionCode 4' app/build.gradle
+          grep -q 'versionName "1.1.0"' app/build.gradle
+
+          # Verify compiled AAB contains the configured Render backend URL inside base/assets/public
+          if [ -n "$EXPECTED_BACKEND_URL" ]; then
+            CLEAN_BACKEND="${EXPECTED_BACKEND_URL%/}"
+            if unzip -p "$AAB_PATH" 'base/assets/public/assets/*.js' | grep -Fq "$CLEAN_BACKEND"; then
+              echo "AAB_BACKEND_URL_VERIFIED=true"
+            else
+              echo "::error::Derlenen AAB icerisinde beklenen backend URL bulunamadi!"
+              exit 1
+            fi
+          fi
+
       - name: Upload Debug APK artifact
+        if: github.event_name != 'workflow_dispatch'
         uses: actions/upload-artifact@v4
         with:
           name: 3-2-1-futbol-debug-apk
