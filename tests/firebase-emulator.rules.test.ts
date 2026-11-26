@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import {
   assertFails,
@@ -31,8 +32,10 @@ import {
   verifyOnlineRoomOutcomeAdmin,
 } from '../src/game/firebaseAdminService';
 import {
+  captureSecurityRulesSnapshot,
   exportFirebaseSparkBackup,
   restoreFirebaseSparkBackup,
+  restoreSecurityRulesToDirectory,
   verifyFirebaseSparkBackup,
 } from '../src/game/firebaseBackup';
 import { ROSTER_DATA_VERSION } from '../src/game/rosterVersion';
@@ -896,6 +899,17 @@ test('Firebase Admin Firestore Emulator persists accounts, coins, purchases & on
     reward.creditedAccount.progression.weeklyPoints,
     initProg.weeklyPoints + reward.pointsAwarded
   );
+  // Simulate immediate server crash RIGHT AFTER atomic transaction commit (before any extra RAM flush):
+  // A brand-new AccountStore hydrated directly from Firestore Emulator MUST ALREADY have exact credited coins & points!
+  const postCrashCheckStore = new AccountStore(null);
+  postCrashCheckStore.setCloudAdapter(accountAdapter);
+  await postCrashCheckStore.hydrateFromCloud();
+  const postCrashAcc = await postCrashCheckStore.resolveByAccountIdAsync('acc_emu_1');
+  assert.ok(postCrashAcc);
+  assert.equal(postCrashAcc.progression.coins, initProg.coins + reward.coinsAwarded);
+  assert.equal(postCrashAcc.progression.weeklyPoints, initProg.weeklyPoints + reward.pointsAwarded);
+  assert.equal(postCrashAcc.progression.totalPoints, initProg.totalPoints + reward.pointsAwarded);
+
   // Sync RAM snapshot from atomic transaction result (no separate cloud write needed for coins/points!)
   store1.applyAuthoritativeAccountSnapshot(reward.creditedAccount);
 
@@ -999,19 +1013,42 @@ test('Firebase Admin Firestore Emulator persists accounts, coins, purchases & on
     setDoc(doc(aliceCtx.firestore(), 'backend_reward_claims', 'forged_claim'), { accountId: 'acc_emu_1' })
   );
 
-  // Free Spark-plan backup & isolated restore verification directly on Firebase Emulator
+  // Free Spark-plan backup & isolated restore verification directly on Firebase Emulator (including Security Rules snapshot)
   const adminApp = getFirebaseAdminApp();
   assert.ok(adminApp);
   const adminDb = getFirestore(adminApp);
+  const rulesSnapshot = captureSecurityRulesSnapshot(process.cwd());
   const backupSnapshot = await exportFirebaseSparkBackup({
     db: adminDb as unknown as Parameters<typeof exportFirebaseSparkBackup>[0]['db'],
     rtdb: null,
     projectId: PROJECT_ID,
+    securityRules: rulesSnapshot,
   });
   assert.equal(verifyFirebaseSparkBackup(backupSnapshot).ok, true);
   assert.equal(backupSnapshot.counts.firestore.backend_accounts, 1);
   assert.equal(backupSnapshot.counts.firestore.backend_purchases, 1);
   assert.ok(backupSnapshot.counts.firestore.backend_reward_claims >= 1);
+
+  // Verify isolated rules restore to a temporary directory matches active rules byte-for-byte
+  const isolatedRulesDir = fs.mkdtempSync(path.join(os.tmpdir(), 'emu-rules-restore-'));
+  try {
+    const rulesRestoreRes = restoreSecurityRulesToDirectory({
+      snapshot: backupSnapshot,
+      targetDir: isolatedRulesDir,
+      dryRun: false,
+    });
+    assert.equal(rulesRestoreRes.ok, true);
+    assert.equal(
+      fs.readFileSync(path.join(isolatedRulesDir, 'firestore.rules'), 'utf8'),
+      rulesSnapshot.firestoreRules
+    );
+    assert.equal(
+      fs.readFileSync(path.join(isolatedRulesDir, 'database.rules.json'), 'utf8'),
+      rulesSnapshot.databaseRulesJson
+    );
+  } finally {
+    fs.rmSync(isolatedRulesDir, { recursive: true, force: true });
+  }
 
   // Wipe Firestore Emulator completely, then restore from Spark backup and verify full recovery
   await testEnv.clearFirestore();

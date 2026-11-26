@@ -1,15 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import {
   SPARK_BACKUP_COVERAGE_METADATA,
   SPARK_BACKUP_FIRESTORE_COLLECTIONS,
   SPARK_BACKUP_RTDB_PATHS,
   assertNoSecretMaterialInBackup,
+  captureSecurityRulesSnapshot,
   exportFirebaseSparkBackup,
   reconcileLegacyUserWithAuthoritativeAccount,
   restoreFirebaseSparkBackup,
+  restoreSecurityRulesToDirectory,
   verifyFirebaseSparkBackup,
   type BackupFirestoreLike,
   type BackupRtdbLike,
@@ -249,4 +252,47 @@ test('reconcileLegacyUserWithAuthoritativeAccount honors verified backend_purcha
   assert.equal(res.coins, 250); // unverified legacy coins capped
   assert.equal(res.weeklyPoints, 0);
   assert.ok(res.anomalies.includes('unverified_legacy_multiplier2x_stripped'));
+});
+
+test('security rules snapshot backs up firestore.rules & database.rules.json with SHA-256 and restores cleanly to isolated dir', async () => {
+  const source = createInMemoryFirebaseStores();
+  const securityRules = captureSecurityRulesSnapshot(process.cwd());
+  assert.ok(securityRules.firestoreRules.includes('isValidRosterVersion'));
+  assert.ok(securityRules.databaseRulesJson.includes('"leaderboard"'));
+  assert.equal(securityRules.firestoreRulesSha256.length, 64);
+  assert.equal(securityRules.databaseRulesSha256.length, 64);
+
+  const snapshot = await exportFirebaseSparkBackup({
+    db: source.db,
+    rtdb: source.rtdb,
+    projectId: 'demo-futbol321',
+    securityRules,
+  });
+  assert.equal(verifyFirebaseSparkBackup(snapshot).ok, true);
+
+  // Tampering 1 character in backed-up firestore.rules MUST fail verification
+  const tamperedRules = structuredClone(snapshot);
+  tamperedRules.securityRules!.firestoreRules += '\n// tampered';
+  assert.equal(verifyFirebaseSparkBackup(tamperedRules).ok, false);
+
+  // Isolated temp directory restore produces byte-for-byte identical rules files
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'futbol-rules-restore-'));
+  try {
+    const dryRes = restoreSecurityRulesToDirectory({ snapshot, targetDir: tmpDir, dryRun: true });
+    assert.equal(dryRes.ok, true);
+    assert.equal(fs.existsSync(path.join(tmpDir, 'firestore.rules')), false);
+
+    const realRes = restoreSecurityRulesToDirectory({ snapshot, targetDir: tmpDir, dryRun: false });
+    assert.equal(realRes.ok, true);
+    assert.equal(
+      fs.readFileSync(path.join(tmpDir, 'firestore.rules'), 'utf8'),
+      securityRules.firestoreRules
+    );
+    assert.equal(
+      fs.readFileSync(path.join(tmpDir, 'database.rules.json'), 'utf8'),
+      securityRules.databaseRulesJson
+    );
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
 });

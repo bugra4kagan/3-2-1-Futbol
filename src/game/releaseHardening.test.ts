@@ -616,3 +616,145 @@ test('transient atomic transaction failure never burns match session or loses co
   assert.equal(thirdTry.ok, false);
   assert.equal(cloudAccount.progression.coins, initProg.coins + secondTry.coinsAwarded);
 });
+
+test('server crash immediately AFTER atomic transaction commit (before HTTP response) preserves coins/points and prevents double reward on restart', async () => {
+  const claimed = new Set<string>();
+  const cloudSessions = new Map<string, ServerMatchSession>();
+  const initProg = createInitialProgression('acc_crash_post');
+  const cloudAccounts = new Map<string, PersistentAccountRecord>();
+
+  const storeBeforeCrash = new AccountStore(null);
+  const reg = storeBeforeCrash.registerOrUpdate({
+    accountId: 'acc_crash_post',
+    googleUid: 'uid_crash_post',
+    profile: { id: 'acc_crash_post', name: 'CrashTest', avatar: 'avatar_classic_ball', score: 0 },
+    progression: initProg,
+  });
+  assert.equal(reg.ok, true);
+  if (!reg.ok) return;
+  cloudAccounts.set(reg.account.accountId, structuredClone(reg.account));
+
+  const sharedMatchAdapter: MatchSessionCloudAdapter = {
+    async loadActiveSessions() {
+      return Array.from(cloudSessions.values()).map((s) => structuredClone(s));
+    },
+    async getSessionById(id) {
+      const s = cloudSessions.get(id);
+      return s ? structuredClone(s) : null;
+    },
+    async saveSession(s) {
+      cloudSessions.set(s.sessionId, structuredClone(s));
+    },
+    async claimRewardAtomic(params) {
+      if (claimed.has(params.claimKey)) {
+        return { ok: false, duplicate: true };
+      }
+      const existing = cloudAccounts.get(params.accountId);
+      if (!existing) return { ok: false, duplicate: false };
+      const nextProg = applyVerifiedMatchRewardToProgression(existing.progression, {
+        coinsAwarded: params.coinsAwarded,
+        pointsAwarded: params.pointsAwarded,
+        won: params.won,
+      });
+      const updated = { ...existing, progression: nextProg, updatedAt: Date.now() };
+      cloudAccounts.set(params.accountId, structuredClone(updated));
+      claimed.add(params.claimKey);
+      const sess = cloudSessions.get(params.sessionId);
+      if (sess) sess.completed = true;
+      return { ok: true, duplicate: false, creditedAccount: structuredClone(updated) };
+    },
+  };
+
+  const ledgerBeforeCrash = new ServerMatchLedger();
+  ledgerBeforeCrash.setCloudAdapter(sharedMatchAdapter);
+  const session = ledgerBeforeCrash.issueSession({
+    accountId: 'acc_crash_post',
+    minigameType: 'two_clubs',
+    mode: 'online_room',
+    roomCode: 'CRSH99',
+    matchSeq: 1,
+    rosterVersion: ROSTER_DATA_VERSION,
+    now: NOW - 10_000,
+  });
+  const validId = session.rounds[0]!.pairing!.validPlayerIds[0];
+  ledgerBeforeCrash.submitVerifiedAnswer({
+    sessionId: session.sessionId,
+    accountId: 'acc_crash_post',
+    roundIndex: 0,
+    answer: PLAYERS[validId]?.name || validId,
+  });
+  await ledgerBeforeCrash.flushCloudWrites();
+
+  // Atomic transaction commits -> SIMULATE IMMEDIATE PROCESS CRASH (never call storeBeforeCrash.applyAuthoritativeAccountSnapshot or send HTTP response!)
+  const committed = await ledgerBeforeCrash.consumeVerifiedMatchSessionAsync({
+    sessionId: session.sessionId,
+    accountId: 'acc_crash_post',
+    hasMultiplier2x: false,
+    serverVerifiedOpponentScore: 0,
+    requireServerOpponentVerification: true,
+    roomClaimKey: 'CRSH99:1:acc_crash_post',
+    requireAccountCredit: true,
+    minDurationMs: 1000,
+    now: NOW,
+  });
+  assert.equal(committed.ok, true);
+  if (!committed.ok) return;
+
+  // --- FULL SERVER RESTART (empty RAM) ---
+  const storeAfterRestart = new AccountStore(null);
+  storeAfterRestart.setCloudAdapter({
+    loadAccounts: async () => Array.from(cloudAccounts.values()).map((a) => structuredClone(a)),
+    getById: async (id) => {
+      const a = cloudAccounts.get(id);
+      return a ? structuredClone(a) : null;
+    },
+    getByRecoveryCode: async () => null,
+    getByGoogleUid: async () => null,
+    saveAccount: async (rec) => {
+      cloudAccounts.set(rec.accountId, structuredClone(rec));
+    },
+    deleteAccount: async () => true,
+  });
+  await storeAfterRestart.hydrateFromCloud();
+
+  // 1) Zero reward loss: restarted server ALREADY has exact credited coins & league points!
+  const recovered = await storeAfterRestart.resolveByAccountIdAsync('acc_crash_post');
+  assert.ok(recovered);
+  assert.equal(recovered.progression.coins, initProg.coins + committed.coinsAwarded);
+  assert.equal(recovered.progression.weeklyPoints, initProg.weeklyPoints + committed.pointsAwarded);
+  assert.equal(recovered.progression.totalPoints, initProg.totalPoints + committed.pointsAwarded);
+
+  // 2) Zero double reward: client didn't receive HTTP response before crash and retries -> MUST be rejected as duplicate!
+  const ledgerAfterRestart = new ServerMatchLedger();
+  ledgerAfterRestart.setCloudAdapter(sharedMatchAdapter);
+  const retrySession = ledgerAfterRestart.issueSession({
+    accountId: 'acc_crash_post',
+    minigameType: 'two_clubs',
+    mode: 'online_room',
+    roomCode: 'CRSH99',
+    matchSeq: 1,
+    rosterVersion: ROSTER_DATA_VERSION,
+    now: NOW - 10_000,
+  });
+  const retryPid = retrySession.rounds[0]!.pairing!.validPlayerIds[0];
+  ledgerAfterRestart.submitVerifiedAnswer({
+    sessionId: retrySession.sessionId,
+    accountId: 'acc_crash_post',
+    roundIndex: 0,
+    answer: PLAYERS[retryPid]?.name || retryPid,
+  });
+  const retryAfterCrash = await ledgerAfterRestart.consumeVerifiedMatchSessionAsync({
+    sessionId: retrySession.sessionId,
+    accountId: 'acc_crash_post',
+    hasMultiplier2x: false,
+    serverVerifiedOpponentScore: 0,
+    requireServerOpponentVerification: true,
+    roomClaimKey: 'CRSH99:1:acc_crash_post',
+    requireAccountCredit: true,
+    minDurationMs: 1000,
+    now: NOW,
+  });
+  assert.equal(retryAfterCrash.ok, false);
+  if (!retryAfterCrash.ok) assert.equal(retryAfterCrash.duplicate, true);
+  assert.equal(cloudAccounts.get('acc_crash_post')!.progression.coins, initProg.coins + committed.coinsAwarded);
+});

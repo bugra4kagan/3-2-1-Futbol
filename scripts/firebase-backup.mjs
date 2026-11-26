@@ -23,8 +23,10 @@ import { initializeApp, cert, getApps } from 'firebase-admin/app';
 import { getFirestore, Timestamp } from 'firebase-admin/firestore';
 import { getDatabase } from 'firebase-admin/database';
 import {
+  captureSecurityRulesSnapshot,
   exportFirebaseSparkBackup,
   restoreFirebaseSparkBackup,
+  restoreSecurityRulesToDirectory,
   verifyFirebaseSparkBackup,
 } from '../src/game/firebaseBackup.ts';
 
@@ -131,7 +133,8 @@ async function main() {
 
   if (isExport) {
     const { db, rtdb, projectId } = initAdminClients();
-    const snapshot = await exportFirebaseSparkBackup({ db, rtdb, projectId });
+    const securityRules = captureSecurityRulesSnapshot(process.cwd());
+    const snapshot = await exportFirebaseSparkBackup({ db, rtdb, projectId, securityRules });
     const stamp = new Date().toISOString().replace(/[:.]/g, '-');
     const outArg = getArgValue('--out');
     const outPath = path.resolve(
@@ -148,6 +151,7 @@ async function main() {
           schemaVersion: snapshot.schemaVersion,
           rosterVersion: snapshot.rosterVersion,
           checksumSha256: snapshot.checksumSha256,
+          securityRulesBackedUp: Boolean(snapshot.securityRules),
           counts: snapshot.counts,
         },
         null,
@@ -161,6 +165,7 @@ async function main() {
     const dryRun = hasFlag('--dry-run') || !hasFlag('--confirm');
     const resolved = path.resolve(process.cwd(), restorePath);
     const parsed = JSON.parse(fs.readFileSync(resolved, 'utf8'));
+    const rulesOutDir = getArgValue('--restore-rules-dir');
     const { db, rtdb } = initAdminClients();
     const report = await restoreFirebaseSparkBackup({
       db,
@@ -173,8 +178,15 @@ async function main() {
         timestampFactory: (iso) => Timestamp.fromDate(new Date(iso)),
       },
     });
-    console.log(JSON.stringify(report, null, 2));
-    if (!report.ok) {
+    const rulesRestore = rulesOutDir
+      ? restoreSecurityRulesToDirectory({
+          snapshot: parsed,
+          targetDir: path.resolve(process.cwd(), rulesOutDir),
+          dryRun,
+        })
+      : null;
+    console.log(JSON.stringify({ ...report, rulesRestore }, null, 2));
+    if (!report.ok || (rulesRestore && !rulesRestore.ok)) {
       process.exit(1);
     }
   }
