@@ -1,4 +1,5 @@
 import { MATCH_PAIRINGS, PLAYERS, CLUBS } from './database';
+import { resolveCanonicalPlayerId } from './rosterVersion';
 import { Player, MatchPairing } from './types';
 import { canonicalTwoClubsKey, selectDiverseItems } from './questionHistory';
 
@@ -182,7 +183,9 @@ export function validateAnswerForPlayerIds(
   const sharedSurnames = getSharedSurnameSet();
   const isBareSharedSurname = isSingleToken && sharedSurnames.has(norm);
 
-  const eligiblePlayers = validPlayerIds
+  const eligiblePlayers = Array.from(
+    new Set(validPlayerIds.map((id) => resolveCanonicalPlayerId(id)))
+  )
     .map((id) => PLAYERS[id])
     .filter(Boolean);
 
@@ -271,7 +274,9 @@ export function getClubsForPairing(pairing: MatchPairing) {
  * Helper to get all valid players for a pairing
  */
 export function getPlayersForPairing(pairing: MatchPairing): Player[] {
-  return pairing.validPlayerIds
+  return Array.from(
+    new Set(pairing.validPlayerIds.map((id) => resolveCanonicalPlayerId(id)))
+  )
     .map((id) => PLAYERS[id])
     .filter((p): p is Player => Boolean(p));
 }

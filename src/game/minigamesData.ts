@@ -7,8 +7,8 @@ import {
   XoxBoardChallenge,
 } from './types';
 import { CLUBS, PLAYERS_LIST } from './database';
-import { getClubCrestUrl } from './clubLogos';
 import {
+  buildExpandedCareerChallenges,
   buildExpandedCountryClubChallenges,
   buildExpandedXoxBoards,
 } from './expandedQuestionPools';
@@ -613,17 +613,17 @@ export const SILHOUETTE_CHALLENGES: SilhouetteChallenge[] = [
   ...AUTO_SILHOUETTE_CHALLENGES,
 ];
 
-const CURATED_CAREER_CHALLENGES: CareerChallenge[] = [
+export const CURATED_CAREER_CHALLENGES: CareerChallenge[] = [
   {
     id: 'car_cr7',
     playerId: 'cristiano_ronaldo',
     steps: [
-      { clubName: 'Sporting CP', years: '2002–2003', countryFlag: '🇵🇹' },
+      { clubId: 'sporting_cp', clubName: 'Sporting CP', years: '2002–2003', countryFlag: '🇵🇹' },
       { clubId: 'manchester_united', clubName: 'Manchester United', years: '2003–2009', countryFlag: '🏴󠁧󠁢󠁥󠁮󠁧󠁿' },
       { clubId: 'real_madrid', clubName: 'Real Madrid', years: '2009–2018', countryFlag: '🇪🇸' },
       { clubId: 'juventus', clubName: 'Juventus', years: '2018–2021', countryFlag: '🇮🇹' },
       { clubId: 'manchester_united', clubName: 'Manchester United', years: '2021–2022', countryFlag: '🏴󠁧󠁢󠁥󠁮󠁧󠁿' },
-      { clubName: 'Al-Nassr', years: '2023–Günümüz', countryFlag: '🇸🇦' },
+      { clubId: 'al_nassr', clubName: 'Al-Nassr', years: '2023–Günümüz', countryFlag: '🇸🇦' },
     ],
     funFact: 'Sporting CP\'den Al-Nassr\'a uzanan kariyerinde 5 Ballon d\'Or ve 5 Şampiyonlar Ligi kazandı.',
   },
@@ -633,7 +633,7 @@ const CURATED_CAREER_CHALLENGES: CareerChallenge[] = [
     steps: [
       { clubId: 'barcelona', clubName: 'FC Barcelona', years: '2004–2021', countryFlag: '🇪🇸' },
       { clubId: 'psg', clubName: 'Paris Saint-Germain', years: '2021–2023', countryFlag: '🇫🇷' },
-      { clubName: 'Inter Miami', years: '2023–Günümüz', countryFlag: '🇺🇸' },
+      { clubId: 'inter_miami', clubName: 'Inter Miami', years: '2023–Günümüz', countryFlag: '🇺🇸' },
     ],
     funFact: 'Barcelona altyapısı La Masia\'dan çıkıp kulüp tarihinde 672 resmi gol attı.',
   },
@@ -641,7 +641,7 @@ const CURATED_CAREER_CHALLENGES: CareerChallenge[] = [
     id: 'car_sneijder',
     playerId: 'wesley_sneijder',
     steps: [
-      { clubName: 'Ajax', years: '2002–2007', countryFlag: '🇳🇱' },
+      { clubId: 'ajax', clubName: 'AFC Ajax', years: '2002–2007', countryFlag: '🇳🇱' },
       { clubId: 'real_madrid', clubName: 'Real Madrid', years: '2007–2009', countryFlag: '🇪🇸' },
       { clubId: 'inter_milan', clubName: 'Inter Milan', years: '2009–2013', countryFlag: '🇮🇹' },
       { clubId: 'galatasaray', clubName: 'Galatasaray', years: '2013–2017', countryFlag: '🇹🇷' },
@@ -837,23 +837,24 @@ const CURATED_CAREER_CHALLENGES: CareerChallenge[] = [
     id: 'car_kdb',
     playerId: 'kevin_de_bruyne',
     steps: [
-      { clubName: 'KRC Genk', years: '2008–2012', countryFlag: '🇧🇪' },
+      { clubId: 'krc_genk', clubName: 'KRC Genk', years: '2008–2012', countryFlag: '🇧🇪' },
       { clubId: 'chelsea', clubName: 'Chelsea FC', years: '2012–2014', countryFlag: '🏴󠁧󠁢󠁥󠁮󠁧󠁿' },
       { clubId: 'werder_bremen', clubName: 'Werder Bremen', years: '2012–2013 (Kiralık)', countryFlag: '🇩🇪' },
       { clubName: 'VfL Wolfsburg', years: '2014–2015', countryFlag: '🇩🇪' },
       { clubId: 'manchester_city', clubName: 'Manchester City', years: '2015–2025', countryFlag: '🏴󠁧󠁢󠁥󠁮󠁧󠁿' },
+      { clubId: 'napoli', clubName: 'SSC Napoli', years: '2025–Günümüz', countryFlag: '🇮🇹' },
     ],
-    funFact: 'Bundesliga\'da yılın oyuncusu olduktan sonra Manchester City efsanesine dönüştü.',
+    funFact: 'Manchester City efsanesi olduktan sonra 2025 yazında SSC Napoli formasıyla Serie A\'ya transfer oldu.',
   },
   {
     id: 'car_suarez',
     playerId: 'luis_suarez',
     steps: [
-      { clubName: 'Ajax', years: '2007–2011', countryFlag: '🇳🇱' },
+      { clubId: 'ajax', clubName: 'AFC Ajax', years: '2007–2011', countryFlag: '🇳🇱' },
       { clubId: 'liverpool', clubName: 'Liverpool FC', years: '2011–2014', countryFlag: '🏴󠁧󠁢󠁥󠁮󠁧󠁿' },
       { clubId: 'barcelona', clubName: 'FC Barcelona', years: '2014–2020', countryFlag: '🇪🇸' },
       { clubId: 'atletico_madrid', clubName: 'Atlético Madrid', years: '2020–2022', countryFlag: '🇪🇸' },
-      { clubName: 'Inter Miami', years: '2024–Günümüz', countryFlag: '🇺🇸' },
+      { clubId: 'inter_miami', clubName: 'Inter Miami', years: '2024–Günümüz', countryFlag: '🇺🇸' },
     ],
     funFact: 'Barcelona\'da MSN üçlüsüyle Şampiyonlar Ligi kazandıktan sonra Atlético Madrid\'i şampiyon yaptı.',
   },
@@ -896,7 +897,8 @@ const CURATED_CAREER_CHALLENGES: CareerChallenge[] = [
     steps: [
       { clubId: 'lyon', clubName: 'Olympique Lyon', years: '2005–2009', countryFlag: '🇫🇷' },
       { clubId: 'real_madrid', clubName: 'Real Madrid', years: '2009–2023', countryFlag: '🇪🇸' },
-      { clubName: 'Al-Ittihad', years: '2023–Günümüz', countryFlag: '🇸🇦' },
+      { clubId: 'al_ittihad', clubName: 'Al-Ittihad', years: '2023–2026', countryFlag: '🇸🇦' },
+      { clubId: 'al_hilal', clubName: 'Al-Hilal', years: '2026', countryFlag: '🇸🇦' },
     ],
     funFact: 'Lyon ile Ligue 1\'i domine ettikten sonra Real Madrid\'de efsaneleşip Ballon d\'Or kazandı.',
   },
@@ -904,12 +906,13 @@ const CURATED_CAREER_CHALLENGES: CareerChallenge[] = [
     id: 'car_neymar',
     playerId: 'neymar_jr',
     steps: [
-      { clubName: 'Santos FC', years: '2009–2013', countryFlag: '🇧🇷' },
+      { clubId: 'santos', clubName: 'Santos FC', years: '2009–2013', countryFlag: '🇧🇷' },
       { clubId: 'barcelona', clubName: 'FC Barcelona', years: '2013–2017', countryFlag: '🇪🇸' },
       { clubId: 'psg', clubName: 'Paris Saint-Germain', years: '2017–2023', countryFlag: '🇫🇷' },
-      { clubName: 'Al-Hilal', years: '2023–2025', countryFlag: '🇸🇦' },
+      { clubId: 'al_hilal', clubName: 'Al-Hilal', years: '2023–2025', countryFlag: '🇸🇦' },
+      { clubId: 'santos', clubName: 'Santos FC', years: '2025–Günümüz', countryFlag: '🇧🇷' },
     ],
-    funFact: '222 milyon euro ile futbol tarihinin en pahalı transferine imza attı.',
+    funFact: 'Avrupa ve Al-Hilal yıllarının ardından yetiştirdiği kulüp Santos FC\'ye geri döndü.',
   },
   {
     id: 'car_henry',
@@ -964,8 +967,9 @@ const CURATED_CAREER_CHALLENGES: CareerChallenge[] = [
       { clubId: 'manchester_city', clubName: 'Manchester City', years: '2016–2023', countryFlag: '🏴󠁧󠁢󠁥󠁮󠁧󠁿' },
       { clubId: 'barcelona', clubName: 'FC Barcelona', years: '2023–2024', countryFlag: '🇪🇸' },
       { clubId: 'manchester_city', clubName: 'Manchester City', years: '2024–2025', countryFlag: '🏴󠁧󠁢󠁥󠁮󠁧󠁿' },
+      { clubId: 'galatasaray', clubName: 'Galatasaray', years: '2025–Günümüz', countryFlag: '🇹🇷' },
     ],
-    funFact: 'Pep Guardiola\'nın Manchester City dönemindeki ilk transferi ve üçleme kaptanıydı.',
+    funFact: 'Manchester City üçleme kaptanlığının ardından 2025 yılında Galatasaray\'a imza attı.',
   },
   {
     id: 'car_sanchez',
@@ -977,8 +981,11 @@ const CURATED_CAREER_CHALLENGES: CareerChallenge[] = [
       { clubId: 'manchester_united', clubName: 'Manchester United', years: '2018–2020', countryFlag: '🏴󠁧󠁢󠁥󠁮󠁧󠁿' },
       { clubId: 'inter_milan', clubName: 'Inter Milan', years: '2019–2024', countryFlag: '🇮🇹' },
       { clubId: 'marseille', clubName: 'Olympique Marsilya', years: '2022–2023', countryFlag: '🇫🇷' },
+      { clubId: 'udinese', clubName: 'Udinese Calcio', years: '2024–2025', countryFlag: '🇮🇹' },
+      { clubId: 'sevilla', clubName: 'Sevilla FC', years: '2025–2026', countryFlag: '🇪🇸' },
+      { clubName: 'CF Montréal', years: '2026–Günümüz', countryFlag: '🇨🇦' },
     ],
-    funFact: 'Avrupa\'nın beş büyük liginin dördünde dev kulüplerde yıldızlaştı.',
+    funFact: 'Avrupa\'nın beş büyük liginin dördünde oynadıktan sonra 2026\'da MLS ekibi CF Montréal\'a geçti.',
   },
   {
     id: 'car_griezmann',
@@ -987,9 +994,10 @@ const CURATED_CAREER_CHALLENGES: CareerChallenge[] = [
       { clubId: 'real_sociedad', clubName: 'Real Sociedad', years: '2009–2014', countryFlag: '🇪🇸' },
       { clubId: 'atletico_madrid', clubName: 'Atlético Madrid', years: '2014–2019', countryFlag: '🇪🇸' },
       { clubId: 'barcelona', clubName: 'FC Barcelona', years: '2019–2022', countryFlag: '🇪🇸' },
-      { clubId: 'atletico_madrid', clubName: 'Atlético Madrid', years: '2021–Günümüz', countryFlag: '🇪🇸' },
+      { clubId: 'atletico_madrid', clubName: 'Atlético Madrid', years: '2021–2026', countryFlag: '🇪🇸' },
+      { clubName: 'Orlando City SC', years: '2026–Günümüz', countryFlag: '🇺🇸' },
     ],
-    funFact: 'Atlético Madrid tarihinin tüm zamanlardaki en golcü futbolcusu unvanını ele geçirdi.',
+    funFact: 'Atlético Madrid tarihinin en golcü oyuncusu olduktan sonra 2026\'da Orlando City SC\'ye transfer oldu.',
   },
   {
     id: 'car_etoo',
@@ -1008,14 +1016,15 @@ const CURATED_CAREER_CHALLENGES: CareerChallenge[] = [
     id: 'car_dimaria',
     playerId: 'angel_di_maria',
     steps: [
-      { clubName: 'SL Benfica', years: '2007–2010', countryFlag: '🇵🇹' },
+      { clubId: 'benfica', clubName: 'SL Benfica', years: '2007–2010', countryFlag: '🇵🇹' },
       { clubId: 'real_madrid', clubName: 'Real Madrid', years: '2010–2014', countryFlag: '🇪🇸' },
       { clubId: 'manchester_united', clubName: 'Manchester United', years: '2014–2015', countryFlag: '🏴󠁧󠁢󠁥󠁮󠁧󠁿' },
       { clubId: 'psg', clubName: 'Paris Saint-Germain', years: '2015–2022', countryFlag: '🇫🇷' },
       { clubId: 'juventus', clubName: 'Juventus', years: '2022–2023', countryFlag: '🇮🇹' },
-      { clubName: 'SL Benfica', years: '2023–Günümüz', countryFlag: '🇵🇹' },
+      { clubId: 'benfica', clubName: 'SL Benfica', years: '2023–2025', countryFlag: '🇵🇹' },
+      { clubName: 'Rosario Central', years: '2025–Günümüz', countryFlag: '🇦🇷' },
     ],
-    funFact: 'Olimpiyat, Copa América, Dünya Kupası ve Şampiyonlar Ligi finallerinin tamamında gol attı.',
+    funFact: 'Avrupa ve Dünya Kupası zaferlerinin ardından yetiştiği Rosario Central\'a geri döndü.',
   },
   {
     id: 'car_zidane',
@@ -1213,37 +1222,13 @@ const CURATED_CAREER_CHALLENGES: CareerChallenge[] = [
   },
 ];
 
-const curatedCareerIds = new Set(CURATED_CAREER_CHALLENGES.map((item) => item.playerId));
+export const CAREER_CHALLENGES: CareerChallenge[] = buildExpandedCareerChallenges(
+  PLAYERS_LIST,
+  CLUBS,
+  CURATED_CAREER_CHALLENGES
+);
 
-const AUTO_CAREER_CHALLENGES: CareerChallenge[] = PLAYERS_LIST.filter(
-  (player) => !curatedCareerIds.has(player.id)
-)
-  .map((player): CareerChallenge | null => {
-    const seniorEntries = (player.careerHistory || [])
-      .filter((entry) => !entry.isYouth)
-      .filter((entry) => Boolean(getClubCrestUrl(entry.clubId, entry.club)));
-    if (seniorEntries.length < 2) return null;
-
-    return {
-      id: `car_auto_${player.id}`,
-      playerId: player.id,
-      steps: seniorEntries.map((entry) => ({
-        ...(entry.clubId && CLUBS[entry.clubId] ? { clubId: entry.clubId } : {}),
-        clubName: entry.club,
-        years: entry.years.replace(/-/g, '–'),
-        countryFlag: entry.countryFlag,
-      })),
-      funFact: `${player.name} (${player.flag} ${player.nationality}) kariyeri boyunca ${seniorEntries.length} farklı döneme imza attı.`,
-    };
-  })
-  .filter((item): item is CareerChallenge => item !== null);
-
-export const CAREER_CHALLENGES: CareerChallenge[] = [
-  ...CURATED_CAREER_CHALLENGES,
-  ...AUTO_CAREER_CHALLENGES,
-];
-
-const CURATED_COUNTRY_CLUB_CHALLENGES: CountryClubChallenge[] = [
+export const CURATED_COUNTRY_CLUB_CHALLENGES: CountryClubChallenge[] = [
   {
     id: 'cc_bra_fb',
     country: 'Brezilya',
@@ -1732,7 +1717,7 @@ export const COUNTRY_CLUB_CHALLENGES: CountryClubChallenge[] = buildExpandedCoun
   CURATED_COUNTRY_CLUB_CHALLENGES
 );
 
-const CURATED_XOX_BOARDS: XoxBoardChallenge[] = [
+export const CURATED_XOX_BOARDS: XoxBoardChallenge[] = [
   {
     id: 'xox_cr7_giants',
     title: 'Avrupa Devleri & CR7 Ortakları',

@@ -595,7 +595,7 @@ export const PLAYERS: Record<string, Player> = Object.fromEntries(
   PLAYERS_LIST.map((player) => [player.id, player])
 );
 
-const CURATED_MATCH_PAIRINGS: MatchPairing[] = [
+export const CURATED_MATCH_PAIRINGS: MatchPairing[] = [
   // ==========================================
   // TÜRKİYE SÜPER LİG DERBİLERİ VE MAÇLARI
   // ==========================================

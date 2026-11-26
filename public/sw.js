@@ -77,12 +77,27 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  // Veri dosyaları (?v=ROSTER_DATA_VERSION dahil) her zaman önce ağdan güncellenir, çevrimdışında önbellek kullanılır
+  if (url.pathname.includes('/data/')) {
+    event.respondWith(
+      fetch(req)
+        .then((response) => {
+          if (response && response.ok && response.type === 'basic') {
+            const copy = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(req, copy)).catch(() => {});
+          }
+          return response;
+        })
+        .catch(() => caches.match(req))
+    );
+    return;
+  }
+
   // Hash'li JS/CSS paketleri ve görseller: mevcut sürüm önbelleğinden hızlı sun + arka planda tazele
   const isStaticAsset =
     url.pathname.includes('/assets/') ||
     url.pathname.includes('/icons/') ||
     url.pathname.includes('/players/') ||
-    url.pathname.includes('/data/') ||
     /\.(?:js|css|webp|png|svg|json|woff2?)$/i.test(url.pathname);
 
   if (!isStaticAsset) return;

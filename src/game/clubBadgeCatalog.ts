@@ -155,6 +155,18 @@ const CLUB_ID_MONOGRAM_OVERRIDES: Record<string, string> = {
   elche: 'ELC',
   alaves: 'ALA',
   malaga: 'MAL',
+  nec_nijmegen: 'NEC',
+  botafogo_fr: 'BOT',
+  al_ahli_saudi: 'AHL',
+  al_qadsiah: 'QAD',
+  bodrum_fk: 'BOD',
+  boluspor: 'BOL',
+  krc_genk: 'GNK',
+  az_alkmaar: 'AZ',
+  hnk_hajduk_split: 'HAJ',
+  gnk_dinamo_zagreb: 'DZG',
+  cr_vasco_da_gama: 'VAS',
+  los_angeles_fc: 'LAF',
 };
 
 const CLUB_STYLE_OVERRIDES: Record<

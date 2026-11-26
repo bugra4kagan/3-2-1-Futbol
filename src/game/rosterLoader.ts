@@ -1,19 +1,67 @@
-import { CLUBS, MATCH_PAIRINGS, PLAYERS, PLAYERS_LIST } from './database';
-import { COUNTRY_CLUB_CHALLENGES, XOX_BOARDS } from './minigamesData';
+import { CLUBS, CURATED_MATCH_PAIRINGS, MATCH_PAIRINGS, PLAYERS, PLAYERS_LIST } from './database';
+import {
+  buildExpandedCareerChallenges,
+  buildExpandedCountryClubChallenges,
+  buildExpandedMatchPairings,
+  buildExpandedXoxBoards,
+  extractCareerEndYear,
+  extractCareerStartYear,
+  isCareerChronologyVerified,
+  normalizeCareerYearRange,
+  sortAndCleanCareerHistory,
+} from './expandedQuestionPools';
+import {
+  CAREER_CHALLENGES,
+  COUNTRY_CLUB_CHALLENGES,
+  CURATED_CAREER_CHALLENGES,
+  CURATED_COUNTRY_CLUB_CHALLENGES,
+  CURATED_XOX_BOARDS,
+  XOX_BOARDS,
+} from './minigamesData';
 import { DEFAULT_PLAYER_PHOTO, PLAYER_ASSETS } from './playerAssets';
+import {
+  PLAYER_ID_ALIASES,
+  ROSTER_DATA_VERSION,
+  resolveCanonicalPlayerId,
+  setPlayerIdAliases,
+} from './rosterVersion';
 import { rebuildPlayerSearchIndex } from './silhouetteEngine';
 import { CareerHistoryEntry, Club, Player } from './types';
 import { invalidateValidatorIndexCache } from './validator';
-import { ROSTER_DATA_VERSION } from './rosterVersion';
 
-export { ROSTER_DATA_VERSION };
+export {
+  PLAYER_ID_ALIASES,
+  ROSTER_DATA_VERSION,
+  resolveCanonicalPlayerId,
+  normalizeCareerYearRange,
+  extractCareerStartYear,
+  extractCareerEndYear,
+  isCareerChronologyVerified,
+  sortAndCleanCareerHistory,
+};
+
 export const DEFAULT_ROSTER_LICENSE_ATTRIBUTION =
   'Oyuncu ve kulüp temel meta verileri OpenFootball players.db (CC0 1.0), Wikidata (CC0 1.0) ve Wikipedia futbolcu biyografileri (CC BY-SA 4.0) kaynaklarından türetilmiştir.';
+
+export type ExistingUpdateTuple =
+  | [string, number, string, number, Array<[number, string]>, string[]]
+  | [
+      string,
+      number,
+      string,
+      number,
+      Array<[number, string]>,
+      string[],
+      string[]?,
+      ('active' | 'retired' | 'legend' | null)?,
+      boolean?,
+    ];
 
 export interface CompactRosterPayload {
   version: string;
   generatedAt?: string;
   licenseAttribution?: string;
+  playerAliases?: Record<string, string>;
   stats?: {
     basePlayerCount?: number;
     addedPlayerCount?: number;
@@ -25,6 +73,9 @@ export interface CompactRosterPayload {
     verifiedTransfersApplied?: number;
     youthFlagsFixed?: number;
     questionEligibleAddedCount?: number;
+    duplicatesMergedCount?: number;
+    nationalitiesNormalizedCount?: number;
+    malformedYearsFixedCount?: number;
   };
   pos: Array<'GK' | 'DF' | 'MF' | 'FW'>;
   nat: Array<[string, string]>;
@@ -34,8 +85,7 @@ export interface CompactRosterPayload {
   addedClubs: Array<[string, string, string, number, string, string, string, number, string]>;
   // [playableClubIdIdxOrMinus1, clubName, natIdx]
   clubDict: Array<[number, string, number]>;
-  // [playerId, newClubIdIdxOrMinus1, newClubName, newLeagueIdxOrMinus1, [[clubDictIdx, years], ...], markYouthClubs]
-  existingUpdates: Array<[string, number, string, number, Array<[number, string]>, string[]]>;
+  existingUpdates: ExistingUpdateTuple[];
   // [id, name, aliases, natIdx, posIdx, age, currentClubDictIdx, leagueIdx, seniorPlayableClubIndices, [[clubDictIdx, years], ...], statusCode, qFlag, srcMeta]
   players: Array<
     [
@@ -84,7 +134,7 @@ let lastStats = {
 let inflightLoadPromise: Promise<RosterHydrationStatus> | null = null;
 
 export function isPlayerQuestionEligible(playerId: string): boolean {
-  return QUESTION_ELIGIBLE_PLAYER_IDS.has(playerId);
+  return QUESTION_ELIGIBLE_PLAYER_IDS.has(resolveCanonicalPlayerId(playerId));
 }
 
 export function getRosterHydrationStatus(): RosterHydrationStatus {
@@ -102,24 +152,17 @@ export function getRosterHydrationStatus(): RosterHydrationStatus {
   };
 }
 
-function appendUniqueIds(target: string[], additions: Iterable<string>): void {
-  const existing = new Set<string>(target);
-  for (const id of additions) {
-    if (!existing.has(id) && PLAYERS[id]) {
-      existing.add(id);
-      target.push(id);
-    }
+function mergeAliases(target: string[], additions: readonly string[], primaryName: string): void {
+  const seen = new Set(target.map((a) => a.trim().toLowerCase()));
+  const primaryLower = primaryName.trim().toLowerCase();
+  for (const raw of additions) {
+    const clean = String(raw || '').trim();
+    if (!clean) continue;
+    const key = clean.toLowerCase();
+    if (key === primaryLower || seen.has(key)) continue;
+    seen.add(key);
+    target.push(clean);
   }
-}
-
-function getIntersection(a: Set<string> | undefined, b: Set<string> | undefined): string[] {
-  if (!a || !b || a.size === 0 || b.size === 0) return [];
-  const [smaller, larger] = a.size <= b.size ? [a, b] : [b, a];
-  const out: string[] = [];
-  for (const id of smaller) {
-    if (larger.has(id)) out.push(id);
-  }
-  return out;
 }
 
 export function hydrateCompactRoster(data: CompactRosterPayload): RosterHydrationStatus {
@@ -132,11 +175,16 @@ export function hydrateCompactRoster(data: CompactRosterPayload): RosterHydratio
     activeLicenseAttribution = data.licenseAttribution;
   }
 
-  // 1. Register new playable clubs with procedural SVG colors
+  setPlayerIdAliases(data.playerAliases);
+  for (const legacyId of Object.keys(PLAYER_ID_ALIASES)) {
+    QUESTION_ELIGIBLE_PLAYER_IDS.delete(legacyId);
+  }
+
+  // 1. Register playable clubs with procedural SVG colors (existing 333 + 12 approved new = 345)
   for (const cTuple of data.addedClubs) {
     const [id, name, shortName, natIdx, primary, secondary, accent, founded, stadium] = cTuple;
     if (CLUBS[id]) continue;
-    const natPair = data.nat[natIdx] || ['Uluslararası', '🌍'];
+    const natPair = data.nat[natIdx] || ['Bilinmiyor', '🌍'];
     const clubObj: Club = {
       id,
       name,
@@ -157,26 +205,41 @@ export function hydrateCompactRoster(data: CompactRosterPayload): RosterHydratio
 
   // Helper to resolve compact club dictionary entries into CareerHistoryEntry
   const resolveCareerStep = (clubDictIdx: number, years: string): CareerHistoryEntry => {
+    const cleanYears = normalizeCareerYearRange(years);
     const dictEntry = data.clubDict[clubDictIdx];
     if (!dictEntry) {
-      return { club: 'Kulüp', years, countryFlag: '🌍' };
+      return { club: 'Kulüp', years: cleanYears, countryFlag: '🌍' };
     }
     const [playableIdx, clubName, natIdx] = dictEntry;
     const playableCid = playableIdx >= 0 ? data.clubIds[playableIdx] : undefined;
-    const natPair = data.nat[natIdx] || ['Uluslararası', '🌍'];
+    const natPair = data.nat[natIdx] || ['Bilinmiyor', '🌍'];
     return {
       club: clubName,
       ...(playableCid && CLUBS[playableCid] ? { clubId: playableCid } : {}),
-      years,
+      years: cleanYears,
       countryFlag: playableCid && CLUBS[playableCid] ? CLUBS[playableCid].countryFlag : natPair[1],
     };
   };
 
-  // 2. Apply strictly verified repairs and recent transfers to existing 3,049 players
+  // 2. Apply strictly verified repairs, duplicate alias merges, and recent transfers to existing 3,049 base players
   for (const upd of data.existingUpdates) {
-    const [playerId, newClubIdx, newClubName, newLeagueIdx, compactSpells, markYouthClubs] = upd;
+    const [
+      playerId,
+      newClubIdx,
+      newClubName,
+      newLeagueIdx,
+      compactSpells,
+      markYouthClubs,
+      extraAliases,
+      statusOverride,
+      replaceCareer,
+    ] = upd;
     const player = PLAYERS[playerId];
     if (!player) continue;
+
+    if (extraAliases && extraAliases.length > 0) {
+      mergeAliases(player.aliases, extraAliases, player.name);
+    }
 
     if (markYouthClubs.length > 0 && Array.isArray(player.careerHistory)) {
       const youthSet = new Set(markYouthClubs);
@@ -188,15 +251,12 @@ export function hydrateCompactRoster(data: CompactRosterPayload): RosterHydratio
     }
 
     if (compactSpells.length > 0) {
-      if (!player.careerHistory) player.careerHistory = [];
-      const seenClubs = new Set(
-        player.careerHistory.map((h) => `${h.clubId || h.club.toLowerCase()}::${h.years}`)
-      );
-      for (const [dIdx, yrs] of compactSpells) {
-        const step = resolveCareerStep(dIdx, yrs);
-        const key = `${step.clubId || step.club.toLowerCase()}::${step.years}`;
-        if (!seenClubs.has(key)) {
-          seenClubs.add(key);
+      const mappedSteps = compactSpells.map(([dIdx, yrs]) => resolveCareerStep(dIdx, yrs));
+      if (replaceCareer) {
+        player.careerHistory = mappedSteps;
+      } else {
+        if (!player.careerHistory) player.careerHistory = [];
+        for (const step of mappedSteps) {
           player.careerHistory.push(step);
         }
       }
@@ -204,22 +264,54 @@ export function hydrateCompactRoster(data: CompactRosterPayload): RosterHydratio
 
     if (newClubName) {
       const resolvedNewCid = newClubIdx >= 0 ? data.clubIds[newClubIdx] : undefined;
-      player.clubName = newClubName;
-      if (resolvedNewCid && CLUBS[resolvedNewCid]) {
-        player.clubId = resolvedNewCid;
+      let clubLabel = newClubName;
+      if (
+        clubLabel !== 'Kulüpsüz' &&
+        statusOverride === 'retired' &&
+        !/\((?:Emekli|Efsane)\)$/i.test(clubLabel)
+      ) {
+        clubLabel = `${clubLabel} (Emekli)`;
+      } else if (
+        clubLabel !== 'Kulüpsüz' &&
+        statusOverride === 'legend' &&
+        !/\((?:Emekli|Efsane)\)$/i.test(clubLabel)
+      ) {
+        clubLabel = `${clubLabel} (Efsane)`;
       }
+
+      player.clubName = clubLabel;
+      if (resolvedNewCid && CLUBS[resolvedNewCid] && clubLabel !== 'Kulüpsüz') {
+        player.clubId = resolvedNewCid;
+      } else {
+        delete player.clubId;
+      }
+
       if (newLeagueIdx >= 0 && data.leagues[newLeagueIdx]) {
         player.league = data.leagues[newLeagueIdx];
       }
+
       if (PLAYER_ASSETS[playerId]) {
-        PLAYER_ASSETS[playerId].clubName = newClubName;
-        if (player.clubId) PLAYER_ASSETS[playerId].clubId = player.clubId;
-        if (player.league) PLAYER_ASSETS[playerId].league = player.league;
+        PLAYER_ASSETS[playerId].clubName = clubLabel;
+        if (player.clubId) {
+          PLAYER_ASSETS[playerId].clubId = player.clubId;
+        } else {
+          delete PLAYER_ASSETS[playerId].clubId;
+        }
+        if (player.league) {
+          PLAYER_ASSETS[playerId].league = player.league;
+        }
       }
     }
   }
 
-  // 3. Expand all 21,951 newly verified players into PLAYERS, PLAYERS_LIST, PLAYER_ASSETS
+  // Clean & chronologically sort ALL base players' career histories (preserving same-year order)
+  for (const basePlayer of PLAYERS_LIST) {
+    if (Array.isArray(basePlayer.careerHistory) && basePlayer.careerHistory.length > 0) {
+      basePlayer.careerHistory = sortAndCleanCareerHistory(basePlayer.careerHistory);
+    }
+  }
+
+  // 3. Expand unique compact players into PLAYERS, PLAYERS_LIST, PLAYER_ASSETS
   const existingIdSet = new Set(PLAYERS_LIST.map((p) => p.id));
 
   for (const row of data.players) {
@@ -238,27 +330,41 @@ export function hydrateCompactRoster(data: CompactRosterPayload): RosterHydratio
       qFlag,
     ] = row;
 
-    if (existingIdSet.has(id)) continue;
+    if (existingIdSet.has(id) || PLAYER_ID_ALIASES[id]) continue;
     existingIdSet.add(id);
 
-    const natPair = data.nat[natIdx] || ['Uluslararası', '🌍'];
+    const natPair = data.nat[natIdx] || ['Bilinmiyor', '🌍'];
     const position = data.pos[posIdx] || 'MF';
-    const currentStep = resolveCareerStep(currentClubDictIdx, '2025-');
-    const leagueName = leagueIdx >= 0 && data.leagues[leagueIdx] ? data.leagues[leagueIdx] : 'Uluslararası';
+    const currentStep =
+      currentClubDictIdx >= 0
+        ? resolveCareerStep(currentClubDictIdx, statusCode === 1 ? '2026–' : '')
+        : { club: 'Kulüpsüz', years: '', countryFlag: natPair[1] };
+    const leagueName =
+      leagueIdx >= 0 && data.leagues[leagueIdx] ? data.leagues[leagueIdx] : 'Diğer';
 
-    const careerHistory: CareerHistoryEntry[] = compactSpells.map(([dIdx, yrs]) =>
+    const rawCareerHistory: CareerHistoryEntry[] = compactSpells.map(([dIdx, yrs]) =>
       resolveCareerStep(dIdx, yrs)
     );
-    if (careerHistory.length === 0) {
-      careerHistory.push(currentStep);
+    if (rawCareerHistory.length === 0 && currentStep.club && currentStep.club !== 'Kulüpsüz') {
+      rawCareerHistory.push(currentStep);
     }
 
-    const clubLabel =
-      statusCode === 2
-        ? `${currentStep.club} (Efsane)`
-        : statusCode === 0
-        ? `${currentStep.club} (Emekli)`
-        : currentStep.club;
+    const careerHistory = sortAndCleanCareerHistory(rawCareerHistory);
+
+    const cleanClubName = currentStep.club;
+    let clubLabel = cleanClubName;
+    if (cleanClubName !== 'Kulüpsüz') {
+      if (statusCode === 2 && !/\(Efsane\)$/i.test(cleanClubName)) {
+        clubLabel = `${cleanClubName} (Efsane)`;
+      } else if (statusCode === 0 && !/\((?:Emekli|Efsane)\)$/i.test(cleanClubName)) {
+        clubLabel = `${cleanClubName} (Emekli)`;
+      }
+    }
+
+    const validCurrentClubId =
+      cleanClubName !== 'Kulüpsüz' && currentStep.clubId && CLUBS[currentStep.clubId]
+        ? currentStep.clubId
+        : undefined;
 
     const playerObj: Player = {
       id,
@@ -271,7 +377,7 @@ export function hydrateCompactRoster(data: CompactRosterPayload): RosterHydratio
       age: age || 28,
       shirtNumber: 10,
       clubName: clubLabel,
-      ...(currentStep.clubId ? { clubId: currentStep.clubId } : {}),
+      ...(validCurrentClubId ? { clubId: validCurrentClubId } : {}),
       league: leagueName,
       careerHistory,
     };
@@ -283,7 +389,7 @@ export function hydrateCompactRoster(data: CompactRosterPayload): RosterHydratio
       age: playerObj.age ?? 28,
       shirtNumber: 10,
       clubName: clubLabel,
-      ...(currentStep.clubId ? { clubId: currentStep.clubId } : {}),
+      ...(validCurrentClubId ? { clubId: validCurrentClubId } : {}),
       league: leagueName,
     };
 
@@ -292,93 +398,46 @@ export function hydrateCompactRoster(data: CompactRosterPayload): RosterHydratio
     }
   }
 
-  // 4. Rebuild inverted club/country indexes across all 25,000 players and enrich valid answer pools
-  const clubToPlayerIds = new Map<string, Set<string>>();
-  const countryToPlayerIds = new Map<string, Set<string>>();
-  const countryClubToPlayerIds = new Map<string, Set<string>>();
+  // 4. Atomically rebuild ALL 4 mode question pools from the cleaned hydrated dataset
+  const poolOpts = { resolvePlayerId: resolveCanonicalPlayerId };
 
-  for (const player of PLAYERS_LIST) {
-    if (player.nationality) {
-      let cSet = countryToPlayerIds.get(player.nationality);
-      if (!cSet) {
-        cSet = new Set<string>();
-        countryToPlayerIds.set(player.nationality, cSet);
-      }
-      cSet.add(player.id);
-    }
+  const rebuiltPairings = buildExpandedMatchPairings(
+    PLAYERS_LIST,
+    CLUBS,
+    CURATED_MATCH_PAIRINGS,
+    poolOpts
+  );
+  MATCH_PAIRINGS.splice(0, MATCH_PAIRINGS.length, ...rebuiltPairings);
 
-    const seniorIds = new Set<string>();
-    if (player.clubId && CLUBS[player.clubId]) {
-      seniorIds.add(player.clubId);
-    }
-    for (const h of player.careerHistory || []) {
-      if (!h.isYouth && h.clubId && CLUBS[h.clubId]) {
-        seniorIds.add(h.clubId);
-      }
-    }
+  const rebuiltCountryClubs = buildExpandedCountryClubChallenges(
+    PLAYERS_LIST,
+    CLUBS,
+    CURATED_COUNTRY_CLUB_CHALLENGES,
+    poolOpts
+  );
+  COUNTRY_CLUB_CHALLENGES.splice(0, COUNTRY_CLUB_CHALLENGES.length, ...rebuiltCountryClubs);
 
-    for (const cid of seniorIds) {
-      let clSet = clubToPlayerIds.get(cid);
-      if (!clSet) {
-        clSet = new Set<string>();
-        clubToPlayerIds.set(cid, clSet);
-      }
-      clSet.add(player.id);
+  const rebuiltXox = buildExpandedXoxBoards(
+    PLAYERS_LIST,
+    CLUBS,
+    CURATED_XOX_BOARDS,
+    320,
+    poolOpts
+  );
+  XOX_BOARDS.splice(0, XOX_BOARDS.length, ...rebuiltXox);
 
-      if (player.nationality) {
-        const ccKey = `${player.nationality}||${cid}`;
-        let ccSet = countryClubToPlayerIds.get(ccKey);
-        if (!ccSet) {
-          ccSet = new Set<string>();
-          countryClubToPlayerIds.set(ccKey, ccSet);
-        }
-        ccSet.add(player.id);
-      }
-    }
-  }
-
-  for (const pairing of MATCH_PAIRINGS) {
-    const common = getIntersection(
-      clubToPlayerIds.get(pairing.club1Id),
-      clubToPlayerIds.get(pairing.club2Id)
-    );
-    if (common.length > 0) {
-      appendUniqueIds(pairing.validPlayerIds, common);
-    }
-  }
-
-  for (const cc of COUNTRY_CLUB_CHALLENGES) {
-    const matched = countryClubToPlayerIds.get(`${cc.country}||${cc.clubId}`);
-    if (matched && matched.size > 0) {
-      appendUniqueIds(cc.validPlayerIds, matched);
-    }
-  }
-
-  const getXoxAxisSet = (cond: { type: 'club' | 'country' | 'teammate'; id: string }): Set<string> | undefined =>
-    cond.type === 'club'
-      ? clubToPlayerIds.get(cond.id)
-      : cond.type === 'country'
-      ? countryToPlayerIds.get(cond.id)
-      : undefined;
-
-  for (const board of XOX_BOARDS) {
-    for (let r = 0; r < 3; r += 1) {
-      const rSet = getXoxAxisSet(board.rows[r]);
-      for (let c = 0; c < 3; c += 1) {
-        const cSet = getXoxAxisSet(board.cols[c]);
-        const key = `${r}_${c}`;
-        const existing = board.cellValidPlayerIds[key] || [];
-        const common = getIntersection(rSet, cSet);
-        if (common.length > 0) {
-          appendUniqueIds(existing, common);
-          board.cellValidPlayerIds[key] = existing;
-        }
-      }
-    }
-  }
+  const rebuiltCareers = buildExpandedCareerChallenges(
+    PLAYERS_LIST,
+    CLUBS,
+    CURATED_CAREER_CHALLENGES,
+    QUESTION_ELIGIBLE_PLAYER_IDS,
+    poolOpts
+  );
+  CAREER_CHALLENGES.splice(0, CAREER_CHALLENGES.length, ...rebuiltCareers);
 
   lastStats = {
-    verifiedCareerRepairsApplied: data.stats?.verifiedCareerRepairsApplied ?? data.existingUpdates.length,
+    verifiedCareerRepairsApplied:
+      data.stats?.verifiedCareerRepairsApplied ?? data.existingUpdates.length,
     verifiedTransfersApplied: data.stats?.verifiedTransfersApplied ?? 0,
     youthFlagsFixed: data.stats?.youthFlagsFixed ?? 0,
   };
@@ -418,7 +477,7 @@ export async function ensureExpandedRosterLoaded(): Promise<RosterHydrationStatu
           (import.meta as unknown as { env?: { BASE_URL?: string } }).env?.BASE_URL) ||
         '/';
       const normalizedBase = base.endsWith('/') ? base : `${base}/`;
-      const url = `${normalizedBase}data/roster25k.v2.json`;
+      const url = `${normalizedBase}data/roster25k.v2.json?v=${encodeURIComponent(ROSTER_DATA_VERSION)}`;
 
       const res = await fetch(url, { cache: 'force-cache' });
       if (!res.ok) {

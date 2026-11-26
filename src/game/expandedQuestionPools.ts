@@ -1,5 +1,7 @@
 import { getClubCrestUrl } from './clubLogos';
 import {
+  CareerChallenge,
+  CareerHistoryEntry,
   Club,
   CountryClubChallenge,
   MatchPairing,
@@ -8,8 +10,187 @@ import {
   XoxCondition,
 } from './types';
 
+export const NEW_12_CLUB_IDS = new Set<string>([
+  'nec_nijmegen',
+  'botafogo_fr',
+  'al_ahli_saudi',
+  'al_qadsiah',
+  'bodrum_fk',
+  'boluspor',
+  'krc_genk',
+  'az_alkmaar',
+  'hnk_hajduk_split',
+  'gnk_dinamo_zagreb',
+  'cr_vasco_da_gama',
+  'los_angeles_fc',
+]);
+
+const RESERVE_OR_YOUTH_CLUB_RE =
+  /(?:\bAltyap[ıi]\b|\bGençlik\b|\bYouth\b|\bAcademy\b|\bReserves?\b|\bU1[5-9]\b|\bU2[0-3]\b|\bCastilla\b|\bMestalla\b|\bFabril\b|\bPromesas\b|\bPrimavera\b|\bJong\s+[A-Z]|\bNext\s*Gen\b|\bBar[cç]a\s+Atl[eè]tic\b|\s(?:II|III|IV)$|\sB$)/i;
+
+export function isReserveOrYouthClubName(clubName: string): boolean {
+  const trimmed = clubName.trim();
+  if (!trimmed) return false;
+  if (/^Willem II$/i.test(trimmed)) return false;
+  return RESERVE_OR_YOUTH_CLUB_RE.test(trimmed);
+}
+
+export function normalizeCareerYearRange(raw: string): string {
+  const trimmed = String(raw || '').trim();
+  if (!trimmed) return '';
+  let normalized = trimmed
+    .replace(/\s*[–—−-]\s*/g, '–')
+    .replace(/–(?:present|current|now|günümüz|gunumuz)$/i, '–Günümüz');
+
+  // Fix 2-digit shorthand end year like 1998–04 -> 1998–2004, 1999–01 -> 1999–2001
+  const shortMatch = normalized.match(/^(19\d\d|20\d\d)–(\d{2})$/);
+  if (shortMatch) {
+    const start = Number(shortMatch[1]);
+    const endShort = Number(shortMatch[2]);
+    const centuryBase = Math.floor(start / 100) * 100;
+    const candidate = centuryBase + endShort;
+    const resolvedEnd = candidate >= start ? candidate : candidate + 100;
+    normalized = `${start}–${resolvedEnd}`;
+  }
+
+  return normalized;
+}
+
+export function extractCareerStartYear(years: string): number | null {
+  if (!years || years.includes('?')) return null;
+  const match = years.trim().match(/^(19\d\d|20\d\d)(?:$|[–—−-])/);
+  if (!match) return null;
+  const year = Number(match[1]);
+  return year >= 1900 && year <= 2026 ? year : null;
+}
+
+export function extractCareerEndYear(years: string): number | null {
+  const trimmed = String(years || '').trim();
+  if (!trimmed || trimmed.includes('?')) return null;
+  if (/[–—−-](?:Günümüz|gunumuz|present|current|now)$/i.test(trimmed)) {
+    return 2026;
+  }
+  const rangeMatch = trimmed.match(/^(?:19\d\d|20\d\d)[–—−-](19\d\d|20\d\d)$/);
+  if (rangeMatch) {
+    const year = Number(rangeMatch[1]);
+    return year >= 1900 && year <= 2027 ? year : null;
+  }
+  const singleMatch = trimmed.match(/^(19\d\d|20\d\d)$/);
+  if (singleMatch) {
+    const year = Number(singleMatch[1]);
+    return year >= 1900 && year <= 2026 ? year : null;
+  }
+  return null;
+}
+
+export function isCareerChronologyVerified(entries: readonly CareerHistoryEntry[]): boolean {
+  if (entries.length < 2) return false;
+  let prevStart = -1;
+  for (const entry of entries) {
+    const start = extractCareerStartYear(entry.years);
+    if (start === null) return false;
+    // Reject explicitly malformed end ranges (e.g. '2024-2021') while allowing open '2024–'
+    const hasExplicitEnd = /[–—−-]\s*\d/.test(entry.years);
+    if (hasExplicitEnd) {
+      const end = extractCareerEndYear(entry.years);
+      if (end === null || end < start) return false;
+    }
+    if (start < prevStart) return false;
+    prevStart = start;
+  }
+  return true;
+}
+
+function normalizeClubStemForDedup(clubName: string): string {
+  return clubName
+    .replace(/\((?:Kiralık|Altyapı|Emekli|Efsane)[^)]*\)/gi, '')
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\b(?:fc|cf|sc|ac|as|ss|sv|vfl|vfb|tsg|fsv|rcd|rc|cd|ud|sd|ca|se|cr|ec|fk|sk|pfk|afc|bk|ik|if|fk|club|calcio|fotball|fútbol|futebol)\b/g, '')
+    .replace(/[^a-z0-9]/g, '');
+}
+
+/**
+ * Kariyer adımlarını temizler, tekilleştirir ve yalnızca farklı başlangıç yılları arasında
+ * kronolojik sıralama uygular. Aynı yıl içindeki transferlerin sırasını asla tahmin etmez.
+ */
+export function sortAndCleanCareerHistory(
+  entries: readonly CareerHistoryEntry[]
+): CareerHistoryEntry[] {
+  const cleaned: CareerHistoryEntry[] = [];
+  const seenMap = new Map<string, number>();
+
+  for (const raw of entries) {
+    const clubName = (raw.club || '').trim();
+    if (!clubName) continue;
+
+    const normalizedYears = normalizeCareerYearRange(raw.years);
+    // Drop pure dash placeholders when there is no year digit at all
+    if (normalizedYears === '–' || normalizedYears === '-') continue;
+
+    const inferredYouth = raw.isYouth || /\(Altyapı\)/i.test(clubName) || isReserveOrYouthClubName(clubName);
+    const stem = raw.clubId || normalizeClubStemForDedup(clubName) || clubName.toLowerCase();
+    const isLoan = /\(Kiralık\)/i.test(clubName);
+    const dedupKey = `${stem}::${normalizedYears}::${inferredYouth ? 'Y' : 'S'}`;
+
+    const entry: CareerHistoryEntry = {
+      ...raw,
+      club: clubName,
+      years: normalizedYears || raw.years,
+      ...(inferredYouth ? { isYouth: true } : {}),
+    };
+
+    const existingIdx = seenMap.get(dedupKey);
+    if (existingIdx === undefined) {
+      seenMap.set(dedupKey, cleaned.length);
+      cleaned.push(entry);
+    } else {
+      const prev = cleaned[existingIdx];
+      // Merge clubId or (Kiralık) label if better specified
+      cleaned[existingIdx] = {
+        ...prev,
+        club: isLoan && !/\(Kiralık\)/i.test(prev.club) ? entry.club : prev.club,
+        ...(!prev.clubId && entry.clubId ? { clubId: entry.clubId } : {}),
+        countryFlag: prev.countryFlag !== '🌍' ? prev.countryFlag : entry.countryFlag,
+        ...(prev.isYouth || entry.isYouth ? { isYouth: true } : {}),
+      };
+    }
+  }
+
+  // Sort ONLY elements that have a valid leading start year relative to each other,
+  // preserving relative order for equal start years AND keeping null-year slots untouched.
+  const sortablePositions: number[] = [];
+  const sortableItems: Array<{ entry: CareerHistoryEntry; startYear: number; origIdx: number }> = [];
+
+  for (let i = 0; i < cleaned.length; i += 1) {
+    const sy = extractCareerStartYear(cleaned[i].years);
+    if (sy !== null) {
+      sortablePositions.push(i);
+      sortableItems.push({ entry: cleaned[i], startYear: sy, origIdx: i });
+    }
+  }
+
+  sortableItems.sort((a, b) => {
+    if (a.startYear !== b.startYear) {
+      return a.startYear - b.startYear;
+    }
+    return a.origIdx - b.origIdx;
+  });
+
+  for (let k = 0; k < sortablePositions.length; k += 1) {
+    cleaned[sortablePositions[k]] = sortableItems[k].entry;
+  }
+
+  return cleaned;
+}
+
 function canonicalClubPairKey(c1: string, c2: string): string {
   return c1 < c2 ? `${c1}__${c2}` : `${c2}__${c1}`;
+}
+
+export interface PoolBuildOptions {
+  resolvePlayerId?: (id: string) => string;
 }
 
 /**
@@ -19,19 +200,29 @@ function canonicalClubPairKey(c1: string, c2: string): string {
 export function buildExpandedMatchPairings(
   playersList: readonly Player[],
   clubs: Record<string, Club>,
-  curatedPairings: readonly MatchPairing[]
+  curatedPairings: readonly MatchPairing[],
+  options: PoolBuildOptions = {}
 ): MatchPairing[] {
+  const resolveId = options.resolvePlayerId || ((id: string) => id);
+  const playersById = new Map<string, Player>();
+  for (const pl of playersList) {
+    playersById.set(pl.id, pl);
+  }
+
   const existingKeys = new Set<string>();
   const existingIds = new Set<string>();
   const mergedCuratedByCanon = new Map<string, MatchPairing>();
 
   for (const p of curatedPairings) {
+    if (!clubs[p.club1Id] || !clubs[p.club2Id]) continue;
     const cKey = canonicalClubPairKey(p.club1Id, p.club2Id);
+    const cleanedIds = Array.from(
+      new Set(p.validPlayerIds.map((id) => resolveId(id)).filter((id) => playersById.has(id)))
+    );
     const existing = mergedCuratedByCanon.get(cKey);
     if (existing) {
-      const mergedValidIds = Array.from(
-        new Set([...existing.validPlayerIds, ...p.validPlayerIds])
-      );
+      const mergedValidIds = Array.from(new Set([...existing.validPlayerIds, ...cleanedIds]));
+      if (mergedValidIds.length === 0) continue;
       mergedCuratedByCanon.set(cKey, {
         ...existing,
         validPlayerIds: mergedValidIds,
@@ -39,7 +230,7 @@ export function buildExpandedMatchPairings(
     } else {
       mergedCuratedByCanon.set(cKey, {
         ...p,
-        validPlayerIds: Array.from(new Set(p.validPlayerIds)),
+        validPlayerIds: cleanedIds,
       });
       existingIds.add(p.id);
       existingKeys.add(cKey);
@@ -47,7 +238,6 @@ export function buildExpandedMatchPairings(
   }
 
   const dedupedCurated = Array.from(mergedCuratedByCanon.values());
-
   const pairBucket = new Map<string, { c1: string; c2: string; playerIds: string[] }>();
 
   for (const player of playersList) {
@@ -65,6 +255,12 @@ export function buildExpandedMatchPairings(
       )
     );
 
+    if (player.clubId && clubs[player.clubId] && Boolean(getClubCrestUrl(player.clubId, player.clubName))) {
+      if (!seniorClubIds.includes(player.clubId)) {
+        seniorClubIds.push(player.clubId);
+      }
+    }
+
     if (seniorClubIds.length < 2) continue;
 
     for (let i = 0; i < seniorClubIds.length; i += 1) {
@@ -73,7 +269,14 @@ export function buildExpandedMatchPairings(
         const b = seniorClubIds[j];
         const [c1, c2] = a < b ? [a, b] : [b, a];
         const key = `${c1}__${c2}`;
-        if (existingKeys.has(key)) continue;
+
+        if (existingKeys.has(key)) {
+          const curated = mergedCuratedByCanon.get(key);
+          if (curated && !curated.validPlayerIds.includes(player.id)) {
+            curated.validPlayerIds.push(player.id);
+          }
+          continue;
+        }
 
         let entry = pairBucket.get(key);
         if (!entry) {
@@ -85,8 +288,14 @@ export function buildExpandedMatchPairings(
     }
   }
 
+  const validCurated = dedupedCurated.filter((p) => p.validPlayerIds.length > 0);
+
   const generated: MatchPairing[] = Array.from(pairBucket.entries())
-    .filter(([, entry]) => entry.playerIds.length >= 2)
+    .filter(([, entry]) => {
+      const minRequired =
+        NEW_12_CLUB_IDS.has(entry.c1) || NEW_12_CLUB_IDS.has(entry.c2) ? 3 : 2;
+      return entry.playerIds.length >= minRequired;
+    })
     .sort((a, b) => {
       if (b[1].playerIds.length !== a[1].playerIds.length) {
         return b[1].playerIds.length - a[1].playerIds.length;
@@ -99,7 +308,7 @@ export function buildExpandedMatchPairings(
       const club1Name = clubs[entry.c1]?.name || entry.c1;
       const club2Name = clubs[entry.c2]?.name || entry.c2;
       const sampleName =
-        playersList.find((pl) => pl.id === entry.playerIds[0])?.name || 'Ortak yıldızlar';
+        playersById.get(entry.playerIds[0])?.name || 'Ortak yıldızlar';
       return {
         id: existingIds.has(id) ? `${id}_ext` : id,
         club1Id: entry.c1,
@@ -109,7 +318,7 @@ export function buildExpandedMatchPairings(
       };
     });
 
-  return [...dedupedCurated, ...generated];
+  return [...validCurated, ...generated];
 }
 
 /**
@@ -119,14 +328,32 @@ export function buildExpandedMatchPairings(
 export function buildExpandedCountryClubChallenges(
   playersList: readonly Player[],
   clubs: Record<string, Club>,
-  curatedChallenges: readonly CountryClubChallenge[]
+  curatedChallenges: readonly CountryClubChallenge[],
+  options: PoolBuildOptions = {}
 ): CountryClubChallenge[] {
+  const resolveId = options.resolvePlayerId || ((id: string) => id);
+  const playersById = new Map<string, Player>();
+  for (const pl of playersList) {
+    playersById.set(pl.id, pl);
+  }
+
   const existingKeys = new Set<string>();
   const existingIds = new Set<string>();
+  const curatedByKey = new Map<string, CountryClubChallenge>();
 
   for (const c of curatedChallenges) {
+    if (!clubs[c.clubId]) continue;
+    const key = `${c.country}||${c.clubId}`;
+    const cleanedIds = Array.from(
+      new Set(c.validPlayerIds.map((id) => resolveId(id)).filter((id) => playersById.has(id)))
+    );
+    const cloned: CountryClubChallenge = {
+      ...c,
+      validPlayerIds: cleanedIds,
+    };
     existingIds.add(c.id);
-    existingKeys.add(`${c.country}||${c.clubId}`);
+    existingKeys.add(key);
+    curatedByKey.set(key, cloned);
   }
 
   const bucket = new Map<
@@ -149,10 +376,21 @@ export function buildExpandedCountryClubChallenges(
           .map((step) => step.clubId as string)
       )
     );
+    if (player.clubId && clubs[player.clubId] && Boolean(getClubCrestUrl(player.clubId, player.clubName))) {
+      if (!seniorClubIds.includes(player.clubId)) {
+        seniorClubIds.push(player.clubId);
+      }
+    }
 
     for (const clubId of seniorClubIds) {
       const key = `${player.nationality}||${clubId}`;
-      if (existingKeys.has(key)) continue;
+      if (existingKeys.has(key)) {
+        const curated = curatedByKey.get(key);
+        if (curated && !curated.validPlayerIds.includes(player.id)) {
+          curated.validPlayerIds.push(player.id);
+        }
+        continue;
+      }
 
       let entry = bucket.get(key);
       if (!entry) {
@@ -168,8 +406,15 @@ export function buildExpandedCountryClubChallenges(
     }
   }
 
+  const validCurated = Array.from(curatedByKey.values()).filter(
+    (c) => c.validPlayerIds.length > 0
+  );
+
   const generated: CountryClubChallenge[] = Array.from(bucket.entries())
-    .filter(([, entry]) => entry.playerIds.length >= 2)
+    .filter(([, entry]) => {
+      const minRequired = NEW_12_CLUB_IDS.has(entry.clubId) ? 3 : 2;
+      return entry.playerIds.length >= minRequired;
+    })
     .sort((a, b) => {
       if (b[1].playerIds.length !== a[1].playerIds.length) {
         return b[1].playerIds.length - a[1].playerIds.length;
@@ -180,7 +425,7 @@ export function buildExpandedCountryClubChallenges(
     .map(([, entry], idx) => {
       const clubName = clubs[entry.clubId]?.name || entry.clubId;
       const sampleName =
-        playersList.find((pl) => pl.id === entry.playerIds[0])?.name || 'Ünlü isimler';
+        playersById.get(entry.playerIds[0])?.name || 'Ünlü isimler';
       const baseId = `cc_auto_${entry.clubId}_${idx}`;
       return {
         id: existingIds.has(baseId) ? `${baseId}_x` : baseId,
@@ -192,7 +437,7 @@ export function buildExpandedCountryClubChallenges(
       };
     });
 
-  return [...curatedChallenges, ...generated];
+  return [...validCurated, ...generated];
 }
 
 /**
@@ -203,12 +448,30 @@ export function buildExpandedXoxBoards(
   playersList: readonly Player[],
   clubs: Record<string, Club>,
   curatedBoards: readonly XoxBoardChallenge[],
-  targetTotalBoards = 320
+  targetTotalBoards = 320,
+  options: PoolBuildOptions = {}
 ): XoxBoardChallenge[] {
+  const resolveId = options.resolvePlayerId || ((id: string) => id);
+  const playersById = new Map<string, Player>();
+  for (const pl of playersList) {
+    playersById.set(pl.id, pl);
+  }
+
   const existingIds = new Set(curatedBoards.map((b) => b.id));
   const seenSignatures = new Set<string>();
 
+  const normalizedCuratedBoards: XoxBoardChallenge[] = [];
   for (const b of curatedBoards) {
+    const cleanedCells: Record<string, string[]> = {};
+    for (const [cellKey, ids] of Object.entries(b.cellValidPlayerIds)) {
+      cleanedCells[cellKey] = Array.from(
+        new Set(ids.map((id) => resolveId(id)).filter((id) => playersById.has(id)))
+      );
+    }
+    normalizedCuratedBoards.push({
+      ...b,
+      cellValidPlayerIds: cleanedCells,
+    });
     const rowSig = b.rows.map((r) => `${r.type}:${r.id}`).sort().join('|');
     const colSig = b.cols.map((c) => `${c.type}:${c.id}`).sort().join('|');
     seenSignatures.add(`${rowSig}::${colSig}`);
@@ -233,6 +496,11 @@ export function buildExpandedXoxBoards(
           .map((step) => step.clubId as string)
       )
     );
+    if (player.clubId && clubs[player.clubId] && Boolean(getClubCrestUrl(player.clubId, player.clubName))) {
+      if (!seniorClubIds.includes(player.clubId)) {
+        seniorClubIds.push(player.clubId);
+      }
+    }
 
     for (const cid of seniorClubIds) {
       let set = clubPlayers.get(cid);
@@ -264,7 +532,6 @@ export function buildExpandedXoxBoards(
     .slice(0, 16)
     .map(([name, info]) => ({ name, flag: info.flag, ids: info.ids }));
 
-  // Build axis candidates: 28 clubs + 16 countries
   type AxisCandidate = { cond: XoxCondition; members: Set<string> };
   const clubAxes: AxisCandidate[] = topClubIds.map((cid) => ({
     cond: {
@@ -289,7 +556,6 @@ export function buildExpandedXoxBoards(
     ...clubAxes,
   ];
 
-  // Precompute compatibility map (axisA -> list of compatible axisB indices with >= 2 overlap)
   const intersectIds = (a: Set<string>, b: Set<string>): string[] => {
     const out: string[] = [];
     const [smaller, larger] = a.size <= b.size ? [a, b] : [b, a];
@@ -299,11 +565,37 @@ export function buildExpandedXoxBoards(
     return out;
   };
 
-  // Precompute valid row triplets and match them against valid column triplets deterministically
-  const generated: XoxBoardChallenge[] = [];
-  const needed = Math.max(0, targetTotalBoards - curatedBoards.length);
+  // Enrich curated boards' non-teammate cells
+  const getAxisMembers = (cond: XoxCondition): Set<string> | undefined =>
+    cond.type === 'club'
+      ? clubPlayers.get(cond.id)
+      : cond.type === 'country'
+      ? countryPlayers.get(cond.id)?.ids
+      : undefined;
 
-  // Build adjacency of club row index -> compatible colAxis indices
+  for (const b of normalizedCuratedBoards) {
+    for (let r = 0; r < 3; r += 1) {
+      const rMem = getAxisMembers(b.rows[r]);
+      for (let c = 0; c < 3; c += 1) {
+        const cMem = getAxisMembers(b.cols[c]);
+        if (!rMem || !cMem) continue;
+        const common = intersectIds(rMem, cMem);
+        if (common.length > 0) {
+          const existing = new Set(b.cellValidPlayerIds[`${r}_${c}`] || []);
+          for (const id of common) existing.add(id);
+          b.cellValidPlayerIds[`${r}_${c}`] = Array.from(existing);
+        }
+      }
+    }
+  }
+
+  const validCurated = normalizedCuratedBoards.filter((b) =>
+    Object.values(b.cellValidPlayerIds).every((ids) => ids.length > 0)
+  );
+
+  const generated: XoxBoardChallenge[] = [];
+  const needed = Math.max(0, targetTotalBoards - validCurated.length);
+
   const compatColsPerRow: number[][] = clubAxes.map((rAx) => {
     const ok: number[] = [];
     for (let j = 0; j < colAxesPool.length; j += 1) {
@@ -316,12 +608,10 @@ export function buildExpandedXoxBoards(
     return ok;
   });
 
-  // Track club/country usage so generated boards spread across varied leagues & nations
   const pairUsage = new Map<string, number>();
 
   outer: for (let r1 = 0; r1 < clubAxes.length; r1 += 1) {
     for (let r2 = r1 + 1; r2 < clubAxes.length; r2 += 1) {
-      // Quick intersect of compatible columns for (r1, r2)
       const cSet2 = new Set(compatColsPerRow[r2]);
       const commonCols12 = compatColsPerRow[r1].filter((cIdx) => cSet2.has(cIdx));
       if (commonCols12.length < 3) continue;
@@ -331,7 +621,6 @@ export function buildExpandedXoxBoards(
         const commonCols123 = commonCols12.filter((cIdx) => cSet3.has(cIdx));
         if (commonCols123.length < 3) continue;
 
-        // Sort candidate cols by lowest reuse count to diversify boards
         const sortedCols = [...commonCols123].sort((a, b) => {
           const ua = pairUsage.get(colAxesPool[a].cond.id) || 0;
           const ub = pairUsage.get(colAxesPool[b].cond.id) || 0;
@@ -341,7 +630,6 @@ export function buildExpandedXoxBoards(
         const rowTriplet = [clubAxes[r1], clubAxes[r2], clubAxes[r3]];
         const rowSig = rowTriplet.map((r) => `${r.cond.type}:${r.cond.id}`).sort().join('|');
 
-        // Pick non-overlapping column triplets (prefer up to 2 diverse col triplets per row triplet)
         let colTripletsCreatedForRows = 0;
         for (let ci = 0; ci < sortedCols.length && colTripletsCreatedForRows < 2; ci += 3) {
           if (ci + 2 >= sortedCols.length) break;
@@ -352,7 +640,6 @@ export function buildExpandedXoxBoards(
           const sigKey = `${rowSig}::${colSig}`;
           if (seenSignatures.has(sigKey)) continue;
 
-          // Ensure distinct labels across all 6 axes
           const allAxisIds = new Set([
             ...rowTriplet.map((r) => `${r.cond.type}:${r.cond.id}`),
             ...[c1, c2, c3].map((c) => `${c.cond.type}:${c.cond.id}`),
@@ -405,5 +692,73 @@ export function buildExpandedXoxBoards(
     }
   }
 
-  return [...curatedBoards, ...generated];
+  return [...validCurated, ...generated];
+}
+
+/**
+ * Kariyer Yolu (Career Path) havuzunu kürasyonları koruyarak ve yalnızca kronolojisi
+ * doğrulanmış A takım kariyerlerini dahil ederek oluşturur.
+ */
+export function buildExpandedCareerChallenges(
+  playersList: readonly Player[],
+  clubs: Record<string, Club>,
+  curatedChallenges: readonly CareerChallenge[],
+  eligiblePlayerIds?: ReadonlySet<string>,
+  options: PoolBuildOptions = {}
+): CareerChallenge[] {
+  const resolveId = options.resolvePlayerId || ((id: string) => id);
+  const playersById = new Map<string, Player>();
+  for (const pl of playersList) {
+    playersById.set(pl.id, pl);
+  }
+
+  const validCurated: CareerChallenge[] = [];
+  const curatedPlayerIds = new Set<string>();
+
+  for (const item of curatedChallenges) {
+    const canonPid = resolveId(item.playerId);
+    if (!playersById.has(canonPid) || curatedPlayerIds.has(canonPid)) continue;
+    curatedPlayerIds.add(canonPid);
+    validCurated.push({
+      ...item,
+      playerId: canonPid,
+      steps: item.steps.map((s) => {
+        const nextStep: CareerChallenge['steps'][number] = {
+          clubName: s.clubName,
+          years: normalizeCareerYearRange(s.years),
+          countryFlag: s.countryFlag,
+          ...(s.clubId && clubs[s.clubId] ? { clubId: s.clubId } : {}),
+        };
+        return nextStep;
+      }),
+    });
+  }
+
+  const generated: CareerChallenge[] = [];
+  for (const player of playersList) {
+    if (curatedPlayerIds.has(player.id)) continue;
+    if (eligiblePlayerIds && !eligiblePlayerIds.has(player.id)) continue;
+
+    const cleanedHistory = sortAndCleanCareerHistory(player.careerHistory || []);
+    const seniorEntries = cleanedHistory
+      .filter((entry) => !entry.isYouth && !isReserveOrYouthClubName(entry.club))
+      .filter((entry) => Boolean(getClubCrestUrl(entry.clubId, entry.club)));
+
+    if (seniorEntries.length < 2) continue;
+    if (!isCareerChronologyVerified(seniorEntries)) continue;
+
+    generated.push({
+      id: `car_auto_${player.id}`,
+      playerId: player.id,
+      steps: seniorEntries.map((entry) => ({
+        ...(entry.clubId && clubs[entry.clubId] ? { clubId: entry.clubId } : {}),
+        clubName: entry.club,
+        years: normalizeCareerYearRange(entry.years),
+        countryFlag: entry.countryFlag,
+      })),
+      funFact: `${player.name} (${player.flag} ${player.nationality}) kariyeri boyunca ${seniorEntries.length} farklı döneme imza attı.`,
+    });
+  }
+
+  return [...validCurated, ...generated];
 }

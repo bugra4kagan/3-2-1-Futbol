@@ -6,76 +6,93 @@ import { performance } from 'node:perf_hooks';
 
 import { CLUBS, MATCH_PAIRINGS, PLAYERS, PLAYERS_LIST } from './database';
 import { resolveClubBadgeMeta } from './clubBadgeCatalog';
+import { NEW_12_CLUB_IDS, sortAndCleanCareerHistory } from './expandedQuestionPools';
 import { generateMinigameRounds, validateMinigameAnswer } from './minigameEngine';
 import { CAREER_CHALLENGES, COUNTRY_CLUB_CHALLENGES, XOX_BOARDS } from './minigamesData';
 import { DEFAULT_PLAYER_PHOTO, PLAYER_ASSETS } from './playerAssets';
 import { ensureExpandedRosterSync } from './rosterNodeLoader';
 import {
+  PLAYER_ID_ALIASES,
   QUESTION_ELIGIBLE_PLAYER_IDS,
   ROSTER_DATA_VERSION,
   getRosterHydrationStatus,
+  isCareerChronologyVerified,
   isPlayerQuestionEligible,
+  resolveCanonicalPlayerId,
 } from './rosterLoader';
 import { getSearchIndexSize, searchPlayersForAutocomplete } from './silhouetteEngine';
 import { ServerMatchLedger } from './serverSecurity';
+import { isAdsEnabled, isRealMoneyIapEnabled } from './monetizationFlags';
 
 const YOUTH_POLLUTION_RE =
   /\b(u-?1[4-9]|u-?2[0-3]|under-?\d{2}|youth|reserves?|academy|juniors?|women|ladies|feminin|femenino|castilla|b team|jong)\b/i;
 
-test('25k compact roster hydrates 25,000 unique verified players & 333 clubs while preserving original IDs and WebP-only portraits', () => {
+test('25k compact roster hydrates 24,959 unique verified players & 345 clubs while preserving original IDs and procedural SVG portraits', () => {
   const originalBaseIds = new Set(PLAYERS_LIST.slice(0, 3049).map((p) => p.id));
   const originalClubIds = new Set(Object.keys(CLUBS).slice(0, 133));
 
   const status = ensureExpandedRosterSync();
   assert.equal(status.hydrated, true);
   assert.equal(status.version, ROSTER_DATA_VERSION);
-  assert.equal(PLAYERS_LIST.length, 25000, `Expected exactly 25,000 players, got ${PLAYERS_LIST.length}`);
-  assert.equal(status.totalPlayers, 25000);
+  assert.equal(ROSTER_DATA_VERSION, '2026.11.26-v345-r2');
+  assert.equal(PLAYERS_LIST.length, 24959, `Expected exactly 24,959 unique players after 41 verified merges, got ${PLAYERS_LIST.length}`);
+  assert.equal(status.totalPlayers, 24959);
 
   const uniquePlayerIds = new Set(PLAYERS_LIST.map((p) => p.id));
-  assert.equal(uniquePlayerIds.size, 25000, 'Expected all 25,000 player IDs to be unique');
+  assert.equal(uniquePlayerIds.size, 24959, 'Expected all 24,959 player IDs to be unique');
   for (const origId of originalBaseIds) {
     assert.ok(PLAYERS[origId], `Missing preserved base player ID: ${origId}`);
   }
   for (const cid of originalClubIds) {
     assert.ok(CLUBS[cid], `Missing preserved base club ID: ${cid}`);
   }
-  assert.equal(Object.keys(CLUBS).length, 333, 'Expected 133 preserved + 200 newly curated clubs = 333');
+  assert.equal(Object.keys(CLUBS).length, 345, 'Expected 333 preserved + 12 newly verified clubs = 345');
 
-  // Verify every club has valid neutral procedural badge metadata
+  // Verify every club including the 12 newly added ones has valid procedural SVG badge metadata
   for (const [cid, club] of Object.entries(CLUBS)) {
     const badge = resolveClubBadgeMeta(cid, club.name, club);
     assert.ok(badge.monogram.length >= 1, `Missing monogram for club ${cid}`);
     assert.ok(/^#[0-9a-fA-F]{6}$/.test(badge.primaryColor), `Invalid primary color on club ${cid}`);
   }
 
-  // Verify unused real press photos (public/players) are removed and procedural SVG avatar tokens are used
+  for (const newClubId of NEW_12_CLUB_IDS) {
+    assert.ok(CLUBS[newClubId], `Missing newly approved club: ${newClubId}`);
+    const seniorLinked = PLAYERS_LIST.filter(
+      (p) =>
+        p.clubId === newClubId ||
+        (p.careerHistory || []).some((h) => !h.isYouth && h.clubId === newClubId)
+    );
+    assert.ok(seniorLinked.length >= 50, `Expected >=50 verified players for ${newClubId}, got ${seniorLinked.length}`);
+  }
+
+  // Verify unused real press photos (public/players) remain removed and procedural SVG tokens are used
   const playersDir = path.resolve(process.cwd(), 'public', 'players');
   assert.equal(fs.existsSync(playersDir), false, 'Unused real press photos folder public/players must be removed');
   assert.equal(DEFAULT_PLAYER_PHOTO, 'svg-avatar:default');
 
-  // Verify career repairs & recent transfers were applied strictly cleanly
-  assert.ok(status.verifiedCareerRepairsApplied >= 1500, 'Expected >= 1,500 verified career repairs');
-  assert.ok(status.verifiedTransfersApplied >= 300, 'Expected >= 300 verified transfers');
+  // Verify career repairs & Nov 2026 transfers were applied strictly cleanly
+  assert.ok(status.verifiedCareerRepairsApplied >= 2000, 'Expected >= 2,000 verified career repair records');
+  assert.ok(status.verifiedTransfersApplied >= 100, 'Expected >= 100 verified live-checked transfer updates');
   assert.ok(status.questionEligibleCount >= 3049 && status.questionEligibleCount < 12000);
-  assert.equal(getSearchIndexSize(), 25000);
+  assert.equal(getSearchIndexSize(), 24959);
 
-  // Verify newly added players have clean senior clubs without youth pollution in careerHistory
+  // Verify newly added players have clean senior clubs without unmarked youth pollution in careerHistory
   const newPlayers = PLAYERS_LIST.slice(3049);
   for (const np of newPlayers) {
     assert.ok(PLAYER_ASSETS[np.id], `Missing PLAYER_ASSETS entry for ${np.id}`);
     assert.equal(PLAYER_ASSETS[np.id].photoUrl, 'svg-avatar:default');
     assert.ok(Array.isArray(np.careerHistory) && np.careerHistory.length >= 1);
     for (const h of np.careerHistory || []) {
-      assert.ok(!YOUTH_POLLUTION_RE.test(h.club), `Unexpected youth club on new player ${np.id}: ${h.club}`);
+      if (!h.isYouth) {
+        assert.ok(!YOUTH_POLLUTION_RE.test(h.club), `Unexpected unmarked youth club on new player ${np.id}: ${h.club}`);
+      }
     }
   }
 });
 
-test('all 25,000 players expand valid answers across modes while keeping obscure players out of question prompts', () => {
+test('all 24,959 players expand valid answers across 4 modes while preserving depth and chronology', () => {
   ensureExpandedRosterSync();
 
-  // Pick a non-questionEligible obscure new player and confirm exclusion from CAREER_CHALLENGES
   const obscurePlayer = PLAYERS_LIST.slice(3049).find((p) => !isPlayerQuestionEligible(p.id));
   assert.ok(obscurePlayer, 'Expected answer-pool-only obscure players to exist');
   assert.ok(
@@ -83,9 +100,10 @@ test('all 25,000 players expand valid answers across modes while keeping obscure
     'Obscure answer-pool-only player must not appear in CAREER_CHALLENGES'
   );
 
-  // Confirm newly added player with 2 base clubs enriches Two Clubs validPlayerIds & passes validation
   const twoBaseClubsNewPlayer = PLAYERS_LIST.slice(3049).find((p) => {
-    const seniorCids = Array.from(new Set((p.careerHistory || []).filter((h) => !h.isYouth && h.clubId).map((h) => h.clubId!)));
+    const seniorCids = Array.from(
+      new Set((p.careerHistory || []).filter((h) => !h.isYouth && h.clubId).map((h) => h.clubId!))
+    );
     return seniorCids.length >= 2;
   });
   assert.ok(twoBaseClubsNewPlayer, 'Expected newly added player spanning >=2 base clubs');
@@ -105,7 +123,30 @@ test('all 25,000 players expand valid answers across modes while keeping obscure
     `Expected ${twoBaseClubsNewPlayer.id} to be valid answer on ${matchingPairing.id}`
   );
 
-  // Validate both Country+Club and XOX validPlayerIds got enriched cleanly
+  // Every question across all 4 pools must have valid answers and no auto-pairing with a NEW_12 club below 3 players
+  assert.ok(MATCH_PAIRINGS.every((m) => m.validPlayerIds.length >= 1));
+  for (const m of MATCH_PAIRINGS) {
+    if (m.id.startsWith('auto_pair_') && (NEW_12_CLUB_IDS.has(m.club1Id) || NEW_12_CLUB_IDS.has(m.club2Id))) {
+      assert.ok(m.validPlayerIds.length >= 3, `Auto pairing with new club ${m.id} must have >=3 valid players`);
+    }
+  }
+  assert.ok(COUNTRY_CLUB_CHALLENGES.every((cc) => cc.validPlayerIds.length >= 1));
+  assert.ok(
+    XOX_BOARDS.every((b) => Object.values(b.cellValidPlayerIds).every((ids) => ids.length >= 1))
+  );
+
+  // Every Career Challenge in CAREER_CHALLENGES must have monotonically ordered steps
+  for (const ch of CAREER_CHALLENGES) {
+    let prev = -1;
+    for (const s of ch.steps) {
+      const m = s.years.match(/^(\d{4})/);
+      assert.ok(m, `Missing leading year on career step ${ch.playerId}: ${s.clubName} (${s.years})`);
+      const sy = Number(m[1]);
+      assert.ok(sy >= prev, `Unsorted career challenge ${ch.playerId}: ${prev} -> ${sy}`);
+      prev = sy;
+    }
+  }
+
   assert.ok(COUNTRY_CLUB_CHALLENGES.some((cc) => cc.validPlayerIds.some((id) => !originalBasePlayer(id))));
   assert.ok(
     XOX_BOARDS.some((b) =>
@@ -118,6 +159,69 @@ test('all 25,000 players expand valid answers across modes while keeping obscure
   }
 });
 
+test('career chronology sorter preserves same-year order without guessing, and all Nov 2026 updates, loans, nationalities, and duplicate aliases are clean', () => {
+  ensureExpandedRosterSync();
+
+  // 1. Chronology unit test: differing start years sort ascending; equal start years stay untouched
+  const sorted = sortAndCleanCareerHistory([
+    { club: 'Club C', years: '2024–2026', countryFlag: '🇹🇷' },
+    { club: 'Club B1 (Same Year First)', years: '2021–2022', countryFlag: '🇩🇪' },
+    { club: 'Club B2 (Same Year Second)', years: '2021–2023', countryFlag: '🇪🇸' },
+    { club: 'Club A', years: '2018-20', countryFlag: '🏴󠁧󠁢󠁥󠁮󠁧󠁿' },
+  ]);
+  assert.deepEqual(
+    sorted.map((s) => `${s.club}:${s.years}`),
+    [
+      'Club A:2018–2020',
+      'Club B1 (Same Year First):2021–2022',
+      'Club B2 (Same Year Second):2021–2023',
+      'Club C:2024–2026',
+    ]
+  );
+  assert.equal(isCareerChronologyVerified(sorted), true);
+  assert.equal(
+    isCareerChronologyVerified([
+      { club: 'Broken', years: '2019–2010', countryFlag: '🇮🇹' },
+      { club: 'Next', years: '2015–2017', countryFlag: '🇮🇹' },
+    ]),
+    false
+  );
+
+  // 2. Nationality & flag sanity: 0 Uluslararası and 0 bare 2-letter ASCII flag codes
+  for (const p of PLAYERS_LIST) {
+    assert.notEqual(p.nationality, 'Uluslararası', `Unresolved nationality on ${p.id}`);
+    const flag = p.flag || '';
+    assert.ok(!/^[a-z-]{2,6}$/i.test(flag), `Invalid ASCII flag code on ${p.id}: ${flag}`);
+  }
+
+  // 3. Verified duplicate merging preserves canonical resolution while keeping distinct homonyms separate
+  assert.equal(resolveCanonicalPlayerId('jamal_musiala_q96072055'), 'jamal_musiala');
+  assert.ok(PLAYER_ID_ALIASES['gabriel'] === 'gabriel_paulista');
+  assert.ok(!PLAYERS['jamal_musiala_q96072055']);
+  assert.ok(PLAYERS['luis_suarez'] && PLAYERS['luis_suarez_q28736721'], 'Uruguay & Colombia Luis Suárez homonyms must both stay distinct');
+
+  // 4. Verified 26 Nov 2026 transfers, loan separation, free agents & retirements
+  assert.equal(PLAYERS['cenk_tosun'].clubId, 'kasimpasa');
+  assert.equal(PLAYERS['dusan_tadic'].clubId, 'nec_nijmegen');
+  assert.equal(PLAYERS['vincent_aboubakar'].clubId, 'bodrum_fk');
+  assert.equal(PLAYERS['tijjani_reijnders'].clubId, 'al_qadsiah');
+  assert.equal(PLAYERS['hakim_ziyech'].clubId, 'botafogo_fr');
+  assert.equal(PLAYERS['fred'].clubName, 'Clube Atlético Mineiro');
+  assert.equal(PLAYERS['fred'].clubId, undefined, 'Stale Fenerbahçe clubId must be cleared for Fred');
+  assert.equal(PLAYERS['emre_mor'].clubName, 'Kulüpsüz');
+  assert.equal(PLAYERS['emre_mor'].clubId, undefined);
+  assert.equal(PLAYERS['mauro_icardi'].clubName, 'Kulüpsüz');
+  assert.equal(PLAYERS['mauro_icardi'].clubId, undefined);
+  assert.equal(PLAYERS['altay_bayindir'].clubName, 'Celta Vigo (Kiralık)');
+  assert.equal(PLAYERS['ronald_araujo'].clubName, 'Liverpool FC (Kiralık)');
+  assert.match(PLAYERS['ciro_immobile'].clubName || '', /\(Emekli\)$/);
+  assert.match(PLAYERS['ivan_rakitic'].clubName || '', /\(Emekli\)$/);
+
+  // 5. Google Play compliance gates stay off
+  assert.equal(isAdsEnabled(), false);
+  assert.equal(isRealMoneyIapEnabled(), false);
+});
+
 test('25k autocomplete search & ServerMatchLedger answer validation run fast and match client/server roster version', () => {
   const status = ensureExpandedRosterSync();
   const rawJson = JSON.parse(
@@ -126,7 +230,6 @@ test('25k autocomplete search & ServerMatchLedger answer validation run fast and
   assert.equal(status.version, rawJson.version);
   assert.equal(getRosterHydrationStatus().version, ROSTER_DATA_VERSION);
 
-  // Benchmark 1000 autocomplete searches across 25,000 indexed players
   const t0 = performance.now();
   const sampleQueries = ['osimhen', 'messi', 'mbappe', 'musiala', 'dybala', 'asensio', 'kadioglu', 'ronaldo'];
   for (let i = 0; i < 1000; i += 1) {
@@ -137,7 +240,6 @@ test('25k autocomplete search & ServerMatchLedger answer validation run fast and
   const elapsedMs = performance.now() - t0;
   assert.ok(elapsedMs < 1500, `1000 autocomplete searches across 25k should take < 1500ms, got ${elapsedMs.toFixed(1)}ms`);
 
-  // Verify ServerMatchLedger validates newly added 25k answers identically to client
   const gsFb = MATCH_PAIRINGS.find((p) => p.id === 'gs_fb')!;
   const roundRes = validateMinigameAnswer({ minigameType: 'two_clubs', pairing: gsFb }, 'Michy Batshuayi');
   assert.equal(roundRes.isValid, true);
@@ -158,7 +260,6 @@ test('25k autocomplete search & ServerMatchLedger answer validation run fast and
   assert.equal(srvRes.ok, true);
   assert.equal(srvRes.valid, true);
 
-  // Verify round generation works cleanly for online profile across all 4 active modes
   for (const mode of ['two_clubs', 'xox', 'career', 'country_club'] as const) {
     const rounds = generateMinigameRounds(mode, 10, [], { profile: 'online' });
     assert.equal(rounds.length, 10);

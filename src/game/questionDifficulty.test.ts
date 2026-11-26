@@ -15,8 +15,8 @@ test('all 3049 players and question pools remain intact without deletions', () =
   const stats = getFullPoolCatalogStats();
   assert.equal(stats.players, 3049);
   assert.equal(stats.two_clubs, 1329);
-  assert.equal(stats.career, 2611);
-  assert.equal(stats.country_club, 1060);
+  assert.equal(stats.career, 2593);
+  assert.equal(stats.country_club, 1058);
   assert.equal(stats.xox, 320);
 });
 
