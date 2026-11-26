@@ -33,7 +33,8 @@ import {
   UserReportReason,
 } from './game/types';
 import { CLUBS, PLAYERS_LIST } from './game/database';
-import { ensureExpandedRosterLoaded } from './game/rosterLoader';
+import { ensureExpandedRosterLoaded, getRosterHydrationStatus } from './game/rosterLoader';
+import { ROSTER_VERSION_MISMATCH_ERROR } from './game/rosterVersion';
 import {
   createEmptyXoxBoard,
   generateMinigameRounds,
@@ -915,11 +916,20 @@ export default function App() {
                 roundIds,
                 roomCode: roomMeta?.roomCode,
                 matchSeq: roomMeta?.matchSeq,
+                rosterVersion: getRosterHydrationStatus().version,
               }),
             },
             { timeoutMs: 25000, retries: 2, retryDelayMs: 2000 }
           );
-          if (!res.ok) return null;
+          if (!res.ok) {
+            if (res.status === 409) {
+              const errData = await res.json().catch(() => null);
+              if (errData?.errorCode === 'roster_version_mismatch') {
+                setOnlineError(errData.error || ROSTER_VERSION_MISMATCH_ERROR);
+              }
+            }
+            return null;
+          }
           const data = await res.json().catch(() => null);
           const sid = typeof data?.matchSessionId === 'string' ? data.matchSessionId : null;
           if (sid) {
@@ -3613,6 +3623,7 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
           cancelMatchmakingRef.current = startRoomMatchmaking({
             profile: selfProfile,
             minigameType: chosenMinigame,
+            rosterVersion: getRosterHydrationStatus().version,
             onRoomMatched: (matchedCode) => {
               cancelMatchmakingRef.current = null;
               if (matchmakingTickTimerRef.current) {
@@ -3649,7 +3660,11 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
         }
 
         if (options?.roomCode !== undefined) {
-          const joined = await joinRoom(normalizedRoomCode || options.roomCode, selfProfile);
+          const joined = await joinRoom(
+            normalizedRoomCode || options.roomCode,
+            selfProfile,
+            getRosterHydrationStatus().version
+          );
           if (isStaleRequest()) {
             // User cancelled while joining: leave the room we just entered
             if (joined.ok) void deleteRoom(joined.room.code);
@@ -3662,7 +3677,11 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
           }
           attachOnlineRoomListener(joined.room.code);
         } else {
-          const created = await createRoom(selfProfile, chosenMinigame);
+          const created = await createRoom(
+            selfProfile,
+            chosenMinigame,
+            getRosterHydrationStatus().version
+          );
           if (isStaleRequest()) {
             void deleteRoom(created.code);
             return;
@@ -3830,18 +3849,41 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
       const activeCode = activeRoomCodeRef.current;
       if (activeCode) {
         if (rematchState === 'opponent_requested') {
-          void respondRoomRematch(activeCode, sessionPlayerIdRef.current, 'accept').catch(() => {
-            setOnlineError('Rövanş onayı gönderilemedi. Bağlantını kontrol et.');
-          });
+          void respondRoomRematch(
+            activeCode,
+            sessionPlayerIdRef.current,
+            'accept',
+            getRosterHydrationStatus().version
+          )
+            .then((res) => {
+              if (!res.ok && res.error) {
+                setOnlineError(res.error);
+              }
+            })
+            .catch(() => {
+              setOnlineError('Rövanş onayı gönderilemedi. Bağlantını kontrol et.');
+            });
           return;
         }
         setRematchState('waiting');
         setRematchExpiresAt(getAuthoritativeServerNowMs() + 20000);
-        void requestRoomRematch(activeCode, sessionPlayerIdRef.current).catch(() => {
-          setRematchState('idle');
-          setRematchExpiresAt(null);
-          setOnlineError('Rövanş isteği gönderilemedi. Bağlantını kontrol et.');
-        });
+        void requestRoomRematch(
+          activeCode,
+          sessionPlayerIdRef.current,
+          getRosterHydrationStatus().version
+        )
+          .then((res) => {
+            if (!res.ok && res.error) {
+              setRematchState('idle');
+              setRematchExpiresAt(null);
+              setOnlineError(res.error);
+            }
+          })
+          .catch(() => {
+            setRematchState('idle');
+            setRematchExpiresAt(null);
+            setOnlineError('Rövanş isteği gönderilemedi. Bağlantını kontrol et.');
+          });
       } else {
         setOnlineError('Maç bağlantısı kapandı. Yeniden eşleşebilirsin.');
         setScreen('lobby');

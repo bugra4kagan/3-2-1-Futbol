@@ -18,15 +18,24 @@ import {
   getDocs,
   query,
   limit,
+  runTransaction,
   serverTimestamp,
 } from 'firebase/firestore';
+import { getFirestore } from 'firebase-admin/firestore';
 import { ref, get, set, remove } from 'firebase/database';
 import { AccountStore } from '../src/game/accountStore';
 import {
   createFirebaseAccountCloudAdapter,
   createFirebaseMatchSessionCloudAdapter,
+  getFirebaseAdminApp,
   verifyOnlineRoomOutcomeAdmin,
 } from '../src/game/firebaseAdminService';
+import {
+  exportFirebaseSparkBackup,
+  restoreFirebaseSparkBackup,
+  verifyFirebaseSparkBackup,
+} from '../src/game/firebaseBackup';
+import { ROSTER_DATA_VERSION } from '../src/game/rosterVersion';
 import { ServerMatchLedger } from '../src/game/serverSecurity';
 import { createInitialProgression } from '../src/game/retentionEngine';
 
@@ -330,14 +339,15 @@ test('Firestore Zero-Trust Economy, AdFree Entitlements, Guest Linking & Dirty D
   );
 });
 
-test('Firestore Private Room, Matchmaking Queue & UGC User Report Rules', async () => {
+test('Firestore Private Room, Matchmaking Queue, rosterVersion Enforcement & UGC User Report Rules', async () => {
   const hostCtx = testEnv.authenticatedContext('uid_host');
   const guestCtx = testEnv.authenticatedContext('uid_guest');
   const intruderCtx = testEnv.authenticatedContext('uid_intruder');
 
-  await assertSucceeds(
-    setDoc(doc(hostCtx.firestore(), 'rooms', 'AB12CD'), {
-      code: 'AB12CD',
+  // NEGATIVE: Creating room without rosterVersion or with invalid rosterVersion MUST FAIL
+  await assertFails(
+    setDoc(doc(hostCtx.firestore(), 'rooms', 'NOVER1'), {
+      code: 'NOVER1',
       source: 'private',
       minigameType: 'two_clubs',
       hostUid: 'uid_host',
@@ -356,12 +366,80 @@ test('Firestore Private Room, Matchmaking Queue & UGC User Report Rules', async 
       updatedAt: serverTimestamp(),
     })
   );
+  await assertFails(
+    setDoc(doc(hostCtx.firestore(), 'rooms', 'BADVR1'), {
+      code: 'BADVR1',
+      source: 'private',
+      minigameType: 'two_clubs',
+      rosterVersion: 'invalid space version',
+      hostUid: 'uid_host',
+      guestUid: null,
+      hostId: 'p_host',
+      guestId: null,
+      memberUids: ['uid_host'],
+      players: { p_host: { id: 'p_host', name: 'Host' } },
+      scores: {},
+      state: 'waiting',
+      roundIndex: 0,
+      matchSeq: 1,
+      questionSeed: 12345,
+      roundIds: [1, 2, 3],
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    })
+  );
 
-  // Guest cannot inject score when joining
+  await assertSucceeds(
+    setDoc(doc(hostCtx.firestore(), 'rooms', 'AB12CD'), {
+      code: 'AB12CD',
+      source: 'private',
+      minigameType: 'two_clubs',
+      rosterVersion: ROSTER_DATA_VERSION,
+      guestRosterVersion: null,
+      hostUid: 'uid_host',
+      guestUid: null,
+      hostId: 'p_host',
+      guestId: null,
+      memberUids: ['uid_host'],
+      players: { p_host: { id: 'p_host', name: 'Host' } },
+      scores: {},
+      state: 'waiting',
+      roundIndex: 0,
+      matchSeq: 1,
+      questionSeed: 12345,
+      roundIds: [1, 2, 3],
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    })
+  );
+
+  // NEGATIVE: Guest joining with missing or mismatched guestRosterVersion MUST FAIL
   await assertFails(
     updateDoc(doc(guestCtx.firestore(), 'rooms', 'AB12CD'), {
       guestUid: 'uid_guest',
       guestId: 'p_guest',
+      memberUids: ['uid_host', 'uid_guest'],
+      players: { p_host: { id: 'p_host', name: 'Host' }, p_guest: { id: 'p_guest', name: 'Guest' } },
+      updatedAt: serverTimestamp(),
+    })
+  );
+  await assertFails(
+    updateDoc(doc(guestCtx.firestore(), 'rooms', 'AB12CD'), {
+      guestUid: 'uid_guest',
+      guestId: 'p_guest',
+      guestRosterVersion: '1.0.9-legacy',
+      memberUids: ['uid_host', 'uid_guest'],
+      players: { p_host: { id: 'p_host', name: 'Host' }, p_guest: { id: 'p_guest', name: 'Guest' } },
+      updatedAt: serverTimestamp(),
+    })
+  );
+
+  // Guest cannot inject score when joining even with matching guestRosterVersion
+  await assertFails(
+    updateDoc(doc(guestCtx.firestore(), 'rooms', 'AB12CD'), {
+      guestUid: 'uid_guest',
+      guestId: 'p_guest',
+      guestRosterVersion: ROSTER_DATA_VERSION,
       memberUids: ['uid_host', 'uid_guest'],
       players: { p_host: { id: 'p_host', name: 'Host' }, p_guest: { id: 'p_guest', name: 'Guest' } },
       scores: { p_host: 0, p_guest: 9 },
@@ -369,13 +447,22 @@ test('Firestore Private Room, Matchmaking Queue & UGC User Report Rules', async 
     })
   );
 
-  // Clean guest join succeeds
+  // Clean guest join with matching guestRosterVersion succeeds
   await assertSucceeds(
     updateDoc(doc(guestCtx.firestore(), 'rooms', 'AB12CD'), {
       guestUid: 'uid_guest',
       guestId: 'p_guest',
+      guestRosterVersion: ROSTER_DATA_VERSION,
       memberUids: ['uid_host', 'uid_guest'],
       players: { p_host: { id: 'p_host', name: 'Host' }, p_guest: { id: 'p_guest', name: 'Guest' } },
+      updatedAt: serverTimestamp(),
+    })
+  );
+
+  // NEGATIVE: Mutating rosterVersion after room creation MUST FAIL
+  await assertFails(
+    updateDoc(doc(hostCtx.firestore(), 'rooms', 'AB12CD'), {
+      rosterVersion: '1.0.9-legacy',
       updatedAt: serverTimestamp(),
     })
   );
@@ -391,6 +478,128 @@ test('Firestore Private Room, Matchmaking Queue & UGC User Report Rules', async 
     updateDoc(doc(hostCtx.firestore(), 'rooms', 'AB12CD'), {
       scores: { p_host: 1 },
       updatedAt: serverTimestamp(),
+    })
+  );
+
+  // Rematch transition preserves rosterVersion & guestRosterVersion; tampering fails
+  await assertSucceeds(
+    updateDoc(doc(hostCtx.firestore(), 'rooms', 'AB12CD'), {
+      state: 'game_over',
+      updatedAt: serverTimestamp(),
+    })
+  );
+  await assertFails(
+    updateDoc(doc(hostCtx.firestore(), 'rooms', 'AB12CD'), {
+      matchSeq: 2,
+      guestRosterVersion: '1.0.9-legacy',
+      state: 'countdown',
+      scores: { p_host: 0, p_guest: 0 },
+      roundIndex: 0,
+      updatedAt: serverTimestamp(),
+    })
+  );
+  await assertSucceeds(
+    updateDoc(doc(hostCtx.firestore(), 'rooms', 'AB12CD'), {
+      matchSeq: 2,
+      guestRosterVersion: ROSTER_DATA_VERSION,
+      state: 'countdown',
+      scores: { p_host: 0, p_guest: 0 },
+      roundIndex: 0,
+      updatedAt: serverTimestamp(),
+    })
+  );
+
+  // Matchmaking queue: missing rosterVersion rejected; cross-version claim rejected via getAfter; same-version claim succeeds
+  await assertFails(
+    setDoc(doc(hostCtx.firestore(), 'matchmaking', 'two_clubs', 'queue', 'q_no_ver'), {
+      playerKey: 'q_no_ver',
+      uid: 'uid_host',
+      minigameType: 'two_clubs',
+      profile: { id: 'p_host', name: 'Host' },
+      joinedAt: serverTimestamp(),
+      matchedRoomCode: null,
+    })
+  );
+  await assertSucceeds(
+    setDoc(doc(hostCtx.firestore(), 'matchmaking', 'two_clubs', 'queue', 'q_old_host'), {
+      playerKey: 'q_old_host',
+      uid: 'uid_host',
+      minigameType: 'two_clubs',
+      rosterVersion: '1.0.9-legacy',
+      profile: { id: 'p_host', name: 'OldHost' },
+      joinedAt: serverTimestamp(),
+      matchedRoomCode: null,
+    })
+  );
+  await assertSucceeds(
+    setDoc(doc(hostCtx.firestore(), 'matchmaking', 'two_clubs', 'queue', 'q_new_host'), {
+      playerKey: 'q_new_host',
+      uid: 'uid_host',
+      minigameType: 'two_clubs',
+      rosterVersion: ROSTER_DATA_VERSION,
+      profile: { id: 'p_host', name: 'NewHost' },
+      joinedAt: serverTimestamp(),
+      matchedRoomCode: null,
+    })
+  );
+
+  // NEGATIVE: New guest attempting to claim old host's queue doc with a new-version room MUST FAIL
+  await assertFails(
+    runTransaction(guestCtx.firestore(), async (tx) => {
+      const qRef = doc(guestCtx.firestore(), 'matchmaking', 'two_clubs', 'queue', 'q_old_host');
+      await tx.get(qRef);
+      tx.set(doc(guestCtx.firestore(), 'rooms', 'MMBAD1'), {
+        code: 'MMBAD1',
+        source: 'matchmaking',
+        minigameType: 'two_clubs',
+        rosterVersion: ROSTER_DATA_VERSION,
+        guestRosterVersion: ROSTER_DATA_VERSION,
+        hostUid: 'uid_guest',
+        guestUid: 'uid_host',
+        hostId: 'p_guest',
+        guestId: 'p_host',
+        memberUids: ['uid_guest', 'uid_host'],
+        players: { p_guest: { id: 'p_guest', name: 'Guest' }, p_host: { id: 'p_host', name: 'OldHost' } },
+        scores: { p_guest: 0, p_host: 0 },
+        state: 'countdown',
+        roundIndex: 0,
+        matchSeq: 1,
+        questionSeed: 999,
+        roundIds: [1, 2, 3],
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+      tx.update(qRef, { matchedRoomCode: 'MMBAD1' });
+    })
+  );
+
+  // POSITIVE: New guest claiming new host's queue doc with matching rosterVersion room SUCCEEDS
+  await assertSucceeds(
+    runTransaction(guestCtx.firestore(), async (tx) => {
+      const qRef = doc(guestCtx.firestore(), 'matchmaking', 'two_clubs', 'queue', 'q_new_host');
+      await tx.get(qRef);
+      tx.set(doc(guestCtx.firestore(), 'rooms', 'MMOK22'), {
+        code: 'MMOK22',
+        source: 'matchmaking',
+        minigameType: 'two_clubs',
+        rosterVersion: ROSTER_DATA_VERSION,
+        guestRosterVersion: ROSTER_DATA_VERSION,
+        hostUid: 'uid_guest',
+        guestUid: 'uid_host',
+        hostId: 'p_guest',
+        guestId: 'p_host',
+        memberUids: ['uid_guest', 'uid_host'],
+        players: { p_guest: { id: 'p_guest', name: 'Guest' }, p_host: { id: 'p_host', name: 'NewHost' } },
+        scores: { p_guest: 0, p_host: 0 },
+        state: 'countdown',
+        roundIndex: 0,
+        matchSeq: 1,
+        questionSeed: 999,
+        roundIds: [1, 2, 3],
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+      tx.update(qRef, { matchedRoomCode: 'MMOK22' });
     })
   );
 
@@ -539,6 +748,18 @@ test('Firebase Admin Firestore Emulator persists accounts, coins, purchases & on
     accountId: 'acc_emu_1',
     minigameType: 'two_clubs',
     mode: 'online_room',
+    roomCode: 'EMU999',
+    matchSeq: 1,
+    rosterVersion: ROSTER_DATA_VERSION,
+    now: Date.now() - 10_000,
+  });
+  const oppSession = ledger1.issueSession({
+    accountId: 'acc_emu_2',
+    minigameType: 'two_clubs',
+    mode: 'online_room',
+    roomCode: 'EMU999',
+    matchSeq: 1,
+    rosterVersion: ROSTER_DATA_VERSION,
     now: Date.now() - 10_000,
   });
   const roomRoundIds = session.rounds
@@ -546,10 +767,27 @@ test('Firebase Admin Firestore Emulator persists accounts, coins, purchases & on
     .map((r) => r.pairing?.id || '')
     .filter(Boolean);
 
-  // Seed finished authoritative room outcome in Firestore Emulator
+  // Seed finished authoritative room outcome in Firestore Emulator (first with mismatched version, then valid)
   await testEnv.withSecurityRulesDisabled(async (adminCtx) => {
+    await setDoc(doc(adminCtx.firestore(), 'rooms', 'EMUMIS'), {
+      code: 'EMUMIS',
+      rosterVersion: '1.0.9-legacy',
+      guestRosterVersion: '1.0.9-legacy',
+      hostId: 'acc_emu_1',
+      hostUid: 'uid_alice',
+      guestId: 'acc_emu_2',
+      guestUid: 'uid_bob',
+      memberUids: ['uid_alice', 'uid_bob'],
+      minigameType: 'two_clubs',
+      roundIds: roomRoundIds,
+      state: 'game_over',
+      matchSeq: 1,
+      scores: { acc_emu_1: 3, acc_emu_2: 1 },
+    });
     await setDoc(doc(adminCtx.firestore(), 'rooms', 'EMU999'), {
       code: 'EMU999',
+      rosterVersion: ROSTER_DATA_VERSION,
+      guestRosterVersion: ROSTER_DATA_VERSION,
       hostId: 'acc_emu_1',
       hostUid: 'uid_alice',
       guestId: 'acc_emu_2',
@@ -563,10 +801,23 @@ test('Firebase Admin Firestore Emulator persists accounts, coins, purchases & on
     });
   });
 
+  // Version mismatch on server room verification MUST FAIL with roster_version_mismatch
+  const mismatchOutcome = await verifyOnlineRoomOutcomeAdmin({
+    roomCode: 'EMUMIS',
+    uid: 'uid_alice',
+    playerId: 'acc_emu_1',
+    expectedRosterVersion: ROSTER_DATA_VERSION,
+  });
+  assert.equal(mismatchOutcome.ok, false);
+  if (!mismatchOutcome.ok) {
+    assert.equal(mismatchOutcome.errorCode, 'roster_version_mismatch');
+  }
+
   const roomOutcome = await verifyOnlineRoomOutcomeAdmin({
     roomCode: 'EMU999',
     uid: 'uid_alice',
     playerId: 'acc_emu_1',
+    expectedRosterVersion: ROSTER_DATA_VERSION,
   });
   assert.equal(roomOutcome.ok, true);
   if (!roomOutcome.ok) return;
@@ -574,21 +825,19 @@ test('Firebase Admin Firestore Emulator persists accounts, coins, purchases & on
   assert.equal(roomOutcome.opponentScore, 1);
 
   // Forged Firestore room score without server-verified answers MUST fail
-  const tamperedFail = ledger1.consumeVerifiedMatchSession({
+  const tamperedFail = await ledger1.consumeVerifiedMatchSessionAsync({
     sessionId: session.sessionId,
     accountId: 'acc_emu_1',
     hasMultiplier2x: false,
-    roomVerifiedScores: {
-      playerScore: roomOutcome.playerScore,
-      opponentScore: roomOutcome.opponentScore,
-    },
+    serverVerifiedOpponentScore: null,
+    requireServerOpponentVerification: true,
     roomClaimKey: `EMU999:${roomOutcome.matchSeq}:acc_emu_1`,
     minDurationMs: 1000,
     now: Date.now(),
   });
   assert.equal(tamperedFail.ok, false);
 
-  // Submit 3 valid answers matching the server session rounds
+  // Submit 3 valid answers for host & 1 valid answer for opponent via server session
   for (let i = 0; i < 3; i++) {
     const pid = session.rounds[i]?.pairing?.validPlayerIds[0];
     assert.ok(pid);
@@ -601,21 +850,70 @@ test('Firebase Admin Firestore Emulator persists accounts, coins, purchases & on
     assert.equal(ansRes.ok, true);
     if (ansRes.ok) assert.equal(ansRes.valid, true);
   }
+  const oppPid = oppSession.rounds[0]?.pairing?.validPlayerIds[0];
+  assert.ok(oppPid);
+  const oppAnsRes = ledger1.submitVerifiedAnswer({
+    sessionId: oppSession.sessionId,
+    accountId: 'acc_emu_2',
+    roundIndex: 0,
+    answer: oppPid,
+  });
+  assert.equal(oppAnsRes.ok, true);
+  await ledger1.flushCloudWrites();
 
-  const reward = ledger1.consumeVerifiedMatchSession({
+  // Verify opponent server score hydrates cleanly from Firestore Emulator (zero client room score trust!)
+  const serverVerifiedOppScore = await ledger1.findOpponentVerifiedScoreAsync(
+    'EMU999',
+    roomOutcome.matchSeq,
+    'acc_emu_1'
+  );
+  assert.equal(serverVerifiedOppScore, 1);
+
+  const reward = await ledger1.consumeVerifiedMatchSessionAsync({
     sessionId: session.sessionId,
     accountId: 'acc_emu_1',
     hasMultiplier2x: false,
-    roomVerifiedScores: {
-      playerScore: roomOutcome.playerScore,
-      opponentScore: roomOutcome.opponentScore,
-    },
+    serverVerifiedOpponentScore: serverVerifiedOppScore,
+    requireServerOpponentVerification: true,
     roomClaimKey: `EMU999:${roomOutcome.matchSeq}:acc_emu_1`,
     minDurationMs: 1000,
     now: Date.now(),
   });
   assert.equal(reward.ok, true);
   if (!reward.ok) return;
+  assert.equal(reward.won, true);
+
+  // Atomic Firestore Transaction double-claim protection: second claim MUST fail even from a fresh ledger instance!
+  const freshLedger = new ServerMatchLedger();
+  freshLedger.setCloudAdapter(matchAdapter);
+  const dupSession = freshLedger.issueSession({
+    accountId: 'acc_emu_1',
+    minigameType: 'two_clubs',
+    mode: 'online_room',
+    roomCode: 'EMU999',
+    matchSeq: 1,
+    rosterVersion: ROSTER_DATA_VERSION,
+    now: Date.now() - 10_000,
+  });
+  const dupPid = dupSession.rounds[0]?.pairing?.validPlayerIds[0];
+  assert.ok(dupPid);
+  freshLedger.submitVerifiedAnswer({
+    sessionId: dupSession.sessionId,
+    accountId: 'acc_emu_1',
+    roundIndex: 0,
+    answer: dupPid,
+  });
+  const doubleClaimAttempt = await freshLedger.consumeVerifiedMatchSessionAsync({
+    sessionId: dupSession.sessionId,
+    accountId: 'acc_emu_1',
+    hasMultiplier2x: false,
+    serverVerifiedOpponentScore: 1,
+    requireServerOpponentVerification: true,
+    roomClaimKey: `EMU999:${roomOutcome.matchSeq}:acc_emu_1`,
+    minDurationMs: 1000,
+    now: Date.now(),
+  });
+  assert.equal(doubleClaimAttempt.ok, false);
 
   store1.recordVerifiedMatchReward({
     accountId: 'acc_emu_1',
@@ -635,7 +933,7 @@ test('Firebase Admin Firestore Emulator persists accounts, coins, purchases & on
   await store1.flushCloudWrites();
   await ledger1.flushCloudWrites();
 
-  // NEGATIVE: Clients CANNOT read or write server-only backend_* collections directly
+  // NEGATIVE: Clients CANNOT read or write server-only backend_* collections directly (including backend_reward_claims)
   const aliceCtx = testEnv.authenticatedContext('uid_alice', {
     email: 'alice@example.com',
     email_verified: true,
@@ -648,8 +946,41 @@ test('Firebase Admin Firestore Emulator persists accounts, coins, purchases & on
     setDoc(doc(aliceCtx.firestore(), 'backend_purchases', 'fake_hash'), { accountId: 'acc_emu_1' })
   );
   await assertFails(getDoc(doc(aliceCtx.firestore(), 'backend_match_sessions', session.sessionId)));
+  await assertFails(
+    getDoc(doc(aliceCtx.firestore(), 'backend_reward_claims', `EMU999:${roomOutcome.matchSeq}:acc_emu_1`))
+  );
+  await assertFails(
+    setDoc(doc(aliceCtx.firestore(), 'backend_reward_claims', 'forged_claim'), { accountId: 'acc_emu_1' })
+  );
 
-  // Simulate full Render container wipe & restart (zero local disk, empty RAM)
+  // Free Spark-plan backup & isolated restore verification directly on Firebase Emulator
+  const adminApp = getFirebaseAdminApp();
+  assert.ok(adminApp);
+  const adminDb = getFirestore(adminApp);
+  const backupSnapshot = await exportFirebaseSparkBackup({
+    db: adminDb as unknown as Parameters<typeof exportFirebaseSparkBackup>[0]['db'],
+    rtdb: null,
+    projectId: PROJECT_ID,
+  });
+  assert.equal(verifyFirebaseSparkBackup(backupSnapshot).ok, true);
+  assert.equal(backupSnapshot.counts.firestore.backend_accounts, 1);
+  assert.equal(backupSnapshot.counts.firestore.backend_purchases, 1);
+  assert.ok(backupSnapshot.counts.firestore.backend_reward_claims >= 1);
+
+  // Wipe Firestore Emulator completely, then restore from Spark backup and verify full recovery
+  await testEnv.clearFirestore();
+  const restoreRes = await restoreFirebaseSparkBackup({
+    db: adminDb as unknown as Parameters<typeof restoreFirebaseSparkBackup>[0]['db'],
+    rtdb: null,
+    snapshot: backupSnapshot,
+    options: { dryRun: false },
+  });
+  assert.equal(restoreRes.ok, true);
+  assert.equal(restoreRes.checksumVerified, true);
+  assert.equal(restoreRes.restoredFirestoreCounts.backend_accounts, 1);
+  assert.equal(restoreRes.restoredFirestoreCounts.backend_purchases, 1);
+
+  // Simulate full Render container wipe & restart (zero local disk, empty RAM) after restore!
   const storeAfterRestart = new AccountStore(null);
   storeAfterRestart.setCloudAdapter(accountAdapter);
   const restoredCount = await storeAfterRestart.hydrateFromCloud();

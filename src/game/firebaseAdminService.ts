@@ -12,6 +12,11 @@ import { getDatabase } from 'firebase-admin/database';
 import { FieldValue, getFirestore } from 'firebase-admin/firestore';
 import { normalizeRecoveryCode, normalizeUsernameKey } from './accountEngine.js';
 import { sanitizeRtdbKey } from './realtimeSyncHelpers.js';
+import {
+  ROSTER_VERSION_MISMATCH_ERROR,
+  areRosterVersionsCompatible,
+  normalizeRosterVersion,
+} from './rosterVersion.js';
 import type { AccountCloudAdapter, PersistentAccountRecord } from './accountStore.js';
 import type { MatchSessionCloudAdapter, ServerMatchSession } from './serverSecurity.js';
 import type { MinigameRoundPayload, MinigameType, PlayerProfile, UserProgression } from './types.js';
@@ -294,16 +299,18 @@ export async function verifyOnlineRoomOutcomeAdmin(params: {
   roomCode: string;
   uid: string;
   playerId: string;
+  expectedRosterVersion?: string;
 }): Promise<
   | {
       ok: true;
       matchSeq: number;
       minigameType: string;
       roundIdsCount: number;
+      rosterVersion: string | null;
       playerScore: number;
       opponentScore: number;
     }
-  | { ok: false; error: string }
+  | { ok: false; error: string; errorCode?: string }
 > {
   const adminApp = getFirebaseAdminApp();
   if (!adminApp) {
@@ -320,6 +327,28 @@ export async function verifyOnlineRoomOutcomeAdmin(params: {
     const memberUids = Array.isArray(room.memberUids) ? room.memberUids : [];
     if (!memberUids.includes(params.uid)) {
       return { ok: false, error: 'Kullanıcı bu çevrimiçi odanın üyesi değil.' };
+    }
+    const roomRosterVersion = normalizeRosterVersion(room.rosterVersion);
+    if (
+      params.expectedRosterVersion &&
+      !areRosterVersionsCompatible(roomRosterVersion, params.expectedRosterVersion)
+    ) {
+      return {
+        ok: false,
+        errorCode: 'roster_version_mismatch',
+        error: ROSTER_VERSION_MISMATCH_ERROR,
+      };
+    }
+    if (
+      room.guestRosterVersion !== undefined &&
+      room.guestRosterVersion !== null &&
+      !areRosterVersionsCompatible(roomRosterVersion, room.guestRosterVersion)
+    ) {
+      return {
+        ok: false,
+        errorCode: 'roster_version_mismatch',
+        error: ROSTER_VERSION_MISMATCH_ERROR,
+      };
     }
     if (room.state !== 'game_over') {
       return { ok: false, error: 'Çevrimiçi maç henüz tamamlanmamış.' };
@@ -348,6 +377,7 @@ export async function verifyOnlineRoomOutcomeAdmin(params: {
       matchSeq: Math.max(1, Math.round(Number(room.matchSeq) || 1)),
       minigameType: String(room.minigameType || 'two_clubs'),
       roundIdsCount: roundIds.length,
+      rosterVersion: roomRosterVersion,
       playerScore: Math.max(0, Math.round(Number(scores[callerKey]) || 0)),
       opponentScore: Math.max(0, Math.round(Number(scores[oppKey]) || 0)),
     };
@@ -381,6 +411,7 @@ export async function deleteUserFirebaseRecordsAdmin(params: {
 const BACKEND_ACCOUNTS_COLLECTION = 'backend_accounts';
 const BACKEND_PURCHASES_COLLECTION = 'backend_purchases';
 const BACKEND_MATCH_SESSIONS_COLLECTION = 'backend_match_sessions';
+const BACKEND_REWARD_CLAIMS_COLLECTION = 'backend_reward_claims';
 
 export function hashPurchaseToken(purchaseToken: string): string {
   return crypto
@@ -613,6 +644,7 @@ function serializeMatchSessionForCloud(session: ServerMatchSession): Record<stri
     mode: session.mode,
     roomCode: session.roomCode || null,
     matchSeq: session.matchSeq ?? null,
+    rosterVersion: session.rosterVersion || null,
     startedAt: session.startedAt,
     roundsJson: JSON.stringify(session.rounds).slice(0, 240000),
     scoredRounds: Array.from(session.scoredRounds),
@@ -641,6 +673,7 @@ function deserializeMatchSessionFromCloud(data: Record<string, unknown> | undefi
       mode: String(data.mode || 'solo'),
       roomCode: typeof data.roomCode === 'string' && data.roomCode ? data.roomCode : undefined,
       matchSeq: typeof data.matchSeq === 'number' && Number.isFinite(data.matchSeq) ? data.matchSeq : undefined,
+      rosterVersion: typeof data.rosterVersion === 'string' && data.rosterVersion ? data.rosterVersion : undefined,
       startedAt: Number(data.startedAt) || Date.now(),
       rounds: Array.isArray(rounds) ? rounds : [],
       scoredRounds: new Set<number>(scoredArr),
@@ -725,13 +758,94 @@ export function createFirebaseAccountCloudAdapter(): AccountCloudAdapter | null 
   };
 }
 
+export async function loadRoomMatchSessionsAdmin(
+  roomCode: string,
+  matchSeq: number
+): Promise<ServerMatchSession[]> {
+  const cleanCode = String(roomCode || '').trim().toUpperCase();
+  if (!cleanCode) return [];
+  const adminApp = getFirebaseAdminApp();
+  if (!adminApp) return [];
+  try {
+    const db = getFirestore(adminApp);
+    // Single-field where query avoids requiring any custom Firestore composite index on Spark plan
+    const snap = await db
+      .collection(BACKEND_MATCH_SESSIONS_COLLECTION)
+      .where('roomCode', '==', cleanCode)
+      .limit(20)
+      .get();
+    const out: ServerMatchSession[] = [];
+    for (const doc of snap.docs) {
+      const parsed = deserializeMatchSessionFromCloud(doc.data());
+      if (parsed && (parsed.matchSeq ?? 1) === matchSeq) {
+        out.push(parsed);
+      }
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+
+export async function claimMatchRewardAtomicAdmin(params: {
+  claimKey: string;
+  sessionId: string;
+  accountId: string;
+  roomCode?: string;
+  matchSeq?: number;
+  coinsAwarded: number;
+  pointsAwarded: number;
+}): Promise<{ ok: boolean; duplicate?: boolean }> {
+  const cleanClaimKey = sanitizeRtdbKey(params.claimKey);
+  const cleanSessionId = String(params.sessionId || '').trim();
+  if (!cleanClaimKey || !cleanSessionId) return { ok: false };
+  const adminApp = getFirebaseAdminApp();
+  if (!adminApp) {
+    return { ok: true };
+  }
+  try {
+    const db = getFirestore(adminApp);
+    const claimRef = db.collection(BACKEND_REWARD_CLAIMS_COLLECTION).doc(cleanClaimKey);
+    const sessionRef = db.collection(BACKEND_MATCH_SESSIONS_COLLECTION).doc(cleanSessionId);
+
+    return await db.runTransaction(async (tx) => {
+      const claimSnap = await tx.get(claimRef);
+      if (claimSnap.exists) {
+        return { ok: false, duplicate: true };
+      }
+      const sessionSnap = await tx.get(sessionRef);
+      if (sessionSnap.exists && sessionSnap.data()?.completed === true) {
+        return { ok: false, duplicate: true };
+      }
+      tx.create(claimRef, {
+        claimKey: params.claimKey,
+        sessionId: cleanSessionId,
+        accountId: params.accountId,
+        roomCode: params.roomCode || null,
+        matchSeq: params.matchSeq ?? null,
+        coinsAwarded: params.coinsAwarded,
+        pointsAwarded: params.pointsAwarded,
+        claimedAt: Date.now(),
+      });
+      if (sessionSnap.exists) {
+        tx.set(sessionRef, { completed: true, updatedAt: Date.now() }, { merge: true });
+      }
+      return { ok: true, duplicate: false };
+    });
+  } catch {
+    return { ok: false };
+  }
+}
+
 export function createFirebaseMatchSessionCloudAdapter(): MatchSessionCloudAdapter | null {
   if (!isFirebaseAdminConfigured()) return null;
   return {
     loadActiveSessions: loadActiveMatchSessionsAdmin,
     getSessionById: fetchMatchSessionAdmin,
+    loadRoomSessions: loadRoomMatchSessionsAdmin,
     saveSession: async (session) => {
       await persistMatchSessionAdmin(session);
     },
+    claimRewardAtomic: claimMatchRewardAtomicAdmin,
   };
 }

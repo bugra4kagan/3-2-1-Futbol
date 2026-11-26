@@ -367,10 +367,20 @@ service cloud.firestore {
       return mg in ['two_clubs', 'silhouette', 'xox', 'career', 'country_club'];
     }
 
+    function isValidRosterVersion(ver) {
+      return ver is string
+        && ver.size() >= 3
+        && ver.size() <= 40
+        && ver.matches('^[a-zA-Z0-9._-]{3,40}$');
+    }
+
     function isValidRoom(data, roomCode) {
       return data.code == roomCode
         && data.source in ['private', 'matchmaking']
         && isValidMinigame(data.minigameType)
+        && 'rosterVersion' in data
+        && isValidRosterVersion(data.rosterVersion)
+        && (!('guestRosterVersion' in data) || data.guestRosterVersion == null || data.guestRosterVersion == data.rosterVersion)
         && data.state in ['waiting', 'countdown', 'playing', 'round_ended', 'game_over']
         && isValidId(data.hostUid)
         && (!('guestUid' in data) || data.guestUid == null || isValidId(data.guestUid))
@@ -383,9 +393,10 @@ service cloud.firestore {
         && data.players.size() <= 2
         && data.scores is map
         && data.scores.size() <= 2
-        && data.roundIndex is int
-        && data.roundIndex >= 0
-        && data.roundIndex <= 20
+        && (
+          ('roundIndex' in data && data.roundIndex is int && data.roundIndex >= 0 && data.roundIndex <= 20)
+          || ('currentRoundIndex' in data && data.currentRoundIndex is int && data.currentRoundIndex >= 0 && data.currentRoundIndex <= 20)
+        )
         && data.roundIds is list
         && data.roundIds.size() <= 20;
     }
@@ -400,18 +411,23 @@ service cloud.firestore {
         && isValidRoom(incoming(), roomCode)
         && incoming().hostUid == request.auth.uid
         && (
-          // Özel oda veya bekleme odası oluşturma: başlangıçta yalnızca host üye ve skorlar boş
+          // Özel oda veya bekleme odası oluşturma: başlangıçta yalnızca host üye ve skorlar boş veya 0
           (incoming().memberUids == [request.auth.uid]
             && incoming().state == 'waiting'
             && (!('guestUid' in incoming()) || incoming().guestUid == null)
-            && incoming().scores.size() == 0)
-          // Hızlı eşleştirme kurucusu: iki farklı gerçek oyuncuyu atomik olarak eşleştirir
+            && (incoming().scores.size() == 0
+              || (incoming().scores.size() == 1
+                && incoming().hostId in incoming().scores
+                && incoming().scores[incoming().hostId] == 0)))
+          // Hızlı eşleştirme kurucusu: iki farklı gerçek oyuncuyu aynı rosterVersion ile atomik eşleştirir
           || (incoming().source == 'matchmaking'
             && incoming().memberUids.size() == 2
             && 'guestUid' in incoming()
             && incoming().guestUid != null
             && incoming().guestUid != request.auth.uid
-            && incoming().memberUids.hasAll([incoming().hostUid, incoming().guestUid]))
+            && incoming().memberUids.hasAll([incoming().hostUid, incoming().guestUid])
+            && 'guestRosterVersion' in incoming()
+            && incoming().guestRosterVersion == incoming().rosterVersion)
         );
 
       allow update: if isSignedIn()
@@ -422,6 +438,7 @@ service cloud.firestore {
         && incoming().hostUid == existing().hostUid
         && incoming().hostId == existing().hostId
         && incoming().minigameType == existing().minigameType
+        && incoming().rosterVersion == existing().rosterVersion
         && incoming().createdAt == existing().createdAt
         && (!('guestUid' in existing()) || existing().guestUid == null
           || (incoming().guestUid == existing().guestUid && incoming().guestId == existing().guestId))
@@ -455,21 +472,34 @@ service cloud.firestore {
                 && incoming().scores[existing().guestId] <= 10)))
           || (incoming().matchSeq == existing().matchSeq + 1
             && existing().state == 'game_over'
-            && request.auth.uid in existing().memberUids)
+            && request.auth.uid in existing().memberUids
+            && incoming().rosterVersion == existing().rosterVersion
+            && 'guestRosterVersion' in incoming()
+            && incoming().guestRosterVersion == existing().rosterVersion)
         )
         && (
           // Odadaki oyuncular maç durumunu, skoru ve hamleleri güncelleyebilir
           (request.auth.uid in existing().memberUids
             && incoming().memberUids == existing().memberUids)
-          // Bekleyen odaya 2. oyuncu olarak katılma: katılırken skor/tur enjekte edilemez
+          // Bekleyen odaya 2. oyuncu olarak katılma: aynı rosterVersion zorunlu, skor/tur enjekte edilemez
           || (existing().state == 'waiting'
             && existing().memberUids.size() == 1
             && !(request.auth.uid in existing().memberUids)
             && incoming().guestUid == request.auth.uid
+            && 'guestRosterVersion' in incoming()
+            && incoming().guestRosterVersion == existing().rosterVersion
             && incoming().memberUids == existing().memberUids.concat([request.auth.uid])
             && incoming().players.keys().hasAll(existing().players.keys())
-            && incoming().scores == existing().scores
-            && incoming().roundIndex == existing().roundIndex
+            && (
+              incoming().scores == existing().scores
+              || (incoming().scores.size() <= 2
+                && (!(existing().hostId in existing().scores)
+                  || incoming().scores[existing().hostId] == existing().scores[existing().hostId])
+                && (!(incoming().guestId in incoming().scores)
+                  || incoming().scores[incoming().guestId] == 0))
+            )
+            && (!('roundIndex' in existing()) || incoming().roundIndex == existing().roundIndex)
+            && (!('currentRoundIndex' in existing()) || incoming().currentRoundIndex == existing().currentRoundIndex)
             && incoming().matchSeq == existing().matchSeq)
         );
 
@@ -480,11 +510,12 @@ service cloud.firestore {
     // ── Hızlı eşleşme kuyruğu ──
 
     function isValidQueueEntry(data, minigameType, playerKey) {
-      return data.keys().hasAll(['playerKey', 'uid', 'minigameType', 'profile', 'joinedAt', 'matchedRoomCode'])
-        && data.keys().hasOnly(['playerKey', 'uid', 'minigameType', 'profile', 'joinedAt', 'matchedRoomCode', 'expiresAt'])
+      return data.keys().hasAll(['playerKey', 'uid', 'minigameType', 'rosterVersion', 'profile', 'joinedAt', 'matchedRoomCode'])
+        && data.keys().hasOnly(['playerKey', 'uid', 'minigameType', 'rosterVersion', 'profile', 'joinedAt', 'matchedRoomCode', 'expiresAt'])
         && data.playerKey == playerKey
         && data.uid == request.auth.uid
         && data.minigameType == minigameType
+        && isValidRosterVersion(data.rosterVersion)
         && data.profile is map
         && data.profile.keys().size() <= 8
         && data.profile.id is string
@@ -507,13 +538,15 @@ service cloud.firestore {
 
       allow update: if isSignedIn()
         && (
-          // Eşleştiren oyuncu rakibin kaydına oda kodunu bir kez yazar; oda (aynı işlemde)
+          // Eşleştiren oyuncu rakibin kaydına oda kodunu bir kez yazar; oda aynı rosterVersion ile
           // gerçekten oluşturulmuş olmalı ve hem yazan hem kayıt sahibi odanın üyesi olmalı
           (existing().matchedRoomCode == null
             && incoming().diff(existing()).affectedKeys().hasOnly(['matchedRoomCode'])
             && isValidRoomCode(incoming().matchedRoomCode)
             && getAfter(/databases/$(database)/documents/rooms/$(incoming().matchedRoomCode))
-              .data.memberUids.hasAll([request.auth.uid, existing().uid]))
+              .data.memberUids.hasAll([request.auth.uid, existing().uid])
+            && getAfter(/databases/$(database)/documents/rooms/$(incoming().matchedRoomCode))
+              .data.rosterVersion == existing().rosterVersion)
           // Kendi kaydını (veya 2 dakikadan eski terk edilmiş bir kaydı) yeniden kuyruğa sokma
           || (isValidQueueEntry(incoming(), minigameType, playerKey)
             && (existing().uid == request.auth.uid

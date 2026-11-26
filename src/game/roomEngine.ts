@@ -27,6 +27,13 @@ import {
 } from './realtimeSyncHelpers';
 import { sanitizePublicDisplayName } from './usernameFilter';
 import {
+  ROSTER_DATA_VERSION,
+  ROSTER_VERSION_MISMATCH_ERROR,
+  areRosterVersionsCompatible,
+  isValidRosterVersion,
+  normalizeRosterVersion,
+} from './rosterVersion';
+import {
   MatchPlayerStats,
   MinigameRoundPayload,
   MinigameType,
@@ -60,6 +67,7 @@ export interface RoomRematchOffer {
   expiresAt: number;
   status: 'pending' | 'declined' | 'expired';
   cooldownUntil?: number;
+  rosterVersion?: string;
 }
 
 export interface RoomDisconnectGrace {
@@ -88,8 +96,11 @@ export interface RoomRecord {
   source: RoomSource;
   minigameType: MinigameType;
   protocolVersion?: number;
+  rosterVersion?: string;
+  guestRosterVersion?: string | null;
   questionSeed: number;
   roundIds: string[];
+  roundIndex?: number;
   /** Player keys (sanitized session ids) */
   hostId: string;
   guestId: string | null;
@@ -293,8 +304,10 @@ export function createRoomRecord(params: {
   guestUid?: string | null;
   now: number;
   seed?: number;
+  rosterVersion?: string;
 }): RoomRecord {
   const questionSeed = params.seed ?? randomRoomSeed();
+  const cleanRosterVersion = normalizeRosterVersion(params.rosterVersion) || ROSTER_DATA_VERSION;
   const hostId = getRoomPlayerKey(params.host.id);
   const guestId = params.guest ? getRoomPlayerKey(params.guest.id) : null;
   const players: Record<string, RoomPlayerRecord> = { [hostId]: toRoomPlayer(params.host) };
@@ -310,8 +323,11 @@ export function createRoomRecord(params: {
     source: params.source,
     minigameType: params.minigameType,
     protocolVersion: 2,
+    rosterVersion: cleanRosterVersion,
+    guestRosterVersion: guestId ? cleanRosterVersion : null,
     questionSeed,
     roundIds: generateSeededRoundIds(params.minigameType, ROOM_ROUND_POOL_SIZE, questionSeed),
+    roundIndex: 0,
     hostId,
     guestId,
     hostUid: params.hostUid,
@@ -346,10 +362,15 @@ export function applyRoomJoin(
   room: RoomRecord,
   guest: PlayerProfile,
   guestUid: string,
-  now: number
+  now: number,
+  guestRosterVersion: string | null | undefined = ROSTER_DATA_VERSION
 ): RoomJoinResult {
   const guestKey = getRoomPlayerKey(guest.id);
   const players = room.players || {};
+
+  if (!areRosterVersionsCompatible(room.rosterVersion, guestRosterVersion)) {
+    return { ok: false, error: ROSTER_VERSION_MISMATCH_ERROR };
+  }
 
   if (guestKey === room.hostId) {
     return { ok: false, error: 'Kendi kurduğun odaya katılamazsın. Kodu arkadaşına gönder!' };
@@ -368,12 +389,15 @@ export function applyRoomJoin(
     return { ok: false, error: 'Bu odanın süresi dolmuş. Arkadaşından yeni bir oda kurmasını iste.' };
   }
 
+  const cleanGuestVersion = normalizeRosterVersion(guestRosterVersion)!;
+
   return {
     ok: true,
     room: {
       ...room,
       guestId: guestKey,
       guestUid,
+      guestRosterVersion: cleanGuestVersion,
       memberUids: uniqueUids([...(room.memberUids || []), guestUid]),
       players: { ...players, [guestKey]: toRoomPlayer(guest) },
       scores: { ...(room.scores || {}), [guestKey]: 0 },
@@ -669,6 +693,7 @@ export function applyRoomAdvance(room: RoomRecord, phase: RoomPhase, now: number
   return {
     ...room,
     currentRoundIndex: nextIdx,
+    roundIndex: nextIdx,
     state: 'countdown',
     countdownStartedAt: now,
     countdownEndsAt: now + ROOM_COUNTDOWN_SECONDS * 1000,
@@ -710,6 +735,7 @@ function startRematchRoomRecord(
 
   return {
     ...room,
+    guestRosterVersion: room.guestRosterVersion || room.rosterVersion || ROSTER_DATA_VERSION,
     questionSeed: seed,
     roundIds: generateSeededRoundIds(
       room.minigameType,
@@ -722,6 +748,7 @@ function startRematchRoomRecord(
     scores: resetScores,
     state: 'countdown',
     currentRoundIndex: 0,
+    roundIndex: 0,
     turnSeq: 0,
     matchSeq: (room.matchSeq || 1) + 1,
     countdownStartedAt: now,
@@ -744,6 +771,29 @@ function startRematchRoomRecord(
   };
 }
 
+export function validateRematchRosterCompatibility(
+  room: RoomRecord,
+  callerRosterVersion: string | null | undefined = ROSTER_DATA_VERSION
+): { ok: true; rosterVersion: string } | { ok: false; error: string } {
+  if (!areRosterVersionsCompatible(room.rosterVersion, callerRosterVersion)) {
+    return { ok: false, error: ROSTER_VERSION_MISMATCH_ERROR };
+  }
+  if (
+    room.guestRosterVersion !== undefined &&
+    room.guestRosterVersion !== null &&
+    !areRosterVersionsCompatible(room.guestRosterVersion, callerRosterVersion)
+  ) {
+    return { ok: false, error: ROSTER_VERSION_MISMATCH_ERROR };
+  }
+  if (
+    room.rematchOffer?.rosterVersion &&
+    !areRosterVersionsCompatible(room.rematchOffer.rosterVersion, callerRosterVersion)
+  ) {
+    return { ok: false, error: ROSTER_VERSION_MISMATCH_ERROR };
+  }
+  return { ok: true, rosterVersion: normalizeRosterVersion(callerRosterVersion)! };
+}
+
 /**
  * Initiates a rematch request (20s timeout + anti-spam cooldown) or accepts
  * if the opponent already has a pending request.
@@ -752,9 +802,13 @@ export function applyRoomRematch(
   room: RoomRecord,
   rawPlayerId: string,
   now: number,
-  seed: number = randomRoomSeed()
+  seed: number = randomRoomSeed(),
+  callerRosterVersion: string | null | undefined = ROSTER_DATA_VERSION
 ): RoomRecord | null {
   if (room.state !== 'game_over') return null;
+  const versionCheck = validateRematchRosterCompatibility(room, callerRosterVersion);
+  if (!versionCheck.ok) return null;
+
   const playerKey = getRoomPlayerKey(rawPlayerId);
   const players = { ...(room.players || {}) };
   const selfPlayer = players[playerKey];
@@ -807,6 +861,7 @@ export function applyRoomRematch(
       expiresAt: now + REMATCH_OFFER_TIMEOUT_MS,
       status: 'pending',
       cooldownUntil: now + REMATCH_REQUEST_COOLDOWN_MS,
+      rosterVersion: versionCheck.rosterVersion,
     },
     updatedAt: now,
   };
@@ -817,9 +872,14 @@ export function applyRoomRematchResponse(
   rawPlayerId: string,
   action: 'accept' | 'decline' | 'expire',
   now: number,
-  seed: number = randomRoomSeed()
+  seed: number = randomRoomSeed(),
+  callerRosterVersion: string | null | undefined = ROSTER_DATA_VERSION
 ): RoomRecord | null {
   if (room.state !== 'game_over') return null;
+  if (action === 'accept') {
+    const versionCheck = validateRematchRosterCompatibility(room, callerRosterVersion);
+    if (!versionCheck.ok) return null;
+  }
   const playerKey = getRoomPlayerKey(rawPlayerId);
   const players = { ...(room.players || {}) };
   if (!players[playerKey]) return null;
@@ -998,6 +1058,7 @@ export interface MatchmakingQueueCandidate {
   playerKey: string;
   uid: string;
   minigameType: MinigameType;
+  rosterVersion?: string;
   profile: { id: string; name: string; avatar: string; favoriteClubId?: string };
   joinedAtMs: number;
   expiresAtMs?: number | null;
@@ -1009,7 +1070,7 @@ export const MATCHMAKING_BIDIRECTIONAL_GRACE_MS = 600;
 
 /**
  * Selects eligible opponents from the same minigame queue while preventing self-match,
- * expired/matched queue records, and multi-claim contention deadlocks.
+ * rosterVersion mismatch, expired/matched queue records, and multi-claim contention deadlocks.
  */
 export function selectMatchmakingCandidates(params: {
   entries: readonly MatchmakingQueueCandidate[];
@@ -1017,10 +1078,14 @@ export function selectMatchmakingCandidates(params: {
   myUid: string;
   myProfileId: string;
   minigameType: MinigameType;
+  myRosterVersion?: string;
   now: number;
 }): MatchmakingQueueCandidate[] {
   const mine = params.entries.find((e) => e.playerKey === params.myKey);
   if (!mine || mine.matchedRoomCode) return [];
+
+  const requiredVersion = normalizeRosterVersion(params.myRosterVersion ?? mine.rosterVersion);
+  if (!isValidRosterVersion(requiredVersion)) return [];
 
   return params.entries
     .filter((e) => {
@@ -1028,6 +1093,7 @@ export function selectMatchmakingCandidates(params: {
       if (e.uid === params.myUid) return false;
       if (e.profile?.id === params.myProfileId) return false;
       if (e.minigameType !== params.minigameType) return false;
+      if (!areRosterVersionsCompatible(requiredVersion, e.rosterVersion)) return false;
       if (e.matchedRoomCode) return false;
       if (typeof e.expiresAtMs === 'number' && e.expiresAtMs <= params.now) return false;
       if (params.now - e.joinedAtMs > MATCHMAKING_QUEUE_STALE_MS) return false;

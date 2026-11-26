@@ -44,6 +44,7 @@ export interface ServerMatchSession {
   mode: string;
   roomCode?: string;
   matchSeq?: number;
+  rosterVersion?: string;
   startedAt: number;
   rounds: MinigameRoundPayload[];
   scoredRounds: Set<number>;
@@ -56,7 +57,17 @@ export interface ServerMatchSession {
 export interface MatchSessionCloudAdapter {
   loadActiveSessions: (now?: number, limitCount?: number) => Promise<ServerMatchSession[]>;
   getSessionById: (sessionId: string) => Promise<ServerMatchSession | null>;
+  loadRoomSessions?: (roomCode: string, matchSeq: number) => Promise<ServerMatchSession[]>;
   saveSession: (session: ServerMatchSession) => Promise<void>;
+  claimRewardAtomic?: (params: {
+    claimKey: string;
+    sessionId: string;
+    accountId: string;
+    roomCode?: string;
+    matchSeq?: number;
+    coinsAwarded: number;
+    pointsAwarded: number;
+  }) => Promise<{ ok: boolean; duplicate?: boolean }>;
 }
 
 const SUPPORTED_MATCH_TYPES = new Set<MinigameType>([
@@ -70,6 +81,7 @@ const SUPPORTED_MATCH_TYPES = new Set<MinigameType>([
 export class ServerMatchLedger {
   private readonly sessions = new Map<string, ServerMatchSession>();
   private readonly claimedRoomOutcomes = new Set<string>();
+  private readonly inFlightClaims = new Set<string>();
   private cloudAdapter: MatchSessionCloudAdapter | null = null;
   private readonly pendingCloudWrites = new Map<string, Promise<void>>();
 
@@ -129,6 +141,7 @@ export class ServerMatchLedger {
     mode: string;
     roomCode?: string;
     matchSeq?: number;
+    rosterVersion?: string;
     rounds?: MinigameRoundPayload[];
     roundIds?: string[];
     now?: number;
@@ -150,6 +163,10 @@ export class ServerMatchLedger {
       typeof params.matchSeq === 'number' && Number.isFinite(params.matchSeq)
         ? Math.max(1, Math.round(params.matchSeq))
         : undefined;
+    const cleanRosterVersion =
+      typeof params.rosterVersion === 'string' && params.rosterVersion.trim()
+        ? params.rosterVersion.trim().slice(0, 40)
+        : undefined;
 
     const session: ServerMatchSession = {
       sessionId,
@@ -158,6 +175,7 @@ export class ServerMatchLedger {
       mode: String(params.mode || 'solo').slice(0, 32),
       roomCode: cleanRoomCode,
       matchSeq: cleanMatchSeq,
+      rosterVersion: cleanRosterVersion,
       startedAt: now,
       rounds,
       scoredRounds: new Set<number>(),
@@ -286,16 +304,48 @@ export class ServerMatchLedger {
     return best;
   }
 
-  public consumeVerifiedMatchSession(params: {
+  public async findOpponentVerifiedScoreAsync(
+    roomCode: string,
+    matchSeq: number,
+    selfAccountId: string
+  ): Promise<number | null> {
+    const cleanCode = String(roomCode || '').trim().toUpperCase();
+    if (!cleanCode) return null;
+    if (this.cloudAdapter?.loadRoomSessions) {
+      try {
+        const cloudSessions = await this.cloudAdapter.loadRoomSessions(cleanCode, matchSeq);
+        for (const cs of cloudSessions) {
+          const existing = this.sessions.get(cs.sessionId);
+          if (!existing || cs.verifiedPlayerScore > existing.verifiedPlayerScore || cs.completed) {
+            this.sessions.set(cs.sessionId, cs);
+          }
+        }
+      } catch {
+        // Keep in-memory sessions if cloud query fails temporarily
+      }
+    }
+    return this.findOpponentVerifiedScore(cleanCode, matchSeq, selfAccountId);
+  }
+
+  private evaluateMatchReward(params: {
     sessionId: string;
     accountId: string;
     hasMultiplier2x: boolean;
     roomVerifiedScores?: { playerScore: number; opponentScore: number };
+    serverVerifiedOpponentScore?: number | null;
+    requireServerOpponentVerification?: boolean;
     roomClaimKey?: string;
     now?: number;
     minDurationMs?: number;
   }):
-    | { ok: true; coinsAwarded: number; pointsAwarded: number; won: boolean; verifiedScore: number }
+    | {
+        ok: true;
+        session: ServerMatchSession;
+        coinsAwarded: number;
+        pointsAwarded: number;
+        won: boolean;
+        verifiedScore: number;
+      }
     | { ok: false; reason: string } {
     const cleanSid = String(params.sessionId || '').trim();
     const cleanId = String(params.accountId || '').trim().slice(0, 64);
@@ -307,19 +357,30 @@ export class ServerMatchLedger {
       return { ok: false, reason: 'Bu maç oturumu daha önce ödüllendirildi.' };
     }
     const isOnlineMode = session.mode.startsWith('online');
-    if (isOnlineMode && !params.roomVerifiedScores) {
+    if (isOnlineMode && params.requireServerOpponentVerification) {
+      if (
+        typeof params.serverVerifiedOpponentScore !== 'number' ||
+        !Number.isFinite(params.serverVerifiedOpponentScore) ||
+        params.serverVerifiedOpponentScore < 0
+      ) {
+        return {
+          ok: false,
+          reason:
+            'Her iki oyuncunun sunucu cevap doğrulaması tamamlanmadan rekabetçi ödül verilemez.',
+        };
+      }
+    } else if (isOnlineMode && !params.roomVerifiedScores && params.serverVerifiedOpponentScore === undefined) {
       return {
         ok: false,
         reason: 'Çevrimiçi maç ödülü için sunucu tarafından doğrulanmış oda sonucu zorunludur.',
       };
     }
+
     if (params.roomVerifiedScores) {
       const reportedRoomScore = Math.max(
         0,
         Math.min(20, Math.round(params.roomVerifiedScores.playerScore))
       );
-      // İstemci tarafından değiştirilebilen Firestore oda skoruna tek başına ASLA güvenilmez:
-      // Oda skoru sunucu tarafından /api/matches/answer ile doğrulanmış skordan yüksekse reddedilir.
       if (reportedRoomScore > session.verifiedPlayerScore) {
         return {
           ok: false,
@@ -327,13 +388,11 @@ export class ServerMatchLedger {
         };
       }
     }
-    if (params.roomClaimKey) {
-      if (this.claimedRoomOutcomes.has(params.roomClaimKey)) {
-        return {
-          ok: false,
-          reason: 'Bu çevrimiçi oda maçının ödülü daha önce talep edilmiş.',
-        };
-      }
+    if (params.roomClaimKey && this.claimedRoomOutcomes.has(params.roomClaimKey)) {
+      return {
+        ok: false,
+        reason: 'Bu çevrimiçi oda maçının ödülü daha önce talep edilmiş.',
+      };
     }
     const now = params.now ?? Date.now();
     const minDuration = params.minDurationMs ?? MIN_VERIFIED_MATCH_DURATION_MS;
@@ -345,28 +404,26 @@ export class ServerMatchLedger {
       return { ok: false, reason: 'Maç oturumu zaman aşımına uğradı.' };
     }
 
-    session.completed = true;
-    if (params.roomClaimKey) {
-      this.claimedRoomOutcomes.add(params.roomClaimKey);
-      if (this.claimedRoomOutcomes.size > 5000) {
-        const firstKey = this.claimedRoomOutcomes.values().next().value;
-        if (firstKey) this.claimedRoomOutcomes.delete(firstKey);
-      }
-    }
-    this.queueCloudSave(session);
+    // Strict server authority: online competitive scores are computed ONLY from server-verified answers
+    const verifiedScore =
+      params.requireServerOpponentVerification || params.serverVerifiedOpponentScore !== undefined
+        ? session.verifiedPlayerScore
+        : params.roomVerifiedScores
+        ? Math.min(
+            session.verifiedPlayerScore,
+            Math.max(0, Math.min(20, Math.round(params.roomVerifiedScores.playerScore)))
+          )
+        : session.verifiedPlayerScore;
 
-    // Online modda skor hem sunucu cevabı hem Firestore oda sınırıyla doğrulanır (hangisi küçükse).
-    const verifiedScore = params.roomVerifiedScores
-      ? Math.min(
-          session.verifiedPlayerScore,
-          Math.max(0, Math.min(20, Math.round(params.roomVerifiedScores.playerScore)))
-        )
-      : session.verifiedPlayerScore;
-    const oppScore = params.roomVerifiedScores
-      ? Math.max(0, Math.min(20, Math.round(params.roomVerifiedScores.opponentScore)))
-      : verifiedScore >= 3
-      ? Math.max(0, verifiedScore - 1)
-      : 3;
+    const oppScore =
+      typeof params.serverVerifiedOpponentScore === 'number' &&
+      Number.isFinite(params.serverVerifiedOpponentScore)
+        ? Math.max(0, Math.min(20, Math.round(params.serverVerifiedOpponentScore)))
+        : params.roomVerifiedScores
+        ? Math.max(0, Math.min(20, Math.round(params.roomVerifiedScores.opponentScore)))
+        : verifiedScore >= 3
+        ? Math.max(0, verifiedScore - 1)
+        : 3;
 
     const won = verifiedScore > oppScore && verifiedScore > 0;
     const drew = verifiedScore === oppScore && verifiedScore > 0;
@@ -392,11 +449,114 @@ export class ServerMatchLedger {
 
     return {
       ok: true,
+      session,
       won,
       verifiedScore,
       coinsAwarded: Math.min(MAX_SERVER_MATCH_COINS * mult, baseCoins * mult),
       pointsAwarded: Math.min(MAX_SERVER_MATCH_POINTS * mult, basePoints * mult),
     };
+  }
+
+  public consumeVerifiedMatchSession(params: {
+    sessionId: string;
+    accountId: string;
+    hasMultiplier2x: boolean;
+    roomVerifiedScores?: { playerScore: number; opponentScore: number };
+    serverVerifiedOpponentScore?: number | null;
+    requireServerOpponentVerification?: boolean;
+    roomClaimKey?: string;
+    now?: number;
+    minDurationMs?: number;
+  }):
+    | { ok: true; coinsAwarded: number; pointsAwarded: number; won: boolean; verifiedScore: number }
+    | { ok: false; reason: string } {
+    const evalRes = this.evaluateMatchReward(params);
+    if (!evalRes.ok) return evalRes;
+
+    evalRes.session.completed = true;
+    if (params.roomClaimKey) {
+      this.claimedRoomOutcomes.add(params.roomClaimKey);
+      if (this.claimedRoomOutcomes.size > 5000) {
+        const firstKey = this.claimedRoomOutcomes.values().next().value;
+        if (firstKey) this.claimedRoomOutcomes.delete(firstKey);
+      }
+    }
+    this.queueCloudSave(evalRes.session);
+
+    return {
+      ok: true,
+      won: evalRes.won,
+      verifiedScore: evalRes.verifiedScore,
+      coinsAwarded: evalRes.coinsAwarded,
+      pointsAwarded: evalRes.pointsAwarded,
+    };
+  }
+
+  public async consumeVerifiedMatchSessionAsync(params: {
+    sessionId: string;
+    accountId: string;
+    hasMultiplier2x: boolean;
+    roomVerifiedScores?: { playerScore: number; opponentScore: number };
+    serverVerifiedOpponentScore?: number | null;
+    requireServerOpponentVerification?: boolean;
+    roomClaimKey?: string;
+    now?: number;
+    minDurationMs?: number;
+  }): Promise<
+    | { ok: true; coinsAwarded: number; pointsAwarded: number; won: boolean; verifiedScore: number }
+    | { ok: false; reason: string }
+  > {
+    const lockKey = params.roomClaimKey || `session:${String(params.sessionId || '').trim()}`;
+    if (this.inFlightClaims.has(lockKey)) {
+      return { ok: false, reason: 'Bu maç ödülü zaten işleniyor.' };
+    }
+    this.inFlightClaims.add(lockKey);
+    try {
+      const evalRes = this.evaluateMatchReward(params);
+      if (!evalRes.ok) return evalRes;
+
+      if (this.cloudAdapter?.claimRewardAtomic) {
+        const atomicClaim = await this.cloudAdapter.claimRewardAtomic({
+          claimKey: lockKey,
+          sessionId: evalRes.session.sessionId,
+          accountId: evalRes.session.accountId,
+          roomCode: evalRes.session.roomCode,
+          matchSeq: evalRes.session.matchSeq,
+          coinsAwarded: evalRes.coinsAwarded,
+          pointsAwarded: evalRes.pointsAwarded,
+        });
+        if (!atomicClaim.ok) {
+          evalRes.session.completed = true;
+          if (params.roomClaimKey) this.claimedRoomOutcomes.add(params.roomClaimKey);
+          return {
+            ok: false,
+            reason: atomicClaim.duplicate
+              ? 'Bu maç oturumu veya çevrimiçi oda maçı daha önce ödüllendirildi.'
+              : 'Atomik ödül kilidi alınamadı; lütfen tekrar dene.',
+          };
+        }
+      }
+
+      evalRes.session.completed = true;
+      if (params.roomClaimKey) {
+        this.claimedRoomOutcomes.add(params.roomClaimKey);
+        if (this.claimedRoomOutcomes.size > 5000) {
+          const firstKey = this.claimedRoomOutcomes.values().next().value;
+          if (firstKey) this.claimedRoomOutcomes.delete(firstKey);
+        }
+      }
+      this.queueCloudSave(evalRes.session);
+
+      return {
+        ok: true,
+        won: evalRes.won,
+        verifiedScore: evalRes.verifiedScore,
+        coinsAwarded: evalRes.coinsAwarded,
+        pointsAwarded: evalRes.pointsAwarded,
+      };
+    } finally {
+      this.inFlightClaims.delete(lockKey);
+    }
   }
 }
 

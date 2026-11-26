@@ -8,6 +8,10 @@ import { getRandomPairings, validateAnswerForPairing } from './src/game/validato
 import { MATCH_PAIRINGS } from './src/game/database.js';
 import { ensureExpandedRosterSync } from './src/game/rosterNodeLoader.js';
 import {
+  ROSTER_VERSION_MISMATCH_ERROR,
+  areRosterVersionsCompatible,
+} from './src/game/rosterVersion.js';
+import {
   FriendActivityEvent,
   FriendRequestEntry,
   MinigameType,
@@ -700,10 +704,23 @@ app.post('/api/validate', (req, res) => {
 // ── Sunucu Doğrulamalı Maç Oturumu & Ödül İşlemleri ──
 app.post('/api/matches/start', async (req, res) => {
   if (!enforceRateLimit(accountWriteLimiter, req, res)) return;
-  const { accountId, minigameType, mode, roundIds, roomCode, matchSeq } = req.body || {};
+  const { accountId, minigameType, mode, roundIds, roomCode, matchSeq, rosterVersion } = req.body || {};
   const cleanId = String(accountId || '').trim().slice(0, 64);
   if (!cleanId) {
     return res.status(400).json({ ok: false, error: 'Geçersiz oyuncu kimliği.' });
+  }
+  const cleanMode = String(mode || 'solo').trim();
+  const isOnlineRequest = cleanMode.startsWith('online') || Boolean(roomCode);
+  if (
+    (isOnlineRequest || rosterVersion !== undefined) &&
+    !areRosterVersionsCompatible(rosterVersion, serverRosterStatus.version)
+  ) {
+    return res.status(409).json({
+      ok: false,
+      errorCode: 'roster_version_mismatch',
+      error: ROSTER_VERSION_MISMATCH_ERROR,
+      serverRosterVersion: serverRosterStatus.version,
+    });
   }
   const existing = await accountStore.resolveByAccountIdAsync(cleanId);
   if (existing && !accountStore.verifyAccountSession(cleanId, readAccountToken(req))) {
@@ -712,9 +729,10 @@ app.post('/api/matches/start', async (req, res) => {
   const session = serverMatchLedger.issueSession({
     accountId: cleanId,
     minigameType: String(minigameType || 'two_clubs'),
-    mode: String(mode || 'solo'),
+    mode: cleanMode,
     roomCode: typeof roomCode === 'string' ? roomCode : undefined,
     matchSeq: typeof matchSeq === 'number' ? matchSeq : undefined,
+    rosterVersion: serverRosterStatus.version,
     roundIds: Array.isArray(roundIds) ? roundIds : undefined,
   });
   res.json({
@@ -769,7 +787,8 @@ app.post('/api/matches/complete', async (req, res) => {
 
   await serverMatchLedger.resolveSessionAsync(String(matchSessionId || ''));
 
-  let roomVerifiedScores: { playerScore: number; opponentScore: number } | undefined;
+  let serverVerifiedOpponentScore: number | null | undefined;
+  let requireServerOpponentVerification = false;
   let roomClaimKey: string | undefined;
   const firebaseAuthToken = req.header('x-firebase-id-token');
   const verifiedUser = await verifyFirebaseBearerToken(firebaseAuthToken);
@@ -786,33 +805,45 @@ app.post('/api/matches/complete', async (req, res) => {
       roomCode: cleanRoomCode,
       uid: verifiedUser.uid,
       playerId: cleanId,
+      expectedRosterVersion: serverRosterStatus.version,
     });
     if (!roomCheck.ok) {
-      return res.status(403).json({ ok: false, error: roomCheck.error });
+      const status = roomCheck.errorCode === 'roster_version_mismatch' ? 409 : 403;
+      return res.status(status).json({
+        ok: false,
+        ...(roomCheck.errorCode ? { errorCode: roomCheck.errorCode } : {}),
+        error: roomCheck.error,
+      });
     }
-    const opponentServerScore = serverMatchLedger.findOpponentVerifiedScore(
+    // İstemci tarafından değiştirilebilir Firestore oda skorlarına (roomCheck.playerScore / opponentScore) ASLA güvenilmez.
+    // Her iki oyuncunun skoru yalnızca sunucuda /api/matches/answer ile doğrulanmış oturumlardan hesaplanır.
+    const opponentServerScore = await serverMatchLedger.findOpponentVerifiedScoreAsync(
       cleanRoomCode,
       roomCheck.matchSeq,
       cleanId
     );
-    roomVerifiedScores = {
-      playerScore: roomCheck.playerScore,
-      opponentScore:
-        opponentServerScore !== null
-          ? Math.max(roomCheck.opponentScore, opponentServerScore)
-          : roomCheck.opponentScore,
-    };
+    if (opponentServerScore === null) {
+      return res.status(403).json({
+        ok: false,
+        errorCode: 'unverified_opponent_session',
+        error:
+          'Her iki oyuncunun sunucu cevap doğrulaması bulunmadığından rekabetçi ödül verilemez.',
+      });
+    }
+    serverVerifiedOpponentScore = opponentServerScore;
+    requireServerOpponentVerification = true;
     roomClaimKey = `${cleanRoomCode}:${roomCheck.matchSeq}:${cleanId}`;
   }
 
   const hasMult = Boolean(
     existing.progression.permanentMultiplier2x || (existing.progression.multiplier2xMatches ?? 0) > 0
   );
-  const outcome = serverMatchLedger.consumeVerifiedMatchSession({
+  const outcome = await serverMatchLedger.consumeVerifiedMatchSessionAsync({
     sessionId: String(matchSessionId || ''),
     accountId: cleanId,
     hasMultiplier2x: hasMult,
-    roomVerifiedScores,
+    serverVerifiedOpponentScore,
+    requireServerOpponentVerification,
     roomClaimKey,
   });
 

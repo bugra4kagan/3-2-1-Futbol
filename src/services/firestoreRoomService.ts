@@ -34,6 +34,13 @@ import {
 } from '../game/realtimeSyncHelpers';
 import { getAuthoritativeServerNowMs } from '../game/serverTime';
 import { sanitizePublicDisplayName } from '../game/usernameFilter';
+import { getRosterHydrationStatus } from '../game/rosterLoader';
+import {
+  ROSTER_DATA_VERSION,
+  ROSTER_VERSION_MISMATCH_ERROR,
+  areRosterVersionsCompatible,
+  normalizeRosterVersion,
+} from '../game/rosterVersion';
 import {
   MatchmakingQueueCandidate,
   RoomAnswerOutcome,
@@ -57,7 +64,16 @@ import {
   normalizeRoomCode,
   normalizeRoomRecord,
   selectMatchmakingCandidates,
+  validateRematchRosterCompatibility,
 } from '../game/roomEngine';
+
+function getActiveClientRosterVersion(explicitVersion?: string | null): string {
+  return (
+    normalizeRosterVersion(explicitVersion) ||
+    normalizeRosterVersion(getRosterHydrationStatus().version) ||
+    ROSTER_DATA_VERSION
+  );
+}
 import { MinigameType, PlayerProfile } from '../game/types';
 
 const ROOMS_COLLECTION = 'rooms';
@@ -210,9 +226,11 @@ async function mutateRoom<T>(
 
 export async function createRoom(
   hostProfile: PlayerProfile,
-  minigameType: MinigameType = 'two_clubs'
+  minigameType: MinigameType = 'two_clubs',
+  rosterVersion?: string
 ): Promise<{ code: string; room: RoomRecord }> {
   const user = await ensureRoomAuthUser();
+  const activeRosterVersion = getActiveClientRosterVersion(rosterVersion);
 
   for (let attempt = 0; attempt < 5; attempt++) {
     const code = generateSixCharRoomCode();
@@ -225,6 +243,7 @@ export async function createRoom(
         host: hostProfile,
         hostUid: user.uid,
         now,
+        rosterVersion: activeRosterVersion,
       }),
       expiresAt: Timestamp.fromMillis(now + ROOM_TTL_MS),
     };
@@ -242,13 +261,15 @@ export async function createRoom(
 
 export async function joinRoom(
   rawCode: string,
-  guestProfile: PlayerProfile
+  guestProfile: PlayerProfile,
+  rosterVersion?: string
 ): Promise<RoomJoinResult> {
   const code = normalizeRoomCode(rawCode);
   if (!isValidRoomCode(code)) {
     return { ok: false, error: 'Geçersiz oda kodu! Oda kodu 6 karakter olmalı.' };
   }
   const user = await ensureRoomAuthUser();
+  const activeRosterVersion = getActiveClientRosterVersion(rosterVersion);
   const notFound: RoomJoinResult = {
     ok: false,
     error: 'Oda bulunamadı. Lütfen 6 haneli oda kodunu kontrol et!',
@@ -257,7 +278,13 @@ export async function joinRoom(
   return mutateRoom<RoomJoinResult>(
     code,
     (room) => {
-      const res = applyRoomJoin(room, guestProfile, user.uid, getAuthoritativeServerNowMs());
+      const res = applyRoomJoin(
+        room,
+        guestProfile,
+        user.uid,
+        getAuthoritativeServerNowMs(),
+        activeRosterVersion
+      );
       if (!res.ok) return { next: null, result: res };
       // Re-join of an existing member writes nothing
       const changed = res.room !== room;
@@ -340,26 +367,59 @@ export function advanceRoomRound(code: string, phase: RoomPhase): Promise<void> 
   );
 }
 
-export function requestRoomRematch(code: string, rawPlayerId: string): Promise<void> {
-  return mutateRoom(
+export function requestRoomRematch(
+  code: string,
+  rawPlayerId: string,
+  rosterVersion?: string
+): Promise<{ ok: boolean; error?: string }> {
+  const activeRosterVersion = getActiveClientRosterVersion(rosterVersion);
+  return mutateRoom<{ ok: boolean; error?: string }>(
     code,
-    (room) => ({ next: applyRoomRematch(room, rawPlayerId, getAuthoritativeServerNowMs()), result: undefined }),
-    undefined
+    (room) => {
+      const compat = validateRematchRosterCompatibility(room, activeRosterVersion);
+      if (!compat.ok) {
+        return { next: null, result: { ok: false, error: compat.error } };
+      }
+      const next = applyRoomRematch(
+        room,
+        rawPlayerId,
+        getAuthoritativeServerNowMs(),
+        undefined,
+        activeRosterVersion
+      );
+      return { next, result: { ok: Boolean(next) } };
+    },
+    { ok: false, error: 'Oda bulunamadı.' }
   );
 }
 
 export function respondRoomRematch(
   code: string,
   rawPlayerId: string,
-  action: 'accept' | 'decline' | 'expire'
-): Promise<void> {
-  return mutateRoom(
+  action: 'accept' | 'decline' | 'expire',
+  rosterVersion?: string
+): Promise<{ ok: boolean; error?: string }> {
+  const activeRosterVersion = getActiveClientRosterVersion(rosterVersion);
+  return mutateRoom<{ ok: boolean; error?: string }>(
     code,
-    (room) => ({
-      next: applyRoomRematchResponse(room, rawPlayerId, action, getAuthoritativeServerNowMs()),
-      result: undefined,
-    }),
-    undefined
+    (room) => {
+      if (action === 'accept') {
+        const compat = validateRematchRosterCompatibility(room, activeRosterVersion);
+        if (!compat.ok) {
+          return { next: null, result: { ok: false, error: compat.error } };
+        }
+      }
+      const next = applyRoomRematchResponse(
+        room,
+        rawPlayerId,
+        action,
+        getAuthoritativeServerNowMs(),
+        undefined,
+        activeRosterVersion
+      );
+      return { next, result: { ok: Boolean(next) } };
+    },
+    { ok: false, error: 'Oda bulunamadı.' }
   );
 }
 
@@ -517,6 +577,7 @@ function readQueueEntry(raw: Record<string, unknown>): MatchmakingQueueCandidate
     playerKey: raw.playerKey,
     uid: raw.uid,
     minigameType: raw.minigameType as MinigameType,
+    rosterVersion: normalizeRosterVersion(raw.rosterVersion) || undefined,
     profile,
     joinedAtMs:
       joinedAt && typeof joinedAt.toMillis === 'function'
@@ -531,6 +592,7 @@ function readQueueEntry(raw: Record<string, unknown>): MatchmakingQueueCandidate
 export function startRoomMatchmaking(params: {
   profile: PlayerProfile;
   minigameType: MinigameType;
+  rosterVersion?: string;
   onRoomMatched: (code: string) => void;
   onNoOpponentTimeout?: () => void;
   onMatchmakingError?: (message: string) => void;
@@ -539,6 +601,7 @@ export function startRoomMatchmaking(params: {
   // Always clean up any existing matchmaking search first so the user is never in 2 queues
   cleanupActiveMatchmakingQueue();
 
+  const myRosterVersion = getActiveClientRosterVersion(params.rosterVersion);
   const myKey = getRoomPlayerKey(params.profile.id);
   const queueCol = collection(db, 'matchmaking', params.minigameType, 'queue');
   const myRef = doc(queueCol, myKey);
@@ -597,6 +660,9 @@ export function startRoomMatchmaking(params: {
     if (opp.uid === myUid || opp.playerKey === myKey || opp.profile.id === params.profile.id) {
       return false;
     }
+    if (!areRosterVersionsCompatible(myRosterVersion, opp.rosterVersion)) {
+      return false;
+    }
     const oppRef = doc(queueCol, opp.playerKey);
     const code = generateSixCharRoomCode();
     const rRef = roomRef(code);
@@ -611,6 +677,7 @@ export function startRoomMatchmaking(params: {
         guest: { ...opp.profile, score: 0 },
         guestUid: opp.uid,
         now,
+        rosterVersion: myRosterVersion,
       }),
       expiresAt: Timestamp.fromMillis(now + ROOM_TTL_MS),
     };
@@ -621,6 +688,7 @@ export function startRoomMatchmaking(params: {
       const existingRoom = await tx.get(rRef);
       if (!mine.exists() || mine.data().matchedRoomCode) return false;
       if (!theirs.exists() || theirs.data().matchedRoomCode) return false;
+      if (!areRosterVersionsCompatible(myRosterVersion, theirs.data().rosterVersion)) return false;
       if (existingRoom.exists()) return false;
       tx.set(rRef, toRoomDocument(room));
       tx.update(oppRef, { matchedRoomCode: code });
@@ -647,6 +715,7 @@ export function startRoomMatchmaking(params: {
       myUid,
       myProfileId: params.profile.id,
       minigameType: params.minigameType,
+      myRosterVersion,
       now: getAuthoritativeServerNowMs(),
     });
     if (candidates.length === 0) return;
@@ -680,6 +749,7 @@ export function startRoomMatchmaking(params: {
         playerKey: myKey,
         uid: user.uid,
         minigameType: params.minigameType,
+        rosterVersion: myRosterVersion,
         profile,
         joinedAt: serverTimestamp(),
         matchedRoomCode: null,

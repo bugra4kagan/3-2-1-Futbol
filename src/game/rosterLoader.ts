@@ -4,8 +4,9 @@ import { DEFAULT_PLAYER_PHOTO, PLAYER_ASSETS } from './playerAssets';
 import { rebuildPlayerSearchIndex } from './silhouetteEngine';
 import { CareerHistoryEntry, Club, Player } from './types';
 import { invalidateValidatorIndexCache } from './validator';
+import { ROSTER_DATA_VERSION } from './rosterVersion';
 
-export const ROSTER_DATA_VERSION = '2026.11.26-v25k';
+export { ROSTER_DATA_VERSION };
 export const DEFAULT_ROSTER_LICENSE_ATTRIBUTION =
   'Oyuncu ve kulüp temel meta verileri OpenFootball players.db (CC0 1.0), Wikidata (CC0 1.0) ve Wikipedia futbolcu biyografileri (CC BY-SA 4.0) kaynaklarından türetilmiştir.';
 
