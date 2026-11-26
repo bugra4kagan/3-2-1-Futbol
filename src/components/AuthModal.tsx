@@ -20,7 +20,11 @@ import { PlayerProfile, UserProgression } from '../game/types';
 import { CoinIcon } from './CoinIcon';
 import { formatPoints } from '../game/retentionEngine';
 import {
+  USERNAME_AVAILABLE_MESSAGE,
+  USERNAME_TAKEN_ERROR,
+  USERNAME_UNVERIFIED_ERROR,
   generateRandomUniqueStarterName,
+  normalizeUsernameKey,
   validateUsernameFormat,
 } from '../game/accountEngine';
 import { isLegacyFlaggedUsername } from '../game/usernameFilter';
@@ -78,6 +82,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     !currentProfile.name ||
     currentProfile.name.trim() === 'Futbol Gurmesi' ||
     isLegacyFlaggedUsername(currentProfile.name);
+  const isEditingExisting =
+    !isInitialRequired &&
+    !initialIsGeneric &&
+    Boolean(currentProfile.name && currentProfile.name.trim().length >= 3);
+  const currentOwnKey = isEditingExisting ? normalizeUsernameKey(currentProfile.name) : '';
   const [modalMode, setModalMode] = useState<'profile' | 'email'>(initialTab);
   const [emailAuthAction, setEmailAuthAction] = useState<'login' | 'register'>('login');
   const [emailInput, setEmailInput] = useState('');
@@ -99,7 +108,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
   // Username uniqueness state
   const [nameCheckState, setNameCheckState] = useState<
-    'idle' | 'checking' | 'available' | 'taken' | 'invalid'
+    'idle' | 'checking' | 'available' | 'taken' | 'invalid' | 'unverified'
   >('idle');
   const [nameError, setNameError] = useState<string | null>(null);
   const [nameSuggestions, setNameSuggestions] = useState<string[]>([]);
@@ -141,6 +150,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       return;
     }
 
+    const isSameOwnValidHandle = Boolean(currentOwnKey && fmt.key === currentOwnKey);
     let cancelled = false;
     setNameCheckState('checking');
     setNameError(null);
@@ -162,24 +172,46 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             .then((r) => (r.ok ? r.json() : null))
             .catch(() => null),
           checkUsernameAvailabilityInFirestore(fmt.cleanedDisplay, googleUid || undefined).catch(
-            () => ({ available: true })
+            () => ({ available: false, verified: false, errorCode: 'unverified', reason: USERNAME_UNVERIFIED_ERROR })
           ),
         ]);
 
         if (cancelled) return;
 
-        if (serverRes && !serverRes.available) {
-          setNameCheckState('taken');
-          setNameError(
-            serverRes.reason || `"${fmt.cleanedDisplay}" kullanıcı adı zaten kullanılıyor!`
-          );
+        if (!serverRes) {
+          if (isSameOwnValidHandle) {
+            setNameCheckState('available');
+            setNameError(null);
+            setNameSuggestions([]);
+            return;
+          }
+          setNameCheckState('unverified');
+          setNameError(USERNAME_UNVERIFIED_ERROR);
+          setNameSuggestions([]);
+          return;
+        }
+
+        if (!serverRes.available) {
+          setNameCheckState(serverRes.ok === false ? 'invalid' : 'taken');
+          setNameError(serverRes.reason || USERNAME_TAKEN_ERROR);
           setNameSuggestions(Array.isArray(serverRes.suggestions) ? serverRes.suggestions : []);
           return;
         }
 
         if (cloudRes && !cloudRes.available) {
+          if (cloudRes.errorCode === 'unverified') {
+            if (isSameOwnValidHandle) {
+              setNameCheckState('available');
+              setNameError(null);
+              return;
+            }
+            setNameCheckState('unverified');
+            setNameError(cloudRes.reason || USERNAME_UNVERIFIED_ERROR);
+            setNameSuggestions([]);
+            return;
+          }
           setNameCheckState('taken');
-          setNameError(`"${fmt.cleanedDisplay}" kullanıcı adı başka bir bulut hesabına kayıtlı!`);
+          setNameError(cloudRes.reason || USERNAME_TAKEN_ERROR);
           setNameSuggestions([]);
           return;
         }
@@ -189,7 +221,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         setNameSuggestions([]);
       } catch {
         if (!cancelled) {
-          setNameCheckState('available');
+          if (isSameOwnValidHandle) {
+            setNameCheckState('available');
+            setNameError(null);
+          } else {
+            setNameCheckState('unverified');
+            setNameError(USERNAME_UNVERIFIED_ERROR);
+          }
         }
       }
     }, 260);
@@ -198,7 +236,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [name, modalMode, currentProfile.id, googleUid]);
+  }, [name, modalMode, currentProfile.id, googleUid, currentOwnKey]);
 
   const handleSuggestRandomName = async () => {
     sounds.playCountdown(1);
@@ -233,21 +271,30 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       return;
     }
 
+    const isUsernameChanged = !isEditingExisting || fmt.key !== currentOwnKey;
+
     setIsSubmitting(true);
     setNameError(null);
 
     try {
-      // 1. Verify against Firestore global username lock if available
-      const cloudCheck = await checkUsernameAvailabilityInFirestore(
-        fmt.cleanedDisplay,
-        googleUid || undefined
-      );
-      if (!cloudCheck.available) {
-        sounds.playWrong();
-        setNameCheckState('taken');
-        setNameError(`"${fmt.cleanedDisplay}" kullanıcı adı başka bir bulut hesabına kayıtlı!`);
-        setIsSubmitting(false);
-        return;
+      // 1. Verify against Firestore global username lock when creating or renaming
+      if (isUsernameChanged) {
+        const cloudCheck = await checkUsernameAvailabilityInFirestore(
+          fmt.cleanedDisplay,
+          googleUid || undefined
+        );
+        if (!cloudCheck.available) {
+          sounds.playWrong();
+          setNameCheckState(cloudCheck.errorCode === 'unverified' ? 'unverified' : 'taken');
+          setNameError(
+            cloudCheck.reason ||
+              (cloudCheck.errorCode === 'unverified'
+                ? USERNAME_UNVERIFIED_ERROR
+                : USERNAME_TAKEN_ERROR)
+          );
+          setIsSubmitting(false);
+          return;
+        }
       }
 
       const updatedProfile: PlayerProfile = {
@@ -264,6 +311,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
       // 2. Register/Update atomically on persistent backend store
       let persistedProfile = updatedProfile;
+      let backendVerified = false;
 
       try {
         const storedToken =
@@ -300,25 +348,34 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         }
         if (regRes.status === 409 || regRes.status === 400 || (regData && regData.ok === false)) {
           sounds.playWrong();
-          setNameCheckState('taken');
-          setNameError(regData?.error || 'Bu kullanıcı adı zaten alınmış!');
+          setNameCheckState(regRes.status === 400 ? 'invalid' : 'taken');
+          setNameError(regData?.error || USERNAME_TAKEN_ERROR);
           setNameSuggestions(Array.isArray(regData?.suggestions) ? regData.suggestions : []);
           setIsSubmitting(false);
           return;
         }
         if (regRes.ok && regData?.ok && regData?.account) {
+          backendVerified = true;
           persistedProfile = {
             ...updatedProfile,
             ...regData.account.profile,
           };
         }
       } catch {
-        // Offline / local fallback continues smoothly
+        backendVerified = false;
       }
 
-      // 3. If signed into verified Google/Email Auth, claim handle atomically in Firestore
+      if (isUsernameChanged && !backendVerified) {
+        sounds.playWrong();
+        setNameCheckState('unverified');
+        setNameError(USERNAME_UNVERIFIED_ERROR);
+        setIsSubmitting(false);
+        return;
+      }
+
+      // 3. If signed into verified Google/Email Auth and creating/renaming, claim handle atomically in Firestore
       const currentUser = auth.currentUser;
-      if (currentUser && currentUser.emailVerified) {
+      if (currentUser && currentUser.emailVerified && isUsernameChanged) {
         const claim = await claimUsernameInFirestore({
           user: currentUser,
           displayName: persistedProfile.name,
@@ -330,7 +387,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         if (!claim.ok) {
           sounds.playWrong();
           setNameCheckState('taken');
-          setNameError(claim.reason || 'Bu kullanıcı adı başka bir bulut hesabına kayıtlı!');
+          setNameError(claim.reason || USERNAME_TAKEN_ERROR);
           setIsSubmitting(false);
           return;
         }
@@ -452,7 +509,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       data-testid="auth-modal"
       className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-[#092316]/88 overflow-y-auto animate-screen-fade"
     >
-      <div className="relative w-full max-w-md bg-[#124029] border-2 border-[#E5B94F]/45 rounded-3xl p-5 sm:p-6 shadow-2xl text-left my-auto max-h-[92dvh] overflow-y-auto animate-screen-slide-up">
+      <div className="relative w-full max-w-md bg-[#124029] border-2 border-[#E5B94F]/45 rounded-3xl p-5 pb-6 sm:p-6 shadow-2xl text-left my-auto max-h-[92dvh] overflow-y-auto animate-screen-slide-up">
         {/* Modal Header */}
         <div className="relative text-center mb-3.5">
           {progression && (
@@ -475,16 +532,20 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           </div>
 
           <span className="text-[11px] font-black tracking-widest text-[#E5B94F] uppercase px-3 py-0.5 rounded-full bg-[#0F273E] border border-[#4ADE80]/55">
-            OYUNCU PROFİLİ
+            {isEditingExisting ? 'PROFİLİ DÜZENLE' : 'YENİ OYUNCU PROFİLİ'}
           </span>
           <h2 className="font-display font-extrabold text-2xl sm:text-3xl text-[#FFFFFF] mt-1.5 tracking-wide uppercase">
             {modalMode === 'profile'
-              ? 'Oyuncu Hesabın'
+              ? isEditingExisting
+                ? 'Profilini Güncelle'
+                : 'Oyuncu Hesabı Oluştur'
               : 'Hesap Bağla & Giriş Yap'}
           </h2>
           <p className="text-xs text-[#A8B3C2] mt-0.5">
             {modalMode === 'profile'
-              ? 'Kullanıcı adını, profil simgeni ve favori kulübünü seç.'
+              ? isEditingExisting
+                ? 'Simgeyi veya kulübünü değiştirebilir ya da kullanıcı adını güncelleyebilirsin.'
+                : 'Benzersiz kullanıcı adını, profil simgeni ve favori kulübünü seç.'
               : 'Google veya E-posta hesabını bağlayarak coin ve lig puanlarını koru.'}
           </p>
         </div>
@@ -712,8 +773,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder="Sana özel bir kullanıcı adı yaz..."
-                  className={`w-full bg-[#183022] text-[#F2ECD9] font-bold pl-13 pr-9 py-3 rounded-xl border outline-none text-base shadow-inner transition ${
-                    nameCheckState === 'taken' || nameCheckState === 'invalid'
+                  className={`w-full bg-[#183022] text-[#F2ECD9] font-bold pl-14 pr-9 py-3 rounded-xl border outline-none text-base shadow-inner transition ${
+                    nameCheckState === 'taken' || nameCheckState === 'invalid' || nameCheckState === 'unverified'
                       ? 'border-rose-500 focus:ring-2 focus:ring-rose-500/20'
                       : nameCheckState === 'available'
                       ? 'border-[#3C8052] focus:ring-2 focus:ring-[#3C8052]/25'
@@ -730,7 +791,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       className="w-4 h-4 text-emerald-400"
                     />
                   )}
-                  {(nameCheckState === 'taken' || nameCheckState === 'invalid') && (
+                  {(nameCheckState === 'taken' || nameCheckState === 'invalid' || nameCheckState === 'unverified') && (
                     <AlertCircle
                       data-testid="auth-name-status-err"
                       className="w-4 h-4 text-rose-400"
@@ -766,7 +827,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
               {nameCheckState === 'available' && !nameError && (
                 <p className="mt-1 text-[11px] font-bold text-[#22C55E]">
-                  ✓ Bu kullanıcı adı müsait ve sadece sana ayrılacak.
+                  ✓{' '}
+                  {currentOwnKey && normalizeUsernameKey(name) === currentOwnKey
+                    ? 'Mevcut kullanıcı adın korunuyor.'
+                    : USERNAME_AVAILABLE_MESSAGE}
                 </p>
               )}
             </div>
@@ -781,7 +845,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   {getProfileIconLabel(selectedAvatar)} • Ücretsiz
                 </span>
               </div>
-              <div className="grid grid-cols-5 gap-2 p-2.5 rounded-2xl bg-[#0B1220] border border-[#A8B3C2]/20">
+              <div className="grid grid-cols-5 gap-1.5 p-2 rounded-2xl bg-[#0B1220] border border-[#A8B3C2]/20">
                 {PROFILE_ICONS.map((iconDef) => {
                   const isSelected = selectedAvatar === iconDef.id;
                   return (
@@ -796,15 +860,15 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                         sounds.playCountdown(1);
                         setSelectedAvatar(iconDef.id);
                       }}
-                      className={`relative flex flex-col items-center justify-center gap-1 py-2 px-1 rounded-xl border transition active:scale-95 cursor-pointer ${
+                      className={`relative flex flex-col items-center justify-center gap-1 min-h-[66px] sm:aspect-square py-2 px-0.5 rounded-xl border transition active:scale-95 cursor-pointer ${
                         isSelected
                           ? 'bg-[#183D2B] border-[#E5B94F] ring-2 ring-[#E5B94F]/45 shadow'
                           : 'bg-[#16212E] border-[#A8B3C2]/15 hover:border-[#3B82F6]/60'
                       }`}
                     >
-                      <ProfileIconSvg iconId={iconDef.id} className="w-6 h-6" />
+                      <ProfileIconSvg iconId={iconDef.id} className="w-7 h-7" />
                       <span
-                        className={`text-[9px] font-bold leading-none truncate max-w-full ${
+                        className={`text-[8.5px] sm:text-[9px] tracking-tighter font-bold leading-none truncate max-w-full ${
                           isSelected ? 'text-[#E5B94F]' : 'text-[#A8B3C2]'
                         }`}
                       >

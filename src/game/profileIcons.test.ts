@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -80,4 +82,44 @@ test('selected profile icon persists cleanly across profile serialization roundt
   const legacySaved = JSON.stringify({ ...savedProfile, avatar: 'pp:lionel_messi' });
   const restoredLegacy = JSON.parse(legacySaved) as PlayerProfile;
   assert.equal(normalizeProfileIconId(restoredLegacy.avatar), 'ball');
+});
+
+test('ProfileIconSvg and BottomNavBar follow unified SVG specs without skates or crosses', () => {
+  const iconSvgSource = fs.readFileSync(
+    path.resolve(process.cwd(), 'src/components/ProfileIconSvg.tsx'),
+    'utf8'
+  );
+  const bottomNavSource = fs.readFileSync(
+    path.resolve(process.cwd(), 'src/components/BottomNavBar.tsx'),
+    'utf8'
+  );
+
+  // Unified SVG viewport & alignment
+  assert.match(iconSvgSource, /viewBox="0 0 32 32"/);
+  assert.match(iconSvgSource, /preserveAspectRatio="xMidYMid meet"/);
+  assert.match(bottomNavSource, /viewBox="0 0 32 32"/);
+  assert.match(bottomNavSource, /preserveAspectRatio="xMidYMid meet"/);
+
+  // Clipped spherical ball in both components
+  assert.match(iconSvgSource, /clipPath/);
+  assert.match(bottomNavSource, /clipPath/);
+
+  // Every icon case exists cleanly in the switch
+  for (const icon of PROFILE_ICONS) {
+    assert.ok(
+      iconSvgSource.includes(`case '${icon.id}':`),
+      `Missing SVG case for ${icon.id}`
+    );
+  }
+
+  // Boot case must have studs and zero circular wheels
+  const bootMatch = iconSvgSource.match(/case 'boot':([\s\S]*?)case 'glove':/);
+  assert.ok(bootMatch, 'Expected boot SVG block');
+  assert.ok(!bootMatch[1].includes('<circle'), 'Boot icon must not contain circular wheel shapes');
+
+  // Shield case must be athletic crest (no cross plus/horizontal+vertical bisecting cross paths)
+  const shieldMatch = iconSvgSource.match(/case 'shield':([\s\S]*?)case 'star':/);
+  assert.ok(shieldMatch, 'Expected shield SVG block');
+  assert.ok(shieldMatch[1].includes('polygon'), 'Shield crest should feature athletic emblem polygon');
+  assert.ok(!/M16 7V24[\s\S]*M9\.5 14H22\.5/.test(shieldMatch[1]), 'Shield must not contain a cross emblem');
 });

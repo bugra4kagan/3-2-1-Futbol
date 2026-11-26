@@ -5832,7 +5832,7 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
           handleSelectOnlineMode('online_room', { minigameType: mg });
         }}
         onReportPlayer={async (target, reason, details) => {
-          const serverRes = await fetchBackendWithWakeupRetry(
+          const serverResp = await fetchBackendWithWakeupRetry(
             '/api/moderation/report',
             {
               method: 'POST',
@@ -5847,8 +5847,20 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
             },
             { timeoutMs: 15000, retries: 1 }
           )
-            .then((r) => r.ok)
-            .catch(() => false);
+            .then(async (r) => {
+              const data = await r.json().catch(() => null);
+              return { ok: r.ok && data?.ok !== false, status: r.status, error: data?.error as string | undefined };
+            })
+            .catch(() => ({ ok: false, status: 0, error: undefined }));
+
+          if (serverResp.status === 429) {
+            return {
+              ok: false,
+              message:
+                serverResp.error ||
+                'Bu oyuncu hakkında yakın zamanda şikayet gönderdin. Ekibimiz inceleyecektir.',
+            };
+          }
 
           const fbRes = firebaseUser?.uid
             ? await submitUserReportToFirestore({
@@ -5860,7 +5872,7 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
               })
             : { ok: false };
 
-          if (serverRes || fbRes.ok) {
+          if (serverResp.ok || fbRes.ok) {
             return {
               ok: true,
               message: `${target.name} hakkında şikayet iletildi. İnceleme ekibimiz değerlendirecektir.`,
@@ -5868,7 +5880,7 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
           }
           return {
             ok: false,
-            message: 'Şikayet şu anda iletilemedi; lütfen bağlantını kontrol et.',
+            message: serverResp.error || 'Şikayet şu anda iletilemedi; lütfen bağlantını kontrol et.',
           };
         }}
         onToggleBlockPlayer={(target) => {

@@ -489,7 +489,12 @@ export interface UserProgression {
   blockedPlayerIds?: string[];
 }
 
-export type UserReportReason = 'inappropriate_name' | 'cheating' | 'harassment' | 'other';
+export type UserReportReason =
+  | 'inappropriate_name'
+  | 'harassment'
+  | 'admin_impersonation'
+  | 'cheating'
+  | 'other';
 
 export type WheelRewardType = 'coins' | 'energy' | 'joker';
 

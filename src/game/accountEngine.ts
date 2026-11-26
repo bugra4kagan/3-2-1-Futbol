@@ -1,18 +1,32 @@
 import {
+  USERNAME_AVAILABLE_MESSAGE,
   USERNAME_INAPPROPRIATE_ERROR,
+  USERNAME_SYSTEM_RESERVED_ERROR,
+  USERNAME_TAKEN_ERROR,
+  USERNAME_UNSUPPORTED_CHAR_ERROR,
+  USERNAME_UNVERIFIED_ERROR,
+  UsernameValidationErrorCode,
   isLegacyFlaggedUsername,
+  isReservedSystemUsername,
   isUsernameProfane,
   sanitizePublicDisplayName,
   validateUsername,
 } from './usernameFilter';
 
 export {
+  USERNAME_AVAILABLE_MESSAGE,
   USERNAME_INAPPROPRIATE_ERROR,
+  USERNAME_SYSTEM_RESERVED_ERROR,
+  USERNAME_TAKEN_ERROR,
+  USERNAME_UNSUPPORTED_CHAR_ERROR,
+  USERNAME_UNVERIFIED_ERROR,
   isLegacyFlaggedUsername,
+  isReservedSystemUsername,
   isUsernameProfane,
   sanitizePublicDisplayName,
   validateUsername,
 };
+export type { UsernameValidationErrorCode };
 
 const TURKISH_CHAR_MAP: Record<string, string> = {
   ç: 'c',
@@ -63,19 +77,21 @@ export function normalizeUsernameKey(rawName: string): string {
 
 export interface UsernameValidationResult {
   ok: boolean;
+  errorCode?: UsernameValidationErrorCode;
   reason?: string;
   cleanedDisplay: string;
   key: string;
 }
 
 export function validateUsernameFormat(rawName: string): UsernameValidationResult {
-  const cleanedDisplay = cleanDisplayName(rawName);
+  const profanityCheck = validateUsername(rawName);
+  const cleanedDisplay = profanityCheck.cleanedDisplay;
   const key = normalizeUsernameKey(cleanedDisplay);
 
-  const profanityCheck = validateUsername(cleanedDisplay);
   if (!profanityCheck.ok) {
     return {
       ok: false,
+      errorCode: profanityCheck.code,
       reason: profanityCheck.error || USERNAME_INAPPROPRIATE_ERROR,
       cleanedDisplay,
       key,
@@ -85,6 +101,7 @@ export function validateUsernameFormat(rawName: string): UsernameValidationResul
   if (cleanedDisplay.length > 18) {
     return {
       ok: false,
+      errorCode: 'length',
       reason: 'Kullanıcı adı en fazla 18 karakter olabilir.',
       cleanedDisplay,
       key,
@@ -94,7 +111,8 @@ export function validateUsernameFormat(rawName: string): UsernameValidationResul
   if (alnumOnly.length < 2 || key.length < 3) {
     return {
       ok: false,
-      reason: 'Kullanıcı adı en az 2 harf veya rakam içermelidir.',
+      errorCode: 'too_few_letters',
+      reason: USERNAME_INAPPROPRIATE_ERROR,
       cleanedDisplay,
       key,
     };
@@ -102,7 +120,8 @@ export function validateUsernameFormat(rawName: string): UsernameValidationResul
   if (RESERVED_PLACEHOLDER_KEYS.has(key)) {
     return {
       ok: false,
-      reason: 'Varsayılan isimler kullanılamaz. Lütfen sana özel bir ad seç!',
+      errorCode: 'reserved_placeholder',
+      reason: USERNAME_SYSTEM_RESERVED_ERROR,
       cleanedDisplay,
       key,
     };
@@ -126,7 +145,12 @@ export function generateUniqueUsernameSuggestions(
     if (results.length >= count) break;
     const candidate = `${root}_${suffix}`.slice(0, 18);
     const k = normalizeUsernameKey(candidate);
-    if (k.length >= 3 && !used.has(k) && !RESERVED_PLACEHOLDER_KEYS.has(k)) {
+    if (
+      k.length >= 3 &&
+      !used.has(k) &&
+      !RESERVED_PLACEHOLDER_KEYS.has(k) &&
+      validateUsername(candidate).ok
+    ) {
       used.add(k);
       results.push(candidate);
     }

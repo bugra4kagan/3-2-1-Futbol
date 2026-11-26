@@ -43,7 +43,14 @@ import {
   type AppCheck,
 } from 'firebase/app-check';
 import { Capacitor } from '@capacitor/core';
-import { normalizeUsernameKey } from './game/accountEngine';
+import {
+  USERNAME_TAKEN_ERROR,
+  USERNAME_UNVERIFIED_ERROR,
+  isLegacyFlaggedUsername,
+  normalizeUsernameKey,
+  sanitizePublicDisplayName,
+  validateUsernameFormat,
+} from './game/accountEngine';
 import { sanitizeRtdbKey } from './game/realtimeSyncHelpers';
 import { calibrateServerTimeOffset } from './game/serverTime';
 import {
@@ -564,30 +571,59 @@ export async function signOutFirebase(): Promise<void> {
 export async function checkUsernameAvailabilityInFirestore(
   rawName: string,
   currentUid?: string
-): Promise<{ available: boolean; usernameKey: string; ownerUid?: string }> {
-  const usernameKey = normalizeUsernameKey(rawName);
+): Promise<{
+  available: boolean;
+  verified?: boolean;
+  usernameKey: string;
+  ownerUid?: string;
+  reason?: string;
+  errorCode?: string;
+}> {
+  const fmt = validateUsernameFormat(rawName);
+  const usernameKey = fmt.key || normalizeUsernameKey(rawName);
+  if (!fmt.ok) {
+    return {
+      available: false,
+      verified: true,
+      usernameKey,
+      reason: fmt.reason,
+      errorCode: fmt.errorCode,
+    };
+  }
   if (usernameKey.length < 3 || usernameKey.length > 32) {
-    return { available: false, usernameKey };
+    return { available: false, verified: true, usernameKey };
   }
   const path = `usernames/${usernameKey}`;
   try {
     const snap = await getDoc(doc(db, 'usernames', usernameKey));
     if (!snap.exists()) {
-      return { available: true, usernameKey };
+      return { available: true, verified: true, usernameKey };
     }
     const data = snap.data() as Record<string, unknown>;
     const ownerUid = typeof data.ownerUid === 'string' ? data.ownerUid : undefined;
     if (currentUid && ownerUid === currentUid) {
-      return { available: true, usernameKey, ownerUid };
+      return { available: true, verified: true, usernameKey, ownerUid };
     }
-    return { available: false, usernameKey, ownerUid };
+    return {
+      available: false,
+      verified: true,
+      usernameKey,
+      ownerUid,
+      reason: USERNAME_TAKEN_ERROR,
+      errorCode: 'taken',
+    };
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
     if (msg.includes('permission-denied') || msg.includes('Missing or insufficient permissions')) {
       handleFirestoreError(error, OperationType.GET, path);
     }
-    // Network/offline fallback lets server-side check handle it cleanly
-    return { available: true, usernameKey };
+    return {
+      available: false,
+      verified: false,
+      usernameKey,
+      errorCode: 'unverified',
+      reason: USERNAME_UNVERIFIED_ERROR,
+    };
   }
 }
 
@@ -597,7 +633,11 @@ export async function claimUsernameInFirestore(params: {
   previousDisplayName?: string;
 }): Promise<{ ok: boolean; usernameKey: string; reason?: string }> {
   const { user, displayName, previousDisplayName } = params;
-  const usernameKey = normalizeUsernameKey(displayName);
+  const fmt = validateUsernameFormat(displayName);
+  const usernameKey = fmt.key || normalizeUsernameKey(displayName);
+  if (!fmt.ok) {
+    return { ok: false, usernameKey, reason: fmt.reason };
+  }
   if (!user.emailVerified || usernameKey.length < 3) {
     return { ok: false, usernameKey };
   }
@@ -616,7 +656,7 @@ export async function claimUsernameInFirestore(params: {
           return {
             ok: false,
             usernameKey,
-            reason: 'Bu kullanıcı adı başka bir bulut hesabına kayıtlı!',
+            reason: USERNAME_TAKEN_ERROR,
           };
         }
       }
@@ -881,9 +921,12 @@ export async function savePublicProfileToFirestore(params: {
   const { user, profile, progression, activity } = params;
   if (!user.emailVerified) return;
 
-  const displayName = (profile.name || user.displayName || 'Oyuncu').trim().slice(0, 32);
-  if (displayName.length < 3) return;
-  const usernameKey = normalizeUsernameKey(displayName);
+  const rawDisplayName = (profile.name || user.displayName || '').trim().slice(0, 32);
+  if (rawDisplayName.length < 3) return;
+  const fmt = validateUsernameFormat(rawDisplayName);
+  if (!fmt.ok && !isLegacyFlaggedUsername(rawDisplayName)) return;
+  const displayName = sanitizePublicDisplayName(rawDisplayName, user.uid);
+  const usernameKey = normalizeUsernameKey(rawDisplayName);
   if (usernameKey.length < 3 || usernameKey.length > 32) return;
 
   const statsSnapshot = {

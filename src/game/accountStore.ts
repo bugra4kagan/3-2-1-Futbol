@@ -1,6 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import {
+  USERNAME_TAKEN_ERROR,
+  UsernameValidationErrorCode,
   generateRandomUniqueStarterName,
   generateRecoveryCode,
   generateUniqueUsernameSuggestions,
@@ -117,6 +119,7 @@ export interface AccountCloudAdapter {
 export interface UsernameCheckResponse {
   ok: boolean;
   available: boolean;
+  errorCode?: UsernameValidationErrorCode;
   cleanedDisplay: string;
   usernameKey: string;
   reason?: string;
@@ -260,6 +263,7 @@ export class AccountStore {
       return {
         ok: false,
         available: false,
+        errorCode: fmt.errorCode,
         cleanedDisplay: fmt.cleanedDisplay,
         usernameKey: fmt.key,
         reason: fmt.reason,
@@ -279,9 +283,10 @@ export class AccountStore {
       return {
         ok: true,
         available: false,
+        errorCode: 'taken',
         cleanedDisplay: fmt.cleanedDisplay,
         usernameKey: fmt.key,
-        reason: `"${fmt.cleanedDisplay}" kullanıcı adı zaten kullanılıyor. Başka bir ad seç!`,
+        reason: USERNAME_TAKEN_ERROR,
         suggestions: generateUniqueUsernameSuggestions(
           fmt.cleanedDisplay,
           this.getTakenKeysSet(),
@@ -305,7 +310,13 @@ export class AccountStore {
     googleUid?: string;
   }):
     | { ok: true; account: PersistentAccountRecord }
-    | { ok: false; status: number; reason: string; suggestions?: string[] } {
+    | {
+        ok: false;
+        status: number;
+        errorCode?: UsernameValidationErrorCode;
+        reason: string;
+        suggestions?: string[];
+      } {
     const cleanId = String(params.accountId || '').trim().slice(0, 64);
     if (!cleanId) {
       return { ok: false, status: 400, reason: 'Geçersiz hesap kimliği.' };
@@ -316,7 +327,8 @@ export class AccountStore {
       return {
         ok: false,
         status: check.ok ? 409 : 400,
-        reason: check.reason || 'Bu kullanıcı adı kullanılamıyor.',
+        errorCode: check.errorCode,
+        reason: check.reason || USERNAME_TAKEN_ERROR,
         suggestions: check.suggestions,
       };
     }
@@ -403,15 +415,32 @@ export class AccountStore {
       return { ok: false };
     }
 
-    const nextProfile: PlayerProfile = {
+    let nextProfile: PlayerProfile = {
       ...existing.profile,
       avatar: params.profile?.avatar || existing.profile.avatar,
       favoriteClubId: params.profile?.favoriteClubId || existing.profile.favoriteClubId,
       accountStats: params.profile?.accountStats || existing.profile.accountStats,
     };
+    let nextUsername = existing.username;
+    let nextUsernameKey = existing.usernameKey;
+
+    if (params.profile?.name) {
+      const requestedKey = normalizeUsernameKey(params.profile.name);
+      if (requestedKey && requestedKey !== existing.usernameKey) {
+        const renameCheck = this.checkUsername(params.profile.name, cleanId, params.googleUid);
+        if (renameCheck.ok && renameCheck.available) {
+          this.byUsernameKey.delete(existing.usernameKey);
+          nextUsername = renameCheck.cleanedDisplay;
+          nextUsernameKey = renameCheck.usernameKey;
+          nextProfile = { ...nextProfile, name: renameCheck.cleanedDisplay };
+        }
+      }
+    }
 
     const updated: PersistentAccountRecord = {
       ...existing,
+      username: nextUsername,
+      usernameKey: nextUsernameKey,
       sessionSecret: existing.sessionSecret || generateAccountAuthSecret(),
       googleUid: params.googleUid || existing.googleUid,
       profile: nextProfile,

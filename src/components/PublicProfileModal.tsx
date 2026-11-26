@@ -71,9 +71,26 @@ export const PublicProfileModal: React.FC<PublicProfileModalProps> = ({
   onClose,
 }) => {
   const [friendToast, setFriendToast] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
+  const [showReportForm, setShowReportForm] = useState(false);
+  const [selectedReportReason, setSelectedReportReason] =
+    useState<UserReportReason>('inappropriate_name');
+  const [reportDetails, setReportDetails] = useState('');
+  const [reportSubmitting, setReportSubmitting] = useState(false);
+
+  const REPORT_REASON_OPTIONS: Array<{ id: UserReportReason; label: string }> = [
+    { id: 'inappropriate_name', label: 'Uygunsuz kullanıcı adı' },
+    { id: 'harassment', label: 'Hakaret veya küfür' },
+    { id: 'admin_impersonation', label: 'Yönetici taklidi' },
+    { id: 'cheating', label: 'Hile şüphesi' },
+    { id: 'other', label: 'Diğer uygunsuz davranışlar' },
+  ];
 
   useEffect(() => {
     setFriendToast(null);
+    setShowReportForm(false);
+    setSelectedReportReason('inappropriate_name');
+    setReportDetails('');
+    setReportSubmitting(false);
   }, [profile?.id, isOpen]);
 
   if (!isOpen || !profile) return null;
@@ -524,17 +541,15 @@ export const PublicProfileModal: React.FC<PublicProfileModalProps> = ({
                     <button
                       type="button"
                       data-testid="public-profile-report-toggle-btn"
-                      onClick={async () => {
-                        const res = await onReportPlayer(profile, 'inappropriate_name');
-                        setFriendToast({
-                          type: res.ok ? 'ok' : 'err',
-                          text: res.message,
-                        });
-                      }}
-                      className="flex-1 py-2 px-3 rounded-xl bg-slate-900 hover:bg-rose-950/50 border border-slate-700 hover:border-rose-500/45 text-slate-300 hover:text-rose-200 font-bold text-[11px] flex items-center justify-center gap-1.5 transition cursor-pointer"
+                      onClick={() => setShowReportForm((v) => !v)}
+                      className={`flex-1 py-2 px-3 rounded-xl border font-bold text-[11px] flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                        showReportForm
+                          ? 'bg-rose-950/60 border-rose-500/60 text-rose-200'
+                          : 'bg-slate-900 hover:bg-rose-950/50 border-slate-700 hover:border-rose-500/45 text-slate-300 hover:text-rose-200'
+                      }`}
                     >
                       <Flag className="w-3.5 h-3.5 text-rose-400" />
-                      <span>Oyuncuyu Şikayet Et</span>
+                      <span>{showReportForm ? 'Şikayet Formunu Kapat' : 'Oyuncuyu Şikayet Et'}</span>
                     </button>
                   )}
 
@@ -562,6 +577,80 @@ export const PublicProfileModal: React.FC<PublicProfileModalProps> = ({
                     </button>
                   )}
                 </div>
+
+                {onReportPlayer && showReportForm && (
+                  <div
+                    data-testid="public-profile-report-form"
+                    className="p-3 rounded-2xl bg-slate-950/85 border border-rose-500/35 space-y-2.5"
+                  >
+                    <p className="text-[11px] font-black text-rose-200 uppercase tracking-wider">
+                      Şikayet Nedenini Seç
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                      {REPORT_REASON_OPTIONS.map((opt) => {
+                        const active = selectedReportReason === opt.id;
+                        return (
+                          <button
+                            key={opt.id}
+                            type="button"
+                            data-testid={`report-reason-${opt.id}`}
+                            onClick={() => setSelectedReportReason(opt.id)}
+                            className={`text-left px-2.5 py-2 rounded-xl border text-[11px] font-bold transition cursor-pointer ${
+                              active
+                                ? 'bg-rose-500/20 border-rose-400 text-white'
+                                : 'bg-slate-900/90 border-slate-800 text-slate-300 hover:border-slate-700'
+                            }`}
+                          >
+                            {opt.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <input
+                      type="text"
+                      maxLength={240}
+                      value={reportDetails}
+                      onChange={(e) => setReportDetails(e.target.value)}
+                      placeholder="İsteğe bağlı kısa açıklama..."
+                      data-testid="public-profile-report-details"
+                      className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 focus:border-rose-400/60 outline-none text-xs text-white placeholder:text-slate-500"
+                    />
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        disabled={reportSubmitting}
+                        data-testid="public-profile-report-submit-btn"
+                        onClick={async () => {
+                          setReportSubmitting(true);
+                          const res = await onReportPlayer(
+                            profile,
+                            selectedReportReason,
+                            reportDetails.trim() || undefined
+                          );
+                          setReportSubmitting(false);
+                          setFriendToast({
+                            type: res.ok ? 'ok' : 'err',
+                            text: res.message,
+                          });
+                          if (res.ok) {
+                            setShowReportForm(false);
+                            setReportDetails('');
+                          }
+                        }}
+                        className="flex-1 py-2 px-3 rounded-xl bg-rose-600 hover:bg-rose-500 disabled:opacity-50 text-white font-black text-xs cursor-pointer transition"
+                      >
+                        {reportSubmitting ? 'Gönderiliyor...' : 'Şikayeti Gönder'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setShowReportForm(false)}
+                        className="px-3 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 font-bold text-xs cursor-pointer"
+                      >
+                        Vazgeç
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>

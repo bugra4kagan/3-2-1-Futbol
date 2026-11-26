@@ -361,6 +361,7 @@ app.post('/api/accounts/register', async (req, res) => {
   if (!result.ok) {
     return res.status(result.status).json({
       ok: false,
+      errorCode: result.errorCode,
       error: result.reason,
       suggestions: result.suggestions || [],
     });
@@ -468,6 +469,8 @@ app.post('/api/leaderboard/sync', async (req, res) => {
     if (!accountStore.verifyAccountSession(cleanId, token)) {
       return res.status(401).json({ ok: false, error: 'Liderlik tablosu güncelleme yetkisi doğrulanamadı.' });
     }
+  } else if (isLegacyFlaggedUsername(String(name))) {
+    return res.status(400).json({ ok: false, error: 'Geçersiz veya uygunsuz kullanıcı adı liderlik tablosuna yazılamaz.' });
   }
   const existing = liveLeaderboard.get(cleanId);
   const prevWeekly = existing?.weeklyPoints ?? 0;
@@ -988,6 +991,15 @@ app.post('/api/billing/verify-google-play', async (req, res) => {
 });
 
 // ── Google Play UGC Güvenliği: Kullanıcı Şikayet / Raporlama Uç Noktası ──
+const REPORT_DEDUP_WINDOW_MS = 24 * 60 * 60 * 1000;
+const ALLOWED_REPORT_REASONS = new Set([
+  'inappropriate_name',
+  'harassment',
+  'admin_impersonation',
+  'cheating',
+  'other',
+]);
+
 const userModerationReports: Array<{
   id: string;
   reporterId: string;
@@ -995,36 +1007,58 @@ const userModerationReports: Array<{
   targetName: string;
   reason: string;
   details: string;
+  reviewStatus: 'pending_review';
+  autoActionTaken: false;
   createdAt: number;
 }> = [];
 
 app.post('/api/moderation/report', (req, res) => {
   if (!enforceRateLimit(socialLimiter, req, res)) return;
   const { reporterId, targetId, targetName, reason, details } = req.body || {};
+  const cleanReporterId = String(reporterId || 'anon').trim().slice(0, 64) || 'anon';
   const cleanTargetId = String(targetId || '').trim().slice(0, 128);
   const cleanTargetName = String(targetName || 'Oyuncu').trim().slice(0, 64);
   const cleanReason = String(reason || '').trim();
-  if (
-    !cleanTargetId ||
-    !['inappropriate_name', 'cheating', 'harassment', 'other'].includes(cleanReason)
-  ) {
+  if (!cleanTargetId || !ALLOWED_REPORT_REASONS.has(cleanReason) || cleanReporterId === cleanTargetId) {
     return res.status(400).json({ ok: false, error: 'Geçersiz şikayet verisi.' });
   }
 
+  const now = Date.now();
+  const recentDuplicate = userModerationReports.find(
+    (entry) =>
+      entry.reporterId === cleanReporterId &&
+      entry.targetId === cleanTargetId &&
+      now - entry.createdAt < REPORT_DEDUP_WINDOW_MS
+  );
+  if (recentDuplicate) {
+    return res.status(429).json({
+      ok: false,
+      duplicate: true,
+      error: 'Bu oyuncu hakkında zaten yakın zamanda şikayet gönderdin. Ekibimiz inceleyecektir.',
+    });
+  }
+
   const report = {
-    id: `rep_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-    reporterId: String(reporterId || 'anon').trim().slice(0, 64),
+    id: `rep_${now}_${Math.random().toString(36).slice(2, 8)}`,
+    reporterId: cleanReporterId,
     targetId: cleanTargetId,
     targetName: cleanTargetName,
     reason: cleanReason,
     details: String(details || '').trim().slice(0, 300),
-    createdAt: Date.now(),
+    reviewStatus: 'pending_review' as const,
+    autoActionTaken: false as const,
+    createdAt: now,
   };
   userModerationReports.push(report);
   if (userModerationReports.length > 500) {
     userModerationReports.splice(0, userModerationReports.length - 500);
   }
-  res.json({ ok: true, reportId: report.id });
+  res.json({
+    ok: true,
+    reportId: report.id,
+    reviewStatus: report.reviewStatus,
+    autoActionTaken: report.autoActionTaken,
+  });
 });
 
 // Server-Backed 8-Player Friend Tournaments

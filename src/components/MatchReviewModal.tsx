@@ -91,20 +91,20 @@ export const MatchReviewModal: React.FC<MatchReviewModalProps> = ({
   return (
     <div
       data-testid="match-review-modal"
-      className="fixed inset-0 z-[80] flex items-center justify-center p-2.5 sm:p-4 bg-black/80 backdrop-blur-md"
+      className="fixed inset-0 z-[80] flex items-center justify-center p-2 sm:p-4 bg-black/80 backdrop-blur-md overflow-x-hidden"
     >
-      <div className="relative w-full max-w-2xl max-h-[90dvh] flex flex-col rounded-3xl bg-[#0B171D] border border-emerald-500/35 shadow-2xl overflow-hidden">
+      <div className="relative w-full max-w-[calc(100vw-1rem)] sm:max-w-2xl max-h-[90dvh] flex flex-col rounded-3xl bg-[#0B171D] border border-emerald-500/35 shadow-2xl overflow-hidden min-w-0">
         {/* Header */}
-        <div className="px-4 sm:px-5 py-3.5 border-b border-white/10 bg-gradient-to-r from-[#0E241C] via-[#0B171D] to-[#102027] flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2.5 min-w-0">
+        <div className="px-3.5 sm:px-5 py-3 border-b border-white/10 bg-gradient-to-r from-[#0E241C] via-[#0B171D] to-[#102027] flex items-center justify-between gap-2.5 min-w-0">
+          <div className="flex items-center gap-2.5 min-w-0 flex-1 overflow-hidden">
             <div className="w-9 h-9 rounded-xl bg-sky-500/15 border border-sky-400/40 text-sky-300 flex items-center justify-center shrink-0">
               <BookOpen className="w-4 h-4" />
             </div>
-            <div className="min-w-0">
-              <h2 className="font-display font-black text-base sm:text-lg text-white truncate">
+            <div className="min-w-0 flex-1 overflow-hidden">
+              <h2 className="font-display font-black text-base sm:text-lg text-white leading-tight break-words">
                 Maç Sonu Soru İnceleme
               </h2>
-              <p className="text-[11px] text-slate-400 truncate">
+              <p className="text-[11px] text-slate-400 leading-snug break-words">
                 Tamamlanan turlar • Doğru futbolcular ve kariyer bilgileri (ek puan verilmez)
               </p>
             </div>
@@ -122,7 +122,7 @@ export const MatchReviewModal: React.FC<MatchReviewModalProps> = ({
         </div>
 
         {/* Filter Pills */}
-        <div className="px-4 py-2.5 border-b border-white/10 bg-slate-950/60 flex flex-wrap gap-1.5">
+        <div className="px-3 sm:px-4 py-2 border-b border-white/10 bg-slate-950/60 flex flex-wrap gap-1.5 min-w-0">
           {(
             [
               { id: 'all', label: 'Tüm Sorular', count: counts.all },
@@ -138,14 +138,14 @@ export const MatchReviewModal: React.FC<MatchReviewModalProps> = ({
                 type="button"
                 data-testid={`review-filter-${tab.id}`}
                 onClick={() => setFilter(tab.id)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-black transition inline-flex items-center gap-1.5 cursor-pointer ${
+                className={`px-2.5 sm:px-3 py-1.5 rounded-xl text-[11px] sm:text-xs font-black transition inline-flex items-center gap-1 cursor-pointer max-w-full ${
                   active
                     ? 'bg-emerald-500 text-slate-950 shadow'
                     : 'bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800'
                 }`}
               >
-                <span>{tab.label}</span>
-                <span className="font-mono tabular-nums text-[11px] opacity-85">
+                <span className="truncate">{tab.label}</span>
+                <span className="font-mono tabular-nums text-[10px] sm:text-[11px] opacity-85 shrink-0">
                   ({tab.count})
                 </span>
               </button>
@@ -154,7 +154,7 @@ export const MatchReviewModal: React.FC<MatchReviewModalProps> = ({
         </div>
 
         {/* Round Cards List */}
-        <div className="flex-1 overflow-y-auto p-3.5 sm:p-4 space-y-3">
+        <div className="flex-1 overflow-y-auto overflow-x-hidden min-w-0 p-2.5 sm:p-4 space-y-3">
           {items.length === 0 ? (
             <div className="p-8 rounded-2xl bg-slate-900/70 border border-slate-800 text-center text-xs text-slate-400">
               Bu filtrede gösterilecek tamamlanmış tur bulunmuyor.
@@ -194,7 +194,7 @@ export const MatchReviewModal: React.FC<MatchReviewModalProps> = ({
                 <div
                   key={`${highlight.roundNumber}-${highlight.minigameType}`}
                   data-testid={`review-round-card-${highlight.roundNumber}`}
-                  className="p-3.5 rounded-2xl bg-slate-950/85 border border-slate-800 space-y-3"
+                  className="p-3 sm:p-3.5 rounded-2xl bg-slate-950/85 border border-slate-800 space-y-2.5 min-w-0 max-w-full overflow-hidden"
                 >
                   {/* Top Meta Row */}
                   <div className="flex flex-wrap items-center justify-between gap-2">
@@ -217,20 +217,20 @@ export const MatchReviewModal: React.FC<MatchReviewModalProps> = ({
 
                   {/* Prompt Presentation per Game Mode */}
                   {payload?.minigameType === 'two_clubs' && payload.pairing && (
-                    <div className="flex flex-wrap items-center gap-2 p-2.5 rounded-xl bg-slate-900/90 border border-slate-800">
+                    <div className="flex flex-wrap items-center gap-2 p-2.5 rounded-xl bg-slate-900/90 border border-slate-800 min-w-0">
                       {CLUBS[payload.pairing.club1Id] && (
-                        <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800">
+                        <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800 max-w-full min-w-0">
                           <ClubBadge club={CLUBS[payload.pairing.club1Id]} size="xs" />
-                          <span className="text-xs font-black text-white">
+                          <span className="text-xs font-black text-white break-words min-w-0">
                             {CLUBS[payload.pairing.club1Id].name}
                           </span>
                         </div>
                       )}
                       <span className="text-xs font-black text-emerald-400">×</span>
                       {CLUBS[payload.pairing.club2Id] && (
-                        <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800">
+                        <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800 max-w-full min-w-0">
                           <ClubBadge club={CLUBS[payload.pairing.club2Id]} size="xs" />
-                          <span className="text-xs font-black text-white">
+                          <span className="text-xs font-black text-white break-words min-w-0">
                             {CLUBS[payload.pairing.club2Id].name}
                           </span>
                         </div>
@@ -239,18 +239,18 @@ export const MatchReviewModal: React.FC<MatchReviewModalProps> = ({
                   )}
 
                   {payload?.minigameType === 'country_club' && payload.countryClub && (
-                    <div className="flex flex-wrap items-center gap-2 p-2.5 rounded-xl bg-slate-900/90 border border-slate-800">
-                      <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800">
+                    <div className="flex flex-wrap items-center gap-2 p-2.5 rounded-xl bg-slate-900/90 border border-slate-800 min-w-0">
+                      <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800 max-w-full min-w-0">
                         <CountryFlag flag={payload.countryClub.countryFlag} size="sm" />
-                        <span className="text-xs font-black text-white">
+                        <span className="text-xs font-black text-white break-words min-w-0">
                           {payload.countryClub.country}
                         </span>
                       </div>
                       <span className="text-xs font-black text-emerald-400">+</span>
                       {CLUBS[payload.countryClub.clubId] && (
-                        <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800">
+                        <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800 max-w-full min-w-0">
                           <ClubBadge club={CLUBS[payload.countryClub.clubId]} size="xs" />
-                          <span className="text-xs font-black text-white">
+                          <span className="text-xs font-black text-white break-words min-w-0">
                             {CLUBS[payload.countryClub.clubId].name}
                           </span>
                         </div>
@@ -259,18 +259,18 @@ export const MatchReviewModal: React.FC<MatchReviewModalProps> = ({
                   )}
 
                   {payload?.minigameType === 'career' && payload.career && (
-                    <div className="p-2.5 rounded-xl bg-slate-900/90 border border-slate-800 space-y-1.5">
+                    <div className="p-2.5 rounded-xl bg-slate-900/90 border border-slate-800 space-y-1.5 min-w-0">
                       <span className="block text-[10px] font-black uppercase tracking-wider text-slate-400">
                         Kariyer Basamakları
                       </span>
-                      <div className="flex flex-wrap items-center gap-1.5">
+                      <div className="flex flex-wrap items-center gap-1.5 min-w-0">
                         {payload.career.steps.map((st, idx) => (
                           <span
                             key={`${highlight.roundNumber}-step-${idx}`}
-                            className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-950 border border-slate-800 text-[11px] font-bold text-slate-200"
+                            className="inline-flex flex-wrap items-center gap-1 px-2 py-1 rounded-lg bg-slate-950 border border-slate-800 text-[11px] font-bold text-slate-200 max-w-full min-w-0"
                           >
                             <CountryFlag flag={st.countryFlag} size="xs" />
-                            <span>{st.clubName}</span>
+                            <span className="break-words">{st.clubName}</span>
                             {st.years && (
                               <span className="text-slate-400 font-mono text-[10px]">
                                 ({st.years})
@@ -283,18 +283,18 @@ export const MatchReviewModal: React.FC<MatchReviewModalProps> = ({
                   )}
 
                   {payload?.minigameType === 'xox' && payload.xoxBoard && (
-                    <div className="p-2.5 rounded-xl bg-slate-900/90 border border-slate-800 space-y-2">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-xs font-black text-purple-300">
+                    <div className="p-2.5 rounded-xl bg-slate-900/90 border border-slate-800 space-y-2 min-w-0 overflow-hidden">
+                      <div className="flex items-center justify-between gap-2 min-w-0">
+                        <span className="text-xs font-black text-purple-300 break-words min-w-0">
                           {payload.xoxBoard.title}
                         </span>
                       </div>
-                      <div className="grid grid-cols-4 gap-1 text-[10px]">
-                        <div />
+                      <div className="grid grid-cols-4 gap-1 text-[10px] min-w-0 w-full">
+                        <div className="min-w-0" />
                         {payload.xoxBoard.cols.map((col, ci) => (
                           <div
                             key={`xox-col-${ci}`}
-                            className="p-1 rounded bg-slate-950 text-center font-bold text-slate-300 truncate"
+                            className="p-1 rounded bg-slate-950 text-center font-bold text-slate-300 truncate min-w-0"
                             title={col.label}
                           >
                             {col.label}
@@ -303,10 +303,10 @@ export const MatchReviewModal: React.FC<MatchReviewModalProps> = ({
                         {payload.xoxBoard.rows.map((row, ri) => (
                           <React.Fragment key={`xox-row-${ri}`}>
                             <div
-                              className="p-1 rounded bg-slate-950 font-bold text-slate-300 flex items-center truncate"
+                              className="p-1 rounded bg-slate-950 font-bold text-slate-300 flex items-center min-w-0 overflow-hidden"
                               title={row.label}
                             >
-                              {row.label}
+                              <span className="truncate block w-full">{row.label}</span>
                             </div>
                             {[0, 1, 2].map((ci) => {
                               const claim: XoxCellMark | null =
@@ -319,7 +319,7 @@ export const MatchReviewModal: React.FC<MatchReviewModalProps> = ({
                               return (
                                 <div
                                   key={cellKey}
-                                  className={`p-1.5 rounded border text-center leading-tight ${
+                                  className={`p-1.5 rounded border text-center leading-tight min-w-0 overflow-hidden ${
                                     claim
                                       ? claim.ownerId === player1Id
                                         ? 'bg-emerald-950/60 border-emerald-500/40 text-emerald-200'
@@ -329,7 +329,7 @@ export const MatchReviewModal: React.FC<MatchReviewModalProps> = ({
                                 >
                                   {claim ? (
                                     <>
-                                      <span className="block font-black text-[10px]">
+                                      <span className="block font-black text-[10px] truncate">
                                         {claim.symbol}
                                       </span>
                                       <span className="block truncate text-[9px]">
@@ -351,23 +351,23 @@ export const MatchReviewModal: React.FC<MatchReviewModalProps> = ({
                   )}
 
                   {/* User Answer vs Round Outcome */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                    <div className="p-2 rounded-xl bg-slate-900/75 border border-slate-800">
-                      <span className="block text-[10px] font-bold uppercase text-slate-400">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs min-w-0">
+                    <div className="p-2 rounded-xl bg-slate-900/75 border border-slate-800 min-w-0">
+                      <span className="block text-[10px] font-bold uppercase text-slate-400 break-words">
                         Senin Cevabın ({player1Name})
                       </span>
-                      <span className="block font-bold text-white mt-0.5 truncate">
+                      <span className="block font-bold text-white mt-0.5 break-words">
                         {highlight.userSubmittedAnswers && highlight.userSubmittedAnswers.length > 0
                           ? highlight.userSubmittedAnswers.join(', ')
                           : 'Cevap girilmedi'}
                       </span>
                     </div>
 
-                    <div className="p-2 rounded-xl bg-slate-900/75 border border-slate-800">
+                    <div className="p-2 rounded-xl bg-slate-900/75 border border-slate-800 min-w-0">
                       <span className="block text-[10px] font-bold uppercase text-slate-400">
                         Tur Sonucu
                       </span>
-                      <span className="block font-bold text-slate-200 mt-0.5 truncate">
+                      <span className="block font-bold text-slate-200 mt-0.5 break-words">
                         {highlight.winnerPlayerId
                           ? `${highlight.winnerName || player2Name}: ${highlight.acceptedAnswer || '-'}`
                           : highlight.reason === 'timeout'
@@ -379,8 +379,8 @@ export const MatchReviewModal: React.FC<MatchReviewModalProps> = ({
 
                   {/* Featured Footballer Card with Avatar, Country, Position & Verified Career */}
                   {featuredPlayer && (
-                    <div className="p-3 rounded-xl bg-gradient-to-r from-slate-900 to-[#0D1E19] border border-emerald-500/25 space-y-2">
-                      <div className="flex items-center gap-3">
+                    <div className="p-2.5 sm:p-3 rounded-xl bg-gradient-to-r from-slate-900 to-[#0D1E19] border border-emerald-500/25 space-y-2 min-w-0">
+                      <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
                         <PlayerAvatar
                           player={featuredPlayer}
                           name={featuredPlayer.name}
@@ -389,21 +389,21 @@ export const MatchReviewModal: React.FC<MatchReviewModalProps> = ({
                           className="shrink-0 bg-slate-800 border border-slate-700"
                         />
                         <div className="min-w-0 flex-1">
-                          <div className="flex flex-wrap items-center gap-1.5">
-                            <span className="font-black text-sm text-white truncate">
+                          <div className="flex flex-wrap items-center gap-1.5 min-w-0">
+                            <span className="font-black text-sm text-white break-words">
                               {featuredPlayer.name}
                             </span>
-                            <span className="px-1.5 py-0.5 rounded bg-emerald-500/15 border border-emerald-400/30 text-[10px] font-black text-emerald-300">
+                            <span className="px-1.5 py-0.5 rounded bg-emerald-500/15 border border-emerald-400/30 text-[10px] font-black text-emerald-300 shrink-0">
                               {POSITION_LABELS[featuredPlayer.position] || featuredPlayer.position}
                             </span>
                           </div>
-                          <div className="flex items-center gap-1.5 text-[11px] text-slate-300 mt-0.5">
+                          <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-slate-300 mt-0.5 min-w-0">
                             <CountryFlag flag={featuredPlayer.flag} size="xs" />
                             <span>{featuredPlayer.nationality}</span>
                             {featuredPlayer.clubName && (
                               <>
                                 <span className="text-slate-500">•</span>
-                                <span className="text-slate-300 truncate">
+                                <span className="text-slate-300 break-words">
                                   {featuredPlayer.clubName}
                                 </span>
                               </>
@@ -413,16 +413,16 @@ export const MatchReviewModal: React.FC<MatchReviewModalProps> = ({
                       </div>
 
                       {featuredPlayer.careerHistory && featuredPlayer.careerHistory.length > 0 && (
-                        <div className="flex flex-wrap gap-1.5 pt-1">
+                        <div className="flex flex-wrap gap-1.5 pt-1 min-w-0">
                           {featuredPlayer.careerHistory
                             .filter((ch) => !ch.isYouth)
                             .map((ch, idx) => (
                               <span
                                 key={`${featuredPlayer.id}-ch-${idx}`}
-                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-950/90 border border-slate-800 text-[10px] font-semibold text-slate-300"
+                                className="inline-flex flex-wrap items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-950/90 border border-slate-800 text-[10px] font-semibold text-slate-300 max-w-full break-words"
                               >
                                 <CountryFlag flag={ch.countryFlag} size="xs" />
-                                <span>{ch.club}</span>
+                                <span className="break-words">{ch.club}</span>
                                 {ch.years && ch.years.trim().length > 0 && (
                                   <span className="text-slate-400 font-mono">{ch.years}</span>
                                 )}
@@ -435,11 +435,11 @@ export const MatchReviewModal: React.FC<MatchReviewModalProps> = ({
 
                   {/* Other Accepted Valid Answers */}
                   {allValidIds.length > 1 && (
-                    <div className="space-y-1">
+                    <div className="space-y-1 min-w-0">
                       <span className="block text-[10px] font-black uppercase tracking-wider text-slate-400">
                         Diğer Doğru Futbolcular ({allValidIds.length}) — İncelemek için dokun
                       </span>
-                      <div className="flex flex-wrap gap-1.5">
+                      <div className="flex flex-wrap gap-1.5 min-w-0">
                         {allValidIds.map((pid) => {
                           const pl = PLAYERS[pid];
                           if (!pl) return null;
@@ -454,7 +454,7 @@ export const MatchReviewModal: React.FC<MatchReviewModalProps> = ({
                                   [highlight.roundNumber]: pid,
                                 }))
                               }
-                              className={`px-2 py-1 rounded-lg border text-[11px] font-bold transition cursor-pointer ${
+                              className={`px-2 py-1 rounded-lg border text-[11px] font-bold transition cursor-pointer max-w-full text-left break-words ${
                                 isSelected
                                   ? 'bg-emerald-500/20 border-emerald-400 text-emerald-200'
                                   : 'bg-slate-900 hover:bg-slate-800 border-slate-700 text-slate-300'

@@ -210,3 +210,86 @@ test('dual-player online score binding verifies BOTH players via server ledger a
   });
   assert.notEqual(rematchSession.sessionId, hostSession.sessionId);
 });
+
+test('ServerMatchLedger prevents reward double-claim across simulated server restart and strict sync blocks unverified injection', async () => {
+  const cloudStore = new Map<string, any>();
+  const mockCloudAdapter = {
+    saveSession: async (session: any) => {
+      cloudStore.set(session.sessionId, {
+        ...session,
+        scoredRounds: new Set(session.scoredRounds),
+      });
+    },
+    getSessionById: async (sid: string) => cloudStore.get(sid) || null,
+    loadActiveSessions: async () => Array.from(cloudStore.values()),
+  };
+
+  const ledgerBeforeRestart = new ServerMatchLedger();
+  ledgerBeforeRestart.setCloudAdapter(mockCloudAdapter);
+  const now = Date.now();
+  const s = ledgerBeforeRestart.issueSession({
+    accountId: 'acc_restart_user',
+    minigameType: 'two_clubs',
+    mode: 'bot',
+    roundIds: [MATCH_PAIRINGS[0].id],
+    now: now - 30_000,
+  });
+  ledgerBeforeRestart.submitVerifiedAnswer({
+    sessionId: s.sessionId,
+    accountId: 'acc_restart_user',
+    roundIndex: 0,
+    answer: PLAYERS[MATCH_PAIRINGS[0].validPlayerIds[0]].name,
+  });
+
+  const firstClaim = ledgerBeforeRestart.consumeVerifiedMatchSession({
+    sessionId: s.sessionId,
+    accountId: 'acc_restart_user',
+    hasMultiplier2x: false,
+    now,
+  });
+  assert.equal(firstClaim.ok, true);
+  await ledgerBeforeRestart.flushCloudWrites();
+
+  // Simulate Render container restart -> brand new ServerMatchLedger hydrating from cloud
+  const ledgerAfterRestart = new ServerMatchLedger();
+  ledgerAfterRestart.setCloudAdapter(mockCloudAdapter);
+  const restored = await ledgerAfterRestart.resolveSessionAsync(s.sessionId);
+  assert.ok(restored);
+  assert.equal(restored?.completed, true);
+
+  const replayAfterRestart = ledgerAfterRestart.consumeVerifiedMatchSession({
+    sessionId: s.sessionId,
+    accountId: 'acc_restart_user',
+    hasMultiplier2x: false,
+    now: now + 5_000,
+  });
+  assert.equal(replayAfterRestart.ok, false);
+
+  // Strict server sync preserves existing legitimate adFree/coins while clamping unverified client boosts
+  const existingProg = {
+    ...createInitialProgression(),
+    coins: 1200,
+    weeklyPoints: 300,
+    totalPoints: 1500,
+    matchesPlayed: 5,
+    adFree: true,
+    unlockedGiftIds: ['store_ad_free'],
+  };
+  const forgedIncoming = {
+    ...existingProg,
+    coins: 999_999,
+    weeklyPoints: 500_000,
+    totalPoints: 900_000,
+    matchesPlayed: 999,
+    unlockedGiftIds: ['store_ad_free', 'fake_vip_item'],
+  };
+  const strictSanitized = sanitizeProgressionUpdate(existingProg, forgedIncoming, {
+    strictActionVerification: true,
+    verifiedCoinCredit: 0,
+    verifiedPointCredit: 0,
+  });
+  assert.equal(strictSanitized.coins, 1200);
+  assert.equal(strictSanitized.weeklyPoints, 300);
+  assert.equal(strictSanitized.totalPoints, 1500);
+  assert.equal(strictSanitized.adFree, true);
+});

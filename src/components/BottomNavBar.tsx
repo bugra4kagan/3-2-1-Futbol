@@ -10,47 +10,49 @@ interface BottomNavBarProps {
   pendingFriendRequestsCount?: number;
 }
 
-const CenterPlayBallIcon: React.FC<{ active: boolean }> = ({ active }) => (
-  <svg
-    viewBox="0 0 36 36"
-    fill="none"
-    aria-hidden="true"
-    className="w-8 h-8 block shrink-0"
-  >
-    {/* Crisp centered white football with deep navy-black pentagons — zero clipping or oval drift */}
-    <circle
-      cx="18"
-      cy="18"
-      r="13.5"
-      fill="#FFFFFF"
-      stroke={active ? '#0F2438' : '#13304A'}
-      strokeWidth="2"
-    />
-    {/* Subtle lower shading arc inside circle bounds */}
-    <path
-      d="M7.8 25.4A13.5 13.5 0 0 0 28.2 25.4A13 13 0 0 1 7.8 25.4Z"
-      fill="#D7E2EB"
-    />
-    {/* Central classic pentagon */}
-    <polygon
-      points="18,12 23.4,16 21.3,22.3 14.7,22.3 12.6,16"
-      fill="#0F2438"
-    />
-    {/* Outer edge segments strictly clipped cleanly inside r=13.5 */}
-    <polygon points="18,4.6 21.4,7.4 20.1,9.3 15.9,9.3 14.6,7.4" fill="#0F2438" />
-    <polygon points="30.6,14.2 28.8,19.1 26.2,17.9 26.2,14.5 28.6,12.5" fill="#0F2438" />
-    <polygon points="5.4,14.2 7.4,12.5 9.8,14.5 9.8,17.9 7.2,19.1" fill="#0F2438" />
-    <polygon points="24.8,28.1 20.7,30.1 20,26.6 23.1,24.4 26,25.6" fill="#0F2438" />
-    <polygon points="11.2,28.1 10,25.6 12.9,24.4 16,26.6 15.3,30.1" fill="#0F2438" />
-    {/* Seam lines connecting central pentagon */}
-    <path
-      d="M18 9.3V12M23.4 16L26.2 15.3M12.6 16L9.8 15.3M21.3 22.3L23.1 24.4M14.7 22.3L12.9 24.4"
-      stroke="#0F2438"
-      strokeWidth="1.5"
-      strokeLinecap="round"
-    />
-  </svg>
-);
+const CenterPlayBallIcon: React.FC<{ active: boolean }> = ({ active }) => {
+  const clipId = React.useId().replace(/:/g, '');
+  return (
+    <svg
+      viewBox="0 0 32 32"
+      width="32"
+      height="32"
+      preserveAspectRatio="xMidYMid meet"
+      fill="none"
+      aria-hidden="true"
+      className="w-8 h-8 block shrink-0"
+    >
+      <defs>
+        <clipPath id={`nav-ball-${clipId}`}>
+          <circle cx="16" cy="16" r="11.5" />
+        </clipPath>
+      </defs>
+      <circle cx="16" cy="16" r="11.5" fill="#FFFFFF" />
+      <g clipPath={`url(#nav-ball-${clipId})`}>
+        <path d="M7.5 23.8A11.5 11.5 0 0 0 24.5 23.8A11 11 0 0 1 7.5 23.8Z" fill="#D7E2EB" />
+        <polygon points="16,11.1 20.7,14.5 18.9,20 13.1,20 11.3,14.5" fill="#0F2438" />
+        <polygon points="16,3.3 19.3,5.8 18,7.9 14,7.9 12.7,5.8" fill="#0F2438" />
+        <polygon points="28.3,12.1 26.5,16.8 23.9,15.6 23.9,12.5 26.3,10.5" fill="#0F2438" />
+        <polygon points="3.7,12.1 5.7,10.5 8.1,12.5 8.1,15.6 5.5,16.8" fill="#0F2438" />
+        <polygon points="23.6,25.9 19.4,28.1 18.6,24.2 21.4,22 24.5,23.2" fill="#0F2438" />
+        <polygon points="8.4,25.9 7.5,23.2 10.6,22 13.4,24.2 12.6,28.1" fill="#0F2438" />
+        <path
+          d="M16 7.9V11.1M20.7 14.5L23.9 13.8M11.3 14.5L8.1 13.8M18.9 20L21.4 22M13.1 20L10.6 22"
+          stroke="#0F2438"
+          strokeWidth="1.4"
+          strokeLinecap="round"
+        />
+      </g>
+      <circle
+        cx="16"
+        cy="16"
+        r="11.5"
+        stroke={active ? '#0F2438' : '#13304A'}
+        strokeWidth="1.8"
+      />
+    </svg>
+  );
+};
 
 export const BottomNavBar: React.FC<BottomNavBarProps> = ({
   activeTab,
