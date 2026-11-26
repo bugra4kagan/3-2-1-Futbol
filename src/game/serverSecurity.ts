@@ -7,6 +7,7 @@ import {
   resolveRoundsByIds,
   validateMinigameAnswer,
 } from './minigameEngine.js';
+import type { PersistentAccountRecord } from './accountStore.js';
 import type { MinigameRoundPayload, MinigameType, UserProgression } from './types';
 
 export const MAX_COINS = 20_000_000;
@@ -67,7 +68,14 @@ export interface MatchSessionCloudAdapter {
     matchSeq?: number;
     coinsAwarded: number;
     pointsAwarded: number;
-  }) => Promise<{ ok: boolean; duplicate?: boolean }>;
+    won: boolean;
+    fallbackAccountRecord?: PersistentAccountRecord;
+    requireAccountCredit?: boolean;
+  }) => Promise<{
+    ok: boolean;
+    duplicate?: boolean;
+    creditedAccount?: PersistentAccountRecord | null;
+  }>;
 }
 
 const SUPPORTED_MATCH_TYPES = new Set<MinigameType>([
@@ -500,21 +508,31 @@ export class ServerMatchLedger {
     serverVerifiedOpponentScore?: number | null;
     requireServerOpponentVerification?: boolean;
     roomClaimKey?: string;
+    fallbackAccountRecord?: PersistentAccountRecord;
+    requireAccountCredit?: boolean;
     now?: number;
     minDurationMs?: number;
   }): Promise<
-    | { ok: true; coinsAwarded: number; pointsAwarded: number; won: boolean; verifiedScore: number }
-    | { ok: false; reason: string }
+    | {
+        ok: true;
+        coinsAwarded: number;
+        pointsAwarded: number;
+        won: boolean;
+        verifiedScore: number;
+        creditedAccount?: PersistentAccountRecord | null;
+      }
+    | { ok: false; reason: string; retryable?: boolean; duplicate?: boolean }
   > {
     const lockKey = params.roomClaimKey || `session:${String(params.sessionId || '').trim()}`;
     if (this.inFlightClaims.has(lockKey)) {
-      return { ok: false, reason: 'Bu maç ödülü zaten işleniyor.' };
+      return { ok: false, reason: 'Bu maç ödülü zaten işleniyor.', retryable: true };
     }
     this.inFlightClaims.add(lockKey);
     try {
       const evalRes = this.evaluateMatchReward(params);
       if (!evalRes.ok) return evalRes;
 
+      let creditedAccount: PersistentAccountRecord | null = null;
       if (this.cloudAdapter?.claimRewardAtomic) {
         const atomicClaim = await this.cloudAdapter.claimRewardAtomic({
           claimKey: lockKey,
@@ -524,17 +542,31 @@ export class ServerMatchLedger {
           matchSeq: evalRes.session.matchSeq,
           coinsAwarded: evalRes.coinsAwarded,
           pointsAwarded: evalRes.pointsAwarded,
+          won: evalRes.won,
+          fallbackAccountRecord: params.fallbackAccountRecord,
+          requireAccountCredit: params.requireAccountCredit,
         });
         if (!atomicClaim.ok) {
-          evalRes.session.completed = true;
-          if (params.roomClaimKey) this.claimedRoomOutcomes.add(params.roomClaimKey);
+          // Yalnızca kesin yinelenen (duplicate) talepte oturumu tüketilmiş işaretle.
+          // Geçici veritabanı/ağ hatasında oturum ASLA tüketilmez; oyuncu ödül kaybı yaşamadan tekrar deneyebilir.
+          if (atomicClaim.duplicate) {
+            evalRes.session.completed = true;
+            if (params.roomClaimKey) this.claimedRoomOutcomes.add(params.roomClaimKey);
+            return {
+              ok: false,
+              duplicate: true,
+              retryable: false,
+              reason: 'Bu maç oturumu veya çevrimiçi oda maçı daha önce ödüllendirildi.',
+            };
+          }
           return {
             ok: false,
-            reason: atomicClaim.duplicate
-              ? 'Bu maç oturumu veya çevrimiçi oda maçı daha önce ödüllendirildi.'
-              : 'Atomik ödül kilidi alınamadı; lütfen tekrar dene.',
+            duplicate: false,
+            retryable: true,
+            reason: 'Ödül işlemi tamamlanamadı; coin ve puan kaybı yaşanmadı, lütfen tekrar dene.',
           };
         }
+        creditedAccount = atomicClaim.creditedAccount ?? null;
       }
 
       evalRes.session.completed = true;
@@ -553,6 +585,7 @@ export class ServerMatchLedger {
         verifiedScore: evalRes.verifiedScore,
         coinsAwarded: evalRes.coinsAwarded,
         pointsAwarded: evalRes.pointsAwarded,
+        creditedAccount,
       };
     } finally {
       this.inFlightClaims.delete(lockKey);

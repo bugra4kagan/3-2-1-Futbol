@@ -23,6 +23,21 @@ export type SparkBackupCollectionName = (typeof SPARK_BACKUP_FIRESTORE_COLLECTIO
 export const SPARK_BACKUP_RTDB_PATHS = ['leaderboard'] as const;
 export type SparkBackupRtdbPath = (typeof SPARK_BACKUP_RTDB_PATHS)[number];
 
+/**
+ * Yedekleme aracının tam kapsam ve kapsam dışı envanteri (şeffaf denetim ve felaket kurtarma için).
+ */
+export const SPARK_BACKUP_COVERAGE_METADATA = {
+  includedFirestoreCollections: [...SPARK_BACKUP_FIRESTORE_COLLECTIONS],
+  includedRtdbPaths: [...SPARK_BACKUP_RTDB_PATHS],
+  excludedEphemeralCollections: ['rooms'],
+  excludedEphemeralSubcollections: ['matchmaking/{minigameType}/queue'],
+  excludedExternalSystems: [
+    'Firebase Authentication kullanıcı kayıtları (ücretsiz `firebase auth:export` ile ayrı alınır; `backend_accounts.googleUid` ve `recoveryCode` üzerinden yeniden eşlenir)',
+    'Firebase Security Rules (`firestore.rules` ve `database.rules.json` Git deposunda sürüm kontrollüdür)',
+    'Sunucu gizli ortam değişkenleri (`FIREBASE_SERVICE_ACCOUNT_JSON`, `SESSION_SECRET`, `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` — güvenlik gereği asla yedeğe dahil edilmez)',
+  ],
+} as const;
+
 export interface FirebaseSparkBackupDocument {
   id: string;
   data: Record<string, unknown>;

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import {
+  SPARK_BACKUP_COVERAGE_METADATA,
   SPARK_BACKUP_FIRESTORE_COLLECTIONS,
   SPARK_BACKUP_RTDB_PATHS,
   assertNoSecretMaterialInBackup,
@@ -72,6 +73,11 @@ test('Spark backup covers all real Firestore collections, RTDB leaderboard, and 
     'userReports',
   ]);
   assert.deepEqual(SPARK_BACKUP_RTDB_PATHS, ['leaderboard']);
+  assert.deepEqual(SPARK_BACKUP_COVERAGE_METADATA.excludedEphemeralCollections, ['rooms']);
+  assert.deepEqual(SPARK_BACKUP_COVERAGE_METADATA.excludedEphemeralSubcollections, [
+    'matchmaking/{minigameType}/queue',
+  ]);
+  assert.ok(SPARK_BACKUP_COVERAGE_METADATA.excludedExternalSystems.length >= 3);
 
   const gitignore = fs.readFileSync(path.resolve(process.cwd(), '.gitignore'), 'utf8');
   assert.ok(gitignore.includes('backups/'), '.gitignore must exclude local backups/ directory');

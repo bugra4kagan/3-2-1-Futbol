@@ -869,6 +869,9 @@ test('Firebase Admin Firestore Emulator persists accounts, coins, purchases & on
   );
   assert.equal(serverVerifiedOppScore, 1);
 
+  // Flush account to Firestore Emulator first so single-transaction atomic credit updates backend_accounts directly
+  await store1.flushCloudWrites();
+
   const reward = await ledger1.consumeVerifiedMatchSessionAsync({
     sessionId: session.sessionId,
     accountId: 'acc_emu_1',
@@ -876,12 +879,60 @@ test('Firebase Admin Firestore Emulator persists accounts, coins, purchases & on
     serverVerifiedOpponentScore: serverVerifiedOppScore,
     requireServerOpponentVerification: true,
     roomClaimKey: `EMU999:${roomOutcome.matchSeq}:acc_emu_1`,
+    fallbackAccountRecord: reg.account,
+    requireAccountCredit: true,
     minDurationMs: 1000,
     now: Date.now(),
   });
   assert.equal(reward.ok, true);
   if (!reward.ok) return;
   assert.equal(reward.won, true);
+  assert.ok(reward.creditedAccount, 'Single Firestore transaction must atomically credit backend_accounts');
+  assert.equal(
+    reward.creditedAccount.progression.coins,
+    initProg.coins + reward.coinsAwarded
+  );
+  assert.equal(
+    reward.creditedAccount.progression.weeklyPoints,
+    initProg.weeklyPoints + reward.pointsAwarded
+  );
+  // Sync RAM snapshot from atomic transaction result (no separate cloud write needed for coins/points!)
+  store1.applyAuthoritativeAccountSnapshot(reward.creditedAccount);
+
+  // Half-completed / missing-account transaction guard: requireAccountCredit MUST abort without creating claim doc
+  const orphanSession = ledger1.issueSession({
+    accountId: 'acc_nonexistent_orphan',
+    minigameType: 'two_clubs',
+    mode: 'online_room',
+    roomCode: 'EMU999',
+    matchSeq: 9,
+    rosterVersion: ROSTER_DATA_VERSION,
+    now: Date.now() - 10_000,
+  });
+  const orphanPid = orphanSession.rounds[0]?.pairing?.validPlayerIds[0];
+  assert.ok(orphanPid);
+  ledger1.submitVerifiedAnswer({
+    sessionId: orphanSession.sessionId,
+    accountId: 'acc_nonexistent_orphan',
+    roundIndex: 0,
+    answer: orphanPid,
+  });
+  const orphanAbort = await ledger1.consumeVerifiedMatchSessionAsync({
+    sessionId: orphanSession.sessionId,
+    accountId: 'acc_nonexistent_orphan',
+    hasMultiplier2x: false,
+    serverVerifiedOpponentScore: 0,
+    requireServerOpponentVerification: true,
+    roomClaimKey: 'EMU999:9:acc_nonexistent_orphan',
+    requireAccountCredit: true,
+    minDurationMs: 1000,
+    now: Date.now(),
+  });
+  assert.equal(orphanAbort.ok, false);
+  if (!orphanAbort.ok) {
+    assert.equal(orphanAbort.retryable, true);
+    assert.equal(orphanAbort.duplicate, false);
+  }
 
   // Atomic Firestore Transaction double-claim protection: second claim MUST fail even from a fresh ledger instance!
   const freshLedger = new ServerMatchLedger();
@@ -910,17 +961,12 @@ test('Firebase Admin Firestore Emulator persists accounts, coins, purchases & on
     serverVerifiedOpponentScore: 1,
     requireServerOpponentVerification: true,
     roomClaimKey: `EMU999:${roomOutcome.matchSeq}:acc_emu_1`,
+    requireAccountCredit: true,
     minDurationMs: 1000,
     now: Date.now(),
   });
   assert.equal(doubleClaimAttempt.ok, false);
 
-  store1.recordVerifiedMatchReward({
-    accountId: 'acc_emu_1',
-    coinsAwarded: reward.coinsAwarded,
-    pointsAwarded: reward.pointsAwarded,
-    won: reward.won,
-  });
   const buy = await store1.applyVerifiedPurchaseAsync({
     accountId: 'acc_emu_1',
     itemId: 'store_ad_free',

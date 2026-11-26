@@ -17,7 +17,11 @@ import {
   areRosterVersionsCompatible,
   normalizeRosterVersion,
 } from './rosterVersion.js';
-import type { AccountCloudAdapter, PersistentAccountRecord } from './accountStore.js';
+import {
+  applyVerifiedMatchRewardToProgression,
+  type AccountCloudAdapter,
+  type PersistentAccountRecord,
+} from './accountStore.js';
 import type { MatchSessionCloudAdapter, ServerMatchSession } from './serverSecurity.js';
 import type { MinigameRoundPayload, MinigameType, PlayerProfile, UserProgression } from './types.js';
 
@@ -795,18 +799,27 @@ export async function claimMatchRewardAtomicAdmin(params: {
   matchSeq?: number;
   coinsAwarded: number;
   pointsAwarded: number;
-}): Promise<{ ok: boolean; duplicate?: boolean }> {
+  won?: boolean;
+  fallbackAccountRecord?: PersistentAccountRecord;
+  requireAccountCredit?: boolean;
+}): Promise<{
+  ok: boolean;
+  duplicate?: boolean;
+  creditedAccount?: PersistentAccountRecord | null;
+}> {
   const cleanClaimKey = sanitizeRtdbKey(params.claimKey);
   const cleanSessionId = String(params.sessionId || '').trim();
-  if (!cleanClaimKey || !cleanSessionId) return { ok: false };
+  const cleanAccountId = String(params.accountId || '').trim();
+  if (!cleanClaimKey || !cleanSessionId || !cleanAccountId) return { ok: false, duplicate: false };
   const adminApp = getFirebaseAdminApp();
   if (!adminApp) {
-    return { ok: true };
+    return { ok: true, duplicate: false, creditedAccount: null };
   }
   try {
     const db = getFirestore(adminApp);
     const claimRef = db.collection(BACKEND_REWARD_CLAIMS_COLLECTION).doc(cleanClaimKey);
     const sessionRef = db.collection(BACKEND_MATCH_SESSIONS_COLLECTION).doc(cleanSessionId);
+    const accountRef = db.collection(BACKEND_ACCOUNTS_COLLECTION).doc(cleanAccountId);
 
     return await db.runTransaction(async (tx) => {
       const claimSnap = await tx.get(claimRef);
@@ -817,23 +830,57 @@ export async function claimMatchRewardAtomicAdmin(params: {
       if (sessionSnap.exists && sessionSnap.data()?.completed === true) {
         return { ok: false, duplicate: true };
       }
+      const accountSnap = await tx.get(accountRef);
+      const baseAccount = accountSnap.exists
+        ? deserializeAccountFromCloud(accountSnap.data())
+        : params.fallbackAccountRecord || null;
+
+      if (!baseAccount && params.requireAccountCredit) {
+        // Hesap dokümanı yoksa claim kaydı oluşturmadan işlemi temiz biçimde iptal et (ödül kaybı olmaz)
+        return { ok: false, duplicate: false };
+      }
+
+      const now = Date.now();
+      let creditedAccount: PersistentAccountRecord | null = null;
+
+      if (baseAccount) {
+        const nextProgression = applyVerifiedMatchRewardToProgression(baseAccount.progression, {
+          coinsAwarded: params.coinsAwarded,
+          pointsAwarded: params.pointsAwarded,
+          won: Boolean(params.won),
+        });
+        creditedAccount = {
+          ...baseAccount,
+          progression: nextProgression,
+          updatedAt: now,
+        };
+        tx.set(accountRef, serializeAccountForCloud(creditedAccount), { merge: true });
+      }
+
       tx.create(claimRef, {
         claimKey: params.claimKey,
         sessionId: cleanSessionId,
-        accountId: params.accountId,
+        accountId: cleanAccountId,
         roomCode: params.roomCode || null,
         matchSeq: params.matchSeq ?? null,
         coinsAwarded: params.coinsAwarded,
         pointsAwarded: params.pointsAwarded,
-        claimedAt: Date.now(),
+        won: Boolean(params.won),
+        accountCreditedAtomically: Boolean(creditedAccount),
+        creditedCoinsAfter: creditedAccount?.progression.coins ?? null,
+        creditedWeeklyPointsAfter: creditedAccount?.progression.weeklyPoints ?? null,
+        creditedTotalPointsAfter: creditedAccount?.progression.totalPoints ?? null,
+        claimedAt: now,
       });
+
       if (sessionSnap.exists) {
-        tx.set(sessionRef, { completed: true, updatedAt: Date.now() }, { merge: true });
+        tx.set(sessionRef, { completed: true, updatedAt: now }, { merge: true });
       }
-      return { ok: true, duplicate: false };
+
+      return { ok: true, duplicate: false, creditedAccount };
     });
   } catch {
-    return { ok: false };
+    return { ok: false, duplicate: false };
   }
 }
 

@@ -21,7 +21,11 @@ import {
   type MatchSessionCloudAdapter,
   type ServerMatchSession,
 } from './serverSecurity';
-import { AccountStore } from './accountStore';
+import {
+  AccountStore,
+  applyVerifiedMatchRewardToProgression,
+  type PersistentAccountRecord,
+} from './accountStore';
 import { PLAYERS } from './database';
 import { createInitialProgression } from './retentionEngine';
 import type { MinigameType, PlayerProfile } from './types';
@@ -489,4 +493,126 @@ test('existing accounts, coins, league points, and purchases remain intact acros
   assert.equal(resolved.progression.weeklyPoints, 640);
   assert.equal(resolved.progression.totalPoints, 4120);
   assert.equal(resolved.progression.adFree, true);
+});
+
+test('transient atomic transaction failure never burns match session or loses coins/points, and retry credits atomically once', async () => {
+  const store = new AccountStore(null);
+  const initProg = createInitialProgression('acc_retry_1');
+  const reg = store.registerOrUpdate({
+    accountId: 'acc_retry_1',
+    googleUid: 'uid_retry_1',
+    profile: { id: 'acc_retry_1', name: 'RetryKaptan', avatar: 'avatar_classic_ball', score: 0 },
+    progression: initProg,
+  });
+  assert.equal(reg.ok, true);
+  if (!reg.ok) return;
+
+  let transientFailOnce = true;
+  const claimed = new Set<string>();
+  let cloudAccount: PersistentAccountRecord = structuredClone(reg.account);
+
+  const ledger = new ServerMatchLedger();
+  ledger.setCloudAdapter({
+    async loadActiveSessions() {
+      return [];
+    },
+    async getSessionById() {
+      return null;
+    },
+    async saveSession() {},
+    async claimRewardAtomic(params) {
+      // 1st call simulates transient Firestore transaction abort (zero writes committed)
+      if (transientFailOnce) {
+        transientFailOnce = false;
+        return { ok: false, duplicate: false };
+      }
+      if (claimed.has(params.claimKey)) {
+        return { ok: false, duplicate: true };
+      }
+      claimed.add(params.claimKey);
+      const nextProg = applyVerifiedMatchRewardToProgression(cloudAccount.progression, {
+        coinsAwarded: params.coinsAwarded,
+        pointsAwarded: params.pointsAwarded,
+        won: params.won,
+      });
+      cloudAccount = { ...cloudAccount, progression: nextProg, updatedAt: Date.now() };
+      return { ok: true, duplicate: false, creditedAccount: structuredClone(cloudAccount) };
+    },
+  });
+
+  const session = ledger.issueSession({
+    accountId: 'acc_retry_1',
+    minigameType: 'two_clubs',
+    mode: 'online_room',
+    roomCode: 'RTY123',
+    matchSeq: 1,
+    rosterVersion: ROSTER_DATA_VERSION,
+    now: NOW - 12_000,
+  });
+  const validId = session.rounds[0]!.pairing!.validPlayerIds[0];
+  ledger.submitVerifiedAnswer({
+    sessionId: session.sessionId,
+    accountId: 'acc_retry_1',
+    roundIndex: 0,
+    answer: PLAYERS[validId]?.name || validId,
+  });
+
+  // 1st attempt fails transiently -> retryable: true, session NOT burned, zero coins/points lost!
+  const firstTry = await ledger.consumeVerifiedMatchSessionAsync({
+    sessionId: session.sessionId,
+    accountId: 'acc_retry_1',
+    hasMultiplier2x: false,
+    serverVerifiedOpponentScore: 0,
+    requireServerOpponentVerification: true,
+    roomClaimKey: 'RTY123:1:acc_retry_1',
+    fallbackAccountRecord: reg.account,
+    requireAccountCredit: true,
+    minDurationMs: 1000,
+    now: NOW,
+  });
+  assert.equal(firstTry.ok, false);
+  if (!firstTry.ok) {
+    assert.equal(firstTry.retryable, true);
+    assert.equal(firstTry.duplicate, false);
+  }
+  assert.equal(cloudAccount.progression.coins, initProg.coins);
+
+  // 2nd attempt (retry) succeeds atomically and returns the credited account snapshot!
+  const secondTry = await ledger.consumeVerifiedMatchSessionAsync({
+    sessionId: session.sessionId,
+    accountId: 'acc_retry_1',
+    hasMultiplier2x: false,
+    serverVerifiedOpponentScore: 0,
+    requireServerOpponentVerification: true,
+    roomClaimKey: 'RTY123:1:acc_retry_1',
+    fallbackAccountRecord: reg.account,
+    requireAccountCredit: true,
+    minDurationMs: 1000,
+    now: NOW,
+  });
+  assert.equal(secondTry.ok, true);
+  if (!secondTry.ok) return;
+  assert.ok(secondTry.creditedAccount);
+  store.applyAuthoritativeAccountSnapshot(secondTry.creditedAccount);
+
+  const synced = await store.resolveByAccountIdAsync('acc_retry_1');
+  assert.ok(synced);
+  assert.equal(synced.progression.coins, initProg.coins + secondTry.coinsAwarded);
+  assert.equal(synced.progression.weeklyPoints, initProg.weeklyPoints + secondTry.pointsAwarded);
+
+  // 3rd attempt MUST be rejected as duplicate with zero double-credit!
+  const thirdTry = await ledger.consumeVerifiedMatchSessionAsync({
+    sessionId: session.sessionId,
+    accountId: 'acc_retry_1',
+    hasMultiplier2x: false,
+    serverVerifiedOpponentScore: 0,
+    requireServerOpponentVerification: true,
+    roomClaimKey: 'RTY123:1:acc_retry_1',
+    fallbackAccountRecord: synced,
+    requireAccountCredit: true,
+    minDurationMs: 1000,
+    now: NOW,
+  });
+  assert.equal(thirdTry.ok, false);
+  assert.equal(cloudAccount.progression.coins, initProg.coins + secondTry.coinsAwarded);
 });

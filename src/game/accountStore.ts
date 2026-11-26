@@ -133,6 +133,41 @@ export function shouldUseLocalDiskFallback(env: NodeJS.ProcessEnv = process.env)
   return true;
 }
 
+export function applyVerifiedMatchRewardToProgression(
+  prev: UserProgression,
+  params: {
+    coinsAwarded: number;
+    pointsAwarded: number;
+    won: boolean;
+  }
+): UserProgression {
+  const coinCredit = Math.max(0, Math.round(params.coinsAwarded));
+  const pointCredit = Math.max(0, Math.round(params.pointsAwarded));
+  const nextMultMatches =
+    !prev.permanentMultiplier2x && (prev.multiplier2xMatches ?? 0) > 0
+      ? (prev.multiplier2xMatches ?? 1) - 1
+      : prev.multiplier2xMatches;
+
+  return sanitizeProgressionUpdate(
+    prev,
+    {
+      ...prev,
+      coins: prev.coins + coinCredit,
+      weeklyPoints: prev.weeklyPoints + pointCredit,
+      totalPoints: prev.totalPoints + pointCredit,
+      matchesPlayed: (prev.matchesPlayed ?? 0) + 1,
+      wins: (prev.wins ?? 0) + (params.won ? 1 : 0),
+      losses: (prev.losses ?? 0) + (params.won ? 0 : 1),
+      multiplier2xMatches: nextMultMatches,
+    },
+    {
+      strictActionVerification: true,
+      verifiedCoinCredit: coinCredit,
+      verifiedPointCredit: pointCredit,
+    }
+  );
+}
+
 export class AccountStore {
   private readonly filePath: string | null;
   private readonly byId = new Map<string, PersistentAccountRecord>();
@@ -679,32 +714,7 @@ export class AccountStore {
     const existing = this.byId.get(cleanId);
     if (!existing) return { ok: false };
 
-    const coinCredit = Math.max(0, Math.round(params.coinsAwarded));
-    const pointCredit = Math.max(0, Math.round(params.pointsAwarded));
-    const prev = existing.progression;
-    const nextMultMatches =
-      !prev.permanentMultiplier2x && (prev.multiplier2xMatches ?? 0) > 0
-        ? (prev.multiplier2xMatches ?? 1) - 1
-        : prev.multiplier2xMatches;
-
-    const nextProg = sanitizeProgressionUpdate(
-      prev,
-      {
-        ...prev,
-        coins: prev.coins + coinCredit,
-        weeklyPoints: prev.weeklyPoints + pointCredit,
-        totalPoints: prev.totalPoints + pointCredit,
-        matchesPlayed: (prev.matchesPlayed ?? 0) + 1,
-        wins: (prev.wins ?? 0) + (params.won ? 1 : 0),
-        losses: (prev.losses ?? 0) + (params.won ? 0 : 1),
-        multiplier2xMatches: nextMultMatches,
-      },
-      {
-        strictActionVerification: true,
-        verifiedCoinCredit: coinCredit,
-        verifiedPointCredit: pointCredit,
-      }
-    );
+    const nextProg = applyVerifiedMatchRewardToProgression(existing.progression, params);
 
     const updated: PersistentAccountRecord = {
       ...existing,
@@ -715,6 +725,29 @@ export class AccountStore {
     this.saveToDisk();
     this.queueCloudAccountSave(updated);
     return { ok: true, account: updated };
+  }
+
+  /**
+   * Tek bir Firestore Transaction içinde atomik olarak güncellenmiş hesap kaydını
+   * çift yazma veya bakiye ezmesi olmadan bellek indeksine yansıtır.
+   */
+  public applyAuthoritativeAccountSnapshot(
+    record: PersistentAccountRecord
+  ): PersistentAccountRecord {
+    const existing = this.byId.get(record.accountId);
+    const merged: PersistentAccountRecord = {
+      ...record,
+      sessionSecret: record.sessionSecret || existing?.sessionSecret || generateAccountAuthSecret(),
+      googleUid: record.googleUid || existing?.googleUid,
+      verifiedPurchases:
+        record.verifiedPurchases && record.verifiedPurchases.length > 0
+          ? record.verifiedPurchases
+          : existing?.verifiedPurchases || [],
+      updatedAt: Math.max(record.updatedAt || Date.now(), Date.now()),
+    };
+    this.indexRecord(merged);
+    this.saveToDisk();
+    return merged;
   }
 
   /**

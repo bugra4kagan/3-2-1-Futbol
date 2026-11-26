@@ -845,28 +845,43 @@ app.post('/api/matches/complete', async (req, res) => {
     serverVerifiedOpponentScore,
     requireServerOpponentVerification,
     roomClaimKey,
+    fallbackAccountRecord: existing,
+    requireAccountCredit: isFirebaseAdminConfigured(),
   });
 
   if (!outcome.ok) {
-    return res.status(400).json({ ok: false, error: outcome.reason });
+    const statusCode = outcome.retryable ? 503 : outcome.duplicate ? 409 : 400;
+    return res.status(statusCode).json({
+      ok: false,
+      retryable: Boolean(outcome.retryable),
+      duplicate: Boolean(outcome.duplicate),
+      error: outcome.reason,
+    });
   }
 
-  const applied = accountStore.recordVerifiedMatchReward({
-    accountId: cleanId,
-    coinsAwarded: outcome.coinsAwarded,
-    pointsAwarded: outcome.pointsAwarded,
-    won: outcome.won,
-  });
-  if (!applied.ok || !applied.account) {
-    return res.status(500).json({ ok: false, error: 'Ödül işlenemedi.' });
+  let updatedAccount = outcome.creditedAccount
+    ? accountStore.applyAuthoritativeAccountSnapshot(outcome.creditedAccount)
+    : null;
+
+  if (!updatedAccount) {
+    const applied = accountStore.recordVerifiedMatchReward({
+      accountId: cleanId,
+      coinsAwarded: outcome.coinsAwarded,
+      pointsAwarded: outcome.pointsAwarded,
+      won: outcome.won,
+    });
+    if (!applied.ok || !applied.account) {
+      return res.status(500).json({ ok: false, error: 'Ödül işlenemedi.' });
+    }
+    updatedAccount = applied.account;
   }
 
-  liveLeaderboard.set(applied.account.accountId, buildPublicProfileFromRecord(applied.account));
+  liveLeaderboard.set(updatedAccount.accountId, buildPublicProfileFromRecord(updatedAccount));
   const cloudSync = await syncAuthoritativeUserStateAdmin({
-    uid: verifiedUser?.uid || applied.account.googleUid,
-    accountId: applied.account.accountId,
-    profile: applied.account.profile,
-    progression: applied.account.progression,
+    uid: verifiedUser?.uid || updatedAccount.googleUid,
+    accountId: updatedAccount.accountId,
+    profile: updatedAccount.profile,
+    progression: updatedAccount.progression,
     email: verifiedUser?.email,
   });
 
@@ -875,7 +890,7 @@ app.post('/api/matches/complete', async (req, res) => {
     verifiedScore: outcome.verifiedScore,
     coinsAwarded: outcome.coinsAwarded,
     pointsAwarded: outcome.pointsAwarded,
-    progression: applied.account.progression,
+    progression: updatedAccount.progression,
     cloudSync,
   });
 });
