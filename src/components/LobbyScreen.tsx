@@ -2,8 +2,8 @@ import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Users,
+  User,
   Globe,
-  Bot,
   Sparkles,
   Settings,
   KeyRound,
@@ -211,7 +211,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = React.memo(({
               >
                 <WifiOff className="w-4 h-4 text-[#F97316] shrink-0" />
                 <span className="leading-snug text-[#A8B3C2]">
-                  <strong className="text-[#FFFFFF]">Çevrimdışı Mod:</strong> Bota Karşı Oyna internet olmadan sorunsuz çalışır. 1v1 Çevrimiçi Maç için internet gerekir.
+                  <strong className="text-[#FFFFFF]">Çevrimdışı Mod:</strong> Tek Oyunculu mod internet olmadan sorunsuz çalışır. 1v1 Çevrimiçi Maç için internet gerekir.
                 </span>
               </div>
             )}
@@ -291,7 +291,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = React.memo(({
             <ChevronRight className="w-4 h-4 text-[#60A5FA] shrink-0" />
           </button>
 
-          {/* 3. Bota Karşı Oyna — Rich Forest Olive + Orange Accent */}
+          {/* 3. Tek Oyunculu — Rich Forest Olive + Orange Accent */}
           <button
             type="button"
             data-testid="mode-bot-btn"
@@ -300,11 +300,11 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = React.memo(({
           >
             <div className="flex items-center gap-3 min-w-0 flex-1">
               <div className="w-11 h-11 rounded-xl bg-[#F97316]/20 border border-[#F97316]/65 flex items-center justify-center text-[#FB923C] group-hover:scale-105 transition shrink-0">
-                <Bot className="w-5 h-5" />
+                <User className="w-5 h-5" />
               </div>
               <div className="min-w-0 flex-1">
                 <span className="block font-display font-extrabold text-[#FFFFFF] text-lg leading-tight uppercase">
-                  Bota Karşı Oyna
+                  Tek Oyunculu
                 </span>
                 <span className="block text-xs text-[#C4D6CA] truncate">
                   Çırak · Şampiyon · Efsane
