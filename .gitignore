@@ -9,6 +9,11 @@ coverage/
 .data/
 backups/
 *.backup.json
+*.enc
+*.json.enc
+auth-users*.json
+service-account*.json
+*firebase-adminsdk*.json
 
 # Capacitor & Android
 android/.gradle/

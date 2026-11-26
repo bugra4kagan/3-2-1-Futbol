@@ -33,10 +33,13 @@ import {
 } from '../src/game/firebaseAdminService';
 import {
   captureSecurityRulesSnapshot,
+  decryptBackupPayload,
+  encryptBackupPayload,
   exportFirebaseSparkBackup,
   restoreFirebaseSparkBackup,
   restoreSecurityRulesToDirectory,
   verifyFirebaseSparkBackup,
+  type FirebaseSparkBackupSnapshot,
 } from '../src/game/firebaseBackup';
 import { ROSTER_DATA_VERSION } from '../src/game/rosterVersion';
 import { ServerMatchLedger } from '../src/game/serverSecurity';
@@ -1050,12 +1053,20 @@ test('Firebase Admin Firestore Emulator persists accounts, coins, purchases & on
     fs.rmSync(isolatedRulesDir, { recursive: true, force: true });
   }
 
-  // Wipe Firestore Emulator completely, then restore from Spark backup and verify full recovery
+  // Encrypt backup with AES-256-GCM, decrypt in memory, wipe Firestore Emulator, then restore cleanly
+  const emuPass = 'Emulator-Isolated-Restore-Test-2026!';
+  const encryptedBackup = encryptBackupPayload(backupSnapshot, emuPass);
+  assert.equal(JSON.stringify(encryptedBackup).includes('acc_emu_1'), false);
+  const decryptedBackup = decryptBackupPayload<FirebaseSparkBackupSnapshot>(encryptedBackup, emuPass);
+  assert.equal(decryptedBackup.ok, true);
+  if (!decryptedBackup.ok) return;
+
+  // Wipe Firestore Emulator completely, then restore from decrypted Spark backup and verify full recovery
   await testEnv.clearFirestore();
   const restoreRes = await restoreFirebaseSparkBackup({
     db: adminDb as unknown as Parameters<typeof restoreFirebaseSparkBackup>[0]['db'],
     rtdb: null,
-    snapshot: backupSnapshot,
+    snapshot: decryptedBackup.data,
     options: { dryRun: false },
   });
   assert.equal(restoreRes.ok, true);

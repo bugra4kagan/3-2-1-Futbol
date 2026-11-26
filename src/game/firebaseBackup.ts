@@ -4,6 +4,9 @@ import path from 'node:path';
 import { ROSTER_DATA_VERSION } from './rosterVersion';
 
 export const SPARK_BACKUP_SCHEMA_VERSION = '2026.11.26-spark-v1';
+export const FIREBASE_AUTH_BACKUP_SCHEMA_VERSION = '2026.11.26-auth-v1';
+export const ENCRYPTED_BACKUP_FORMAT_VERSION = '321futbol-aes256gcm-v1';
+export const MIN_BACKUP_PASSPHRASE_LENGTH = 12;
 
 /**
  * Gerçek Firestore koleksiyonları (src/game/firebaseAdminService.ts ve firestore.rules ile %100 uyumlu).
@@ -31,21 +34,99 @@ export type SparkBackupRtdbPath = (typeof SPARK_BACKUP_RTDB_PATHS)[number];
 export const SPARK_BACKUP_COVERAGE_METADATA = {
   includedFirestoreCollections: [...SPARK_BACKUP_FIRESTORE_COLLECTIONS],
   includedRtdbPaths: [...SPARK_BACKUP_RTDB_PATHS],
-  includedSecurityRulesFiles: ['firestore.rules', 'database.rules.json'],
+  includedLiveSecurityRules: ['firebase_live:firestore.rules', 'firebase_live:database.rules.json'],
+  includedCandidateRepoSecurityRules: ['git_candidate:firestore.rules', 'git_candidate:database.rules.json'],
+  separateAuthBackupArtifacts: [
+    'backups/firebase-auth-backup-<ts>.json.enc (Admin SDK listUsers metadata/provider yedeği, AES-256-GCM şifreli)',
+    'firebase auth:export backups/auth-users.json --format=json (Firebase CLI ile parola özetleri dahil tam Auth yedeği, ardından AES-256-GCM şifrelenmeli)',
+  ],
   excludedEphemeralCollections: ['rooms'],
   excludedEphemeralSubcollections: ['matchmaking/{minigameType}/queue'],
   excludedExternalSystems: [
-    'Firebase Authentication kullanıcı kayıtları (ücretsiz `firebase auth:export` ile ayrı alınır; `backend_accounts.googleUid` ve `recoveryCode` üzerinden yeniden eşlenir)',
     'Firebase Console proje ayarları ve özel indeks tanımları (Spark planı sorguları özel bileşik indeks gerektirmeyecek şekilde tasarlanmıştır)',
     'Sunucu gizli ortam değişkenleri (`FIREBASE_SERVICE_ACCOUNT_JSON`, `SESSION_SECRET`, `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON` — güvenlik gereği asla yedeğe dahil edilmez)',
   ],
 } as const;
 
 export interface SecurityRulesBackupSnapshot {
+  source?: 'git_candidate';
   firestoreRules: string;
   firestoreRulesSha256: string;
   databaseRulesJson: string;
   databaseRulesSha256: string;
+}
+
+export interface LiveSecurityRulesBackupSnapshot {
+  source: 'firebase_live';
+  fetchedAtIso: string;
+  firestoreRulesetName: string | null;
+  firestoreRules: string | null;
+  firestoreRulesSha256: string | null;
+  databaseRulesJson: string | null;
+  databaseRulesSha256: string | null;
+}
+
+export interface EncryptedBackupEnvelope {
+  format: typeof ENCRYPTED_BACKUP_FORMAT_VERSION;
+  kdf: 'scrypt';
+  cipher: 'aes-256-gcm';
+  saltHex: string;
+  ivHex: string;
+  authTagHex: string;
+  ciphertextBase64: string;
+  encryptedAtIso: string;
+}
+
+export interface FirebaseAuthBackupUser {
+  uid: string;
+  email: string | null;
+  emailVerified: boolean;
+  displayName: string | null;
+  disabled: boolean;
+  providerIds: string[];
+  creationTime: string | null;
+  lastSignInTime: string | null;
+}
+
+export interface FirebaseAuthBackupPayload {
+  schemaVersion: string;
+  createdAtIso: string;
+  projectId: string | null;
+  users: FirebaseAuthBackupUser[];
+}
+
+export interface FirebaseAuthBackupSnapshot extends FirebaseAuthBackupPayload {
+  userCount: number;
+  checksumSha256: string;
+}
+
+export interface BackupAuthLike {
+  listUsers(
+    maxResults?: number,
+    pageToken?: string
+  ): Promise<{
+    users: Array<{
+      uid: string;
+      email?: string;
+      emailVerified?: boolean;
+      displayName?: string;
+      disabled?: boolean;
+      providerData?: Array<{ providerId?: string }>;
+      metadata?: { creationTime?: string; lastSignInTime?: string };
+    }>;
+    pageToken?: string;
+  }>;
+}
+
+export interface BackupLiveSecurityRulesApiLike {
+  getFirestoreRuleset(): Promise<{
+    name?: string;
+    source?: Array<{ name?: string; content?: string }>;
+  }>;
+}
+
+export interface BackupLiveRtdbRulesApiLike {
+  getRules(): Promise<string>;
 }
 
 export interface FirebaseSparkBackupDocument {
@@ -61,6 +142,7 @@ export interface FirebaseSparkBackupPayload {
   collections: Record<SparkBackupCollectionName, FirebaseSparkBackupDocument[]>;
   rtdb: Record<SparkBackupRtdbPath, Record<string, unknown> | null>;
   securityRules?: SecurityRulesBackupSnapshot | null;
+  liveSecurityRules?: LiveSecurityRulesBackupSnapshot | null;
 }
 
 export interface FirebaseSparkBackupSnapshot extends FirebaseSparkBackupPayload {
@@ -376,11 +458,267 @@ export function captureSecurityRulesSnapshot(
   const firestoreRules = fs.readFileSync(firestorePath, 'utf8');
   const databaseRulesJson = fs.readFileSync(databasePath, 'utf8');
   return {
+    source: 'git_candidate',
     firestoreRules,
     firestoreRulesSha256: sha256Text(firestoreRules),
     databaseRulesJson,
     databaseRulesSha256: sha256Text(databaseRulesJson),
   };
+}
+
+/**
+ * Canlı Firebase projesinde şu an YAYINDA OLAN Firestore ve RTDB güvenlik kurallarını
+ * Git'teki aday kurallarla karıştırmadan ayrı olarak yedekler (Spark planı + Admin SDK).
+ */
+export async function fetchLiveSecurityRulesBackup(params: {
+  securityRulesApi?: BackupLiveSecurityRulesApiLike | null;
+  rtdbRulesApi?: BackupLiveRtdbRulesApiLike | null;
+  now?: Date;
+}): Promise<LiveSecurityRulesBackupSnapshot> {
+  let firestoreRulesetName: string | null = null;
+  let firestoreRules: string | null = null;
+  let databaseRulesJson: string | null = null;
+
+  if (params.securityRulesApi) {
+    const ruleset = await params.securityRulesApi.getFirestoreRuleset();
+    firestoreRulesetName = typeof ruleset?.name === 'string' ? ruleset.name : null;
+    const primaryFile = Array.isArray(ruleset?.source)
+      ? ruleset.source.find((f) => typeof f?.content === 'string')
+      : undefined;
+    firestoreRules = primaryFile?.content ?? null;
+  }
+
+  if (params.rtdbRulesApi) {
+    const rawRtdbRules = await params.rtdbRulesApi.getRules();
+    databaseRulesJson = typeof rawRtdbRules === 'string' ? rawRtdbRules : null;
+  }
+
+  return {
+    source: 'firebase_live',
+    fetchedAtIso: (params.now || new Date()).toISOString(),
+    firestoreRulesetName,
+    firestoreRules,
+    firestoreRulesSha256: firestoreRules !== null ? sha256Text(firestoreRules) : null,
+    databaseRulesJson,
+    databaseRulesSha256: databaseRulesJson !== null ? sha256Text(databaseRulesJson) : null,
+  };
+}
+
+/**
+ * Yalnızca canlı Firebase'den yedeklenmiş güvenlik kurallarını (`source: 'firebase_live'`)
+ * izole bir dizine geri yazar; Git aday kurallarıyla asla karıştırmaz.
+ */
+export function restoreLiveSecurityRulesToDirectory(params: {
+  snapshot: FirebaseSparkBackupSnapshot;
+  targetDir: string;
+  dryRun?: boolean;
+}): {
+  ok: boolean;
+  dryRun: boolean;
+  error?: string;
+  firestoreRulesPath?: string;
+  databaseRulesPath?: string;
+} {
+  const dryRun = params.dryRun ?? false;
+  const verify = verifyFirebaseSparkBackup(params.snapshot);
+  if (!verify.ok) {
+    return { ok: false, dryRun, error: verify.error };
+  }
+  const live = params.snapshot.liveSecurityRules;
+  if (!live || live.source !== 'firebase_live') {
+    return {
+      ok: false,
+      dryRun,
+      error: 'Yedek dosyasında canlı Firebase güvenlik kuralları (firebase_live) bulunmuyor.',
+    };
+  }
+  const firestoreRulesPath = path.resolve(params.targetDir, 'live.firestore.rules');
+  const databaseRulesPath = path.resolve(params.targetDir, 'live.database.rules.json');
+  if (!dryRun) {
+    fs.mkdirSync(params.targetDir, { recursive: true });
+    if (live.firestoreRules !== null) {
+      fs.writeFileSync(firestoreRulesPath, live.firestoreRules, 'utf8');
+    }
+    if (live.databaseRulesJson !== null) {
+      fs.writeFileSync(databaseRulesPath, live.databaseRulesJson, 'utf8');
+    }
+  }
+  return {
+    ok: true,
+    dryRun,
+    firestoreRulesPath: live.firestoreRules !== null ? firestoreRulesPath : undefined,
+    databaseRulesPath: live.databaseRulesJson !== null ? databaseRulesPath : undefined,
+  };
+}
+
+/**
+ * Yedek verisini AES-256-GCM + scrypt ile şifreler (yerel gizli saklama için; ücretli servis gerektirmez).
+ */
+export function encryptBackupPayload(
+  payload: unknown,
+  passphrase: string,
+  now: Date = new Date()
+): EncryptedBackupEnvelope {
+  const cleanPass = String(passphrase || '');
+  if (cleanPass.length < MIN_BACKUP_PASSPHRASE_LENGTH) {
+    throw new Error(
+      `Yedek şifreleme parolası en az ${MIN_BACKUP_PASSPHRASE_LENGTH} karakter olmalıdır.`
+    );
+  }
+  const salt = crypto.randomBytes(16);
+  const iv = crypto.randomBytes(12);
+  const key = crypto.scryptSync(cleanPass, salt, 32);
+  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+  const plaintext = Buffer.from(JSON.stringify(payload), 'utf8');
+  const encrypted = Buffer.concat([cipher.update(plaintext), cipher.final()]);
+  const authTag = cipher.getAuthTag();
+  return {
+    format: ENCRYPTED_BACKUP_FORMAT_VERSION,
+    kdf: 'scrypt',
+    cipher: 'aes-256-gcm',
+    saltHex: salt.toString('hex'),
+    ivHex: iv.toString('hex'),
+    authTagHex: authTag.toString('hex'),
+    ciphertextBase64: encrypted.toString('base64'),
+    encryptedAtIso: now.toISOString(),
+  };
+}
+
+export function isEncryptedBackupEnvelope(raw: unknown): raw is EncryptedBackupEnvelope {
+  if (!raw || typeof raw !== 'object') return false;
+  const rec = raw as Partial<EncryptedBackupEnvelope>;
+  return (
+    rec.format === ENCRYPTED_BACKUP_FORMAT_VERSION &&
+    rec.cipher === 'aes-256-gcm' &&
+    typeof rec.saltHex === 'string' &&
+    typeof rec.ivHex === 'string' &&
+    typeof rec.authTagHex === 'string' &&
+    typeof rec.ciphertextBase64 === 'string'
+  );
+}
+
+/**
+ * Şifreli AES-256-GCM yedeği bellekte çözer (diske şifresiz kopya yazmaz).
+ */
+export function decryptBackupPayload<T = unknown>(
+  envelope: EncryptedBackupEnvelope,
+  passphrase: string
+): { ok: true; data: T } | { ok: false; error: string } {
+  if (!isEncryptedBackupEnvelope(envelope)) {
+    return { ok: false, error: 'Geçersiz şifreli yedek zarfı.' };
+  }
+  const cleanPass = String(passphrase || '');
+  if (cleanPass.length < MIN_BACKUP_PASSPHRASE_LENGTH) {
+    return {
+      ok: false,
+      error: `Şifre çözme parolası en az ${MIN_BACKUP_PASSPHRASE_LENGTH} karakter olmalıdır.`,
+    };
+  }
+  try {
+    const salt = Buffer.from(envelope.saltHex, 'hex');
+    const iv = Buffer.from(envelope.ivHex, 'hex');
+    const authTag = Buffer.from(envelope.authTagHex, 'hex');
+    const ciphertext = Buffer.from(envelope.ciphertextBase64, 'base64');
+    const key = crypto.scryptSync(cleanPass, salt, 32);
+    const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
+    decipher.setAuthTag(authTag);
+    const decrypted = Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString('utf8');
+    return { ok: true, data: JSON.parse(decrypted) as T };
+  } catch {
+    return {
+      ok: false,
+      error: 'Şifreli yedek açılamadı (yanlış parola veya değiştirilmiş/bozulmuş şifreli dosya).',
+    };
+  }
+}
+
+/**
+ * Firebase Authentication kullanıcılarını ücretsiz Spark planında ayrı bir SHA-256 doğrulamalı
+ * yedek nesnesi olarak dışa aktarır (Admin SDK listUsers; parola özetleri için ek olarak `firebase auth:export` önerilir).
+ */
+export async function exportFirebaseAuthUsersBackup(params: {
+  auth: BackupAuthLike;
+  projectId?: string | null;
+  now?: Date;
+}): Promise<FirebaseAuthBackupSnapshot> {
+  const users: FirebaseAuthBackupUser[] = [];
+  let nextPageToken: string | undefined;
+  do {
+    const page = await params.auth.listUsers(1000, nextPageToken);
+    for (const u of page.users || []) {
+      users.push({
+        uid: u.uid,
+        email: u.email ?? null,
+        emailVerified: Boolean(u.emailVerified),
+        displayName: u.displayName ?? null,
+        disabled: Boolean(u.disabled),
+        providerIds: Array.isArray(u.providerData)
+          ? u.providerData
+              .map((p) => (typeof p?.providerId === 'string' ? p.providerId : ''))
+              .filter(Boolean)
+          : [],
+        creationTime: u.metadata?.creationTime ?? null,
+        lastSignInTime: u.metadata?.lastSignInTime ?? null,
+      });
+    }
+    nextPageToken = page.pageToken;
+  } while (nextPageToken);
+
+  users.sort((a, b) => a.uid.localeCompare(b.uid));
+  const payload: FirebaseAuthBackupPayload = {
+    schemaVersion: FIREBASE_AUTH_BACKUP_SCHEMA_VERSION,
+    createdAtIso: (params.now || new Date()).toISOString(),
+    projectId: params.projectId ?? null,
+    users,
+  };
+  const secretCheck = assertNoSecretMaterialInBackup(payload);
+  if (!secretCheck.ok) {
+    throw new Error(secretCheck.reason || 'Auth backup secret check failed');
+  }
+  const checksumSha256 = crypto
+    .createHash('sha256')
+    .update(canonicalJson(payload))
+    .digest('hex');
+
+  return {
+    ...payload,
+    userCount: users.length,
+    checksumSha256,
+  };
+}
+
+export function verifyFirebaseAuthBackup(snapshot: unknown): { ok: boolean; error?: string } {
+  if (!snapshot || typeof snapshot !== 'object') {
+    return { ok: false, error: 'Geçersiz Auth yedek nesnesi.' };
+  }
+  const candidate = snapshot as Partial<FirebaseAuthBackupSnapshot>;
+  if (candidate.schemaVersion !== FIREBASE_AUTH_BACKUP_SCHEMA_VERSION) {
+    return {
+      ok: false,
+      error: `Desteklenmeyen Auth yedek şema sürümü: ${String(candidate.schemaVersion)}`,
+    };
+  }
+  if (!Array.isArray(candidate.users)) {
+    return { ok: false, error: 'Auth yedeğinde users listesi eksik.' };
+  }
+  if (typeof candidate.checksumSha256 !== 'string' || candidate.checksumSha256.length !== 64) {
+    return { ok: false, error: 'Auth yedeğinde SHA-256 sağlama toplamı eksik.' };
+  }
+  const secretCheck = assertNoSecretMaterialInBackup(candidate);
+  if (!secretCheck.ok) {
+    return { ok: false, error: secretCheck.reason };
+  }
+  const payload: FirebaseAuthBackupPayload = {
+    schemaVersion: candidate.schemaVersion,
+    createdAtIso: String(candidate.createdAtIso || ''),
+    projectId: candidate.projectId ?? null,
+    users: candidate.users,
+  };
+  const expected = crypto.createHash('sha256').update(canonicalJson(payload)).digest('hex');
+  if (expected !== candidate.checksumSha256) {
+    return { ok: false, error: 'Auth yedeği SHA-256 bütünlük doğrulaması başarısız.' };
+  }
+  return { ok: true };
 }
 
 /**
@@ -430,6 +768,7 @@ export async function exportFirebaseSparkBackup(params: {
   rtdb?: BackupRtdbLike | null;
   projectId?: string | null;
   securityRules?: SecurityRulesBackupSnapshot | null;
+  liveSecurityRules?: LiveSecurityRulesBackupSnapshot | null;
   now?: Date;
 }): Promise<FirebaseSparkBackupSnapshot> {
   const collections = {} as Record<SparkBackupCollectionName, FirebaseSparkBackupDocument[]>;
@@ -477,6 +816,9 @@ export async function exportFirebaseSparkBackup(params: {
     collections,
     rtdb: rtdbData,
     ...(params.securityRules !== undefined ? { securityRules: params.securityRules } : {}),
+    ...(params.liveSecurityRules !== undefined
+      ? { liveSecurityRules: params.liveSecurityRules }
+      : {}),
   };
 
   const secretCheck = assertNoSecretMaterialInBackup(payload);
@@ -556,6 +898,29 @@ export function verifyFirebaseSparkBackup(snapshot: unknown): { ok: boolean; err
     }
   }
 
+  if (candidate.liveSecurityRules) {
+    const lr = candidate.liveSecurityRules;
+    if (lr.source !== 'firebase_live') {
+      return { ok: false, error: 'liveSecurityRules kaynağı firebase_live olmalıdır.' };
+    }
+    if (
+      lr.firestoreRules !== null &&
+      (typeof lr.firestoreRules !== 'string' ||
+        typeof lr.firestoreRulesSha256 !== 'string' ||
+        sha256Text(lr.firestoreRules) !== lr.firestoreRulesSha256)
+    ) {
+      return { ok: false, error: 'Canlı firestore.rules SHA-256 doğrulaması başarısız.' };
+    }
+    if (
+      lr.databaseRulesJson !== null &&
+      (typeof lr.databaseRulesJson !== 'string' ||
+        typeof lr.databaseRulesSha256 !== 'string' ||
+        sha256Text(lr.databaseRulesJson) !== lr.databaseRulesSha256)
+    ) {
+      return { ok: false, error: 'Canlı database.rules.json SHA-256 doğrulaması başarısız.' };
+    }
+  }
+
   const payload: FirebaseSparkBackupPayload = {
     schemaVersion: candidate.schemaVersion,
     createdAtIso: String(candidate.createdAtIso || ''),
@@ -564,6 +929,9 @@ export function verifyFirebaseSparkBackup(snapshot: unknown): { ok: boolean; err
     collections: candidate.collections as Record<SparkBackupCollectionName, FirebaseSparkBackupDocument[]>,
     rtdb: candidate.rtdb as Record<SparkBackupRtdbPath, Record<string, unknown> | null>,
     ...(candidate.securityRules !== undefined ? { securityRules: candidate.securityRules } : {}),
+    ...(candidate.liveSecurityRules !== undefined
+      ? { liveSecurityRules: candidate.liveSecurityRules }
+      : {}),
   };
   const expectedChecksum = computeBackupChecksum(payload);
   if (expectedChecksum !== candidate.checksumSha256) {

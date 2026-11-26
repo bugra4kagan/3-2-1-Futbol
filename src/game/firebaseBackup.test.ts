@@ -9,13 +9,21 @@ import {
   SPARK_BACKUP_RTDB_PATHS,
   assertNoSecretMaterialInBackup,
   captureSecurityRulesSnapshot,
+  decryptBackupPayload,
+  encryptBackupPayload,
+  exportFirebaseAuthUsersBackup,
   exportFirebaseSparkBackup,
+  fetchLiveSecurityRulesBackup,
+  isEncryptedBackupEnvelope,
   reconcileLegacyUserWithAuthoritativeAccount,
   restoreFirebaseSparkBackup,
+  restoreLiveSecurityRulesToDirectory,
   restoreSecurityRulesToDirectory,
+  verifyFirebaseAuthBackup,
   verifyFirebaseSparkBackup,
   type BackupFirestoreLike,
   type BackupRtdbLike,
+  type FirebaseSparkBackupSnapshot,
 } from './firebaseBackup';
 
 function createInMemoryFirebaseStores() {
@@ -80,10 +88,16 @@ test('Spark backup covers all real Firestore collections, RTDB leaderboard, and 
   assert.deepEqual(SPARK_BACKUP_COVERAGE_METADATA.excludedEphemeralSubcollections, [
     'matchmaking/{minigameType}/queue',
   ]);
-  assert.ok(SPARK_BACKUP_COVERAGE_METADATA.excludedExternalSystems.length >= 3);
+  assert.ok(SPARK_BACKUP_COVERAGE_METADATA.includedLiveSecurityRules.length === 2);
+  assert.ok(SPARK_BACKUP_COVERAGE_METADATA.separateAuthBackupArtifacts.length >= 2);
+  assert.ok(SPARK_BACKUP_COVERAGE_METADATA.excludedExternalSystems.length >= 2);
 
   const gitignore = fs.readFileSync(path.resolve(process.cwd(), '.gitignore'), 'utf8');
   assert.ok(gitignore.includes('backups/'), '.gitignore must exclude local backups/ directory');
+  assert.ok(gitignore.includes('*.enc'), '.gitignore must exclude encrypted backups');
+  assert.ok(gitignore.includes('auth-users*.json'), '.gitignore must exclude auth exports');
+  assert.ok(gitignore.includes('service-account*.json'), '.gitignore must exclude service account keys');
+  assert.ok(gitignore.includes('*firebase-adminsdk*.json'), '.gitignore must exclude firebase adminsdk keys');
 });
 
 test('Spark backup export -> SHA-256 verification -> tamper rejection -> isolated restore round-trip', async () => {
@@ -295,4 +309,123 @@ test('security rules snapshot backs up firestore.rules & database.rules.json wit
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
+});
+
+test('AES-256-GCM backup encryption, separate live vs Git rules, and Firebase Auth backup round-trip cleanly', async () => {
+  const source = createInMemoryFirebaseStores();
+  await source.db.collection('backend_accounts').doc('acc_enc_1').set({
+    accountId: 'acc_enc_1',
+    googleUid: 'uid_enc_1',
+    progression: { coins: 777, weeklyPoints: 120, totalPoints: 900 },
+  });
+
+  // Live rules fetched from Firebase are kept STRICTLY distinct from Git candidate rules
+  const liveRules = await fetchLiveSecurityRulesBackup({
+    securityRulesApi: {
+      async getFirestoreRuleset() {
+        return {
+          name: 'projects/futbol-9013e/rulesets/live-old-ruleset-123',
+          source: [{ name: 'firestore.rules', content: "rules_version = '2'; // CURRENT LIVE RULES" }],
+        };
+      },
+    },
+    rtdbRulesApi: {
+      async getRules() {
+        return '{"rules":{".read":false,".write":false,"leaderboard":{".read":"auth != null"}}}';
+      },
+    },
+  });
+  const candidateRules = captureSecurityRulesSnapshot(process.cwd());
+  assert.equal(liveRules.source, 'firebase_live');
+  assert.equal(candidateRules.source, 'git_candidate');
+  assert.notEqual(liveRules.firestoreRulesSha256, candidateRules.firestoreRulesSha256);
+
+  const snapshot = await exportFirebaseSparkBackup({
+    db: source.db,
+    rtdb: source.rtdb,
+    projectId: 'futbol-9013e',
+    securityRules: candidateRules,
+    liveSecurityRules: liveRules,
+  });
+  assert.equal(verifyFirebaseSparkBackup(snapshot).ok, true);
+
+  // Short passphrase rejected
+  assert.throws(() => encryptBackupPayload(snapshot, 'short'), /en az 12 karakter/);
+
+  // Encrypt with AES-256-GCM + scrypt -> ciphertext contains ZERO plaintext account/coin strings
+  const passphrase = 'Test-Strong-Backup-Passphrase-2026!';
+  const envelope = encryptBackupPayload(snapshot, passphrase);
+  assert.equal(isEncryptedBackupEnvelope(envelope), true);
+  assert.equal(JSON.stringify(envelope).includes('acc_enc_1'), false);
+  assert.equal(JSON.stringify(envelope).includes('CURRENT LIVE RULES'), false);
+
+  // Wrong passphrase MUST fail decryption
+  assert.equal(decryptBackupPayload(envelope, 'Wrong-Passphrase-123456').ok, false);
+
+  // Tampered ciphertext MUST fail GCM authentication tag check
+  const tamperedEnv = { ...envelope, ciphertextBase64: 'AAAA' + envelope.ciphertextBase64.slice(4) };
+  assert.equal(decryptBackupPayload(tamperedEnv, passphrase).ok, false);
+
+  // Valid decrypt restores identical snapshot + SHA-256 verifies
+  const decrypted = decryptBackupPayload<FirebaseSparkBackupSnapshot>(envelope, passphrase);
+  assert.equal(decrypted.ok, true);
+  if (!decrypted.ok) return;
+  assert.equal(verifyFirebaseSparkBackup(decrypted.data).ok, true);
+
+  // Restoring LIVE rules to isolated dir writes live.firestore.rules (NOT Git candidate rules!)
+  const tmpLiveDir = fs.mkdtempSync(path.join(os.tmpdir(), 'futbol-live-rules-'));
+  try {
+    const liveRestore = restoreLiveSecurityRulesToDirectory({
+      snapshot: decrypted.data,
+      targetDir: tmpLiveDir,
+      dryRun: false,
+    });
+    assert.equal(liveRestore.ok, true);
+    assert.equal(
+      fs.readFileSync(path.join(tmpLiveDir, 'live.firestore.rules'), 'utf8'),
+      "rules_version = '2'; // CURRENT LIVE RULES"
+    );
+  } finally {
+    fs.rmSync(tmpLiveDir, { recursive: true, force: true });
+  }
+
+  // Separate Firebase Authentication users backup + encryption + tamper rejection
+  const authBackup = await exportFirebaseAuthUsersBackup({
+    auth: {
+      async listUsers(_max, pageToken) {
+        if (!pageToken) {
+          return {
+            users: [
+              {
+                uid: 'uid_enc_1',
+                email: 'kaptan@example.com',
+                emailVerified: true,
+                displayName: 'Kaptan',
+                providerData: [{ providerId: 'google.com' }],
+                metadata: { creationTime: '2026-01-01T00:00:00Z' },
+              },
+            ],
+            pageToken: 'p2',
+          };
+        }
+        return {
+          users: [
+            {
+              uid: 'uid_anon_2',
+              providerData: [],
+            },
+          ],
+        };
+      },
+    },
+    projectId: 'futbol-9013e',
+  });
+  assert.equal(authBackup.userCount, 2);
+  assert.equal(verifyFirebaseAuthBackup(authBackup).ok, true);
+
+  const encAuth = encryptBackupPayload(authBackup, passphrase);
+  assert.equal(JSON.stringify(encAuth).includes('kaptan@example.com'), false);
+  const decAuth = decryptBackupPayload(encAuth, passphrase);
+  assert.equal(decAuth.ok, true);
+  if (decAuth.ok) assert.equal(verifyFirebaseAuthBackup(decAuth.data).ok, true);
 });
