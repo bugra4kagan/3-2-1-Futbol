@@ -200,14 +200,18 @@ test('career chronology sorter preserves same-year order without guessing, and a
   assert.ok(!PLAYERS['jamal_musiala_q96072055']);
   assert.ok(PLAYERS['luis_suarez'] && PLAYERS['luis_suarez_q28736721'], 'Uruguay & Colombia Luis Suárez homonyms must both stay distinct');
 
-  // 4. Verified 26 Nov 2026 transfers, loan separation, free agents & retirements
+  // 4. Verified 26 Nov 2026 transfers, loan separation, free agents, verified retirements & 345-club linking
   assert.equal(PLAYERS['cenk_tosun'].clubId, 'kasimpasa');
   assert.equal(PLAYERS['dusan_tadic'].clubId, 'nec_nijmegen');
   assert.equal(PLAYERS['vincent_aboubakar'].clubId, 'bodrum_fk');
   assert.equal(PLAYERS['tijjani_reijnders'].clubId, 'al_qadsiah');
   assert.equal(PLAYERS['hakim_ziyech'].clubId, 'botafogo_fr');
+  assert.equal(PLAYERS['cristiano_ronaldo'].clubId, 'al_nassr');
+  assert.equal(PLAYERS['lionel_messi'].clubId, 'inter_miami');
+  assert.equal(PLAYERS['son_heung_min'].clubId, 'los_angeles_fc');
+  assert.equal(PLAYERS['gabriel_paulista'].clubId, 'sc_corinthians_paulista');
   assert.equal(PLAYERS['fred'].clubName, 'Clube Atlético Mineiro');
-  assert.equal(PLAYERS['fred'].clubId, undefined, 'Stale Fenerbahçe clubId must be cleared for Fred');
+  assert.equal(PLAYERS['fred'].clubId, 'clube_atletico_mineiro', 'Stale Fenerbahçe clubId must be replaced by Clube Atlético Mineiro');
   assert.equal(PLAYERS['emre_mor'].clubName, 'Kulüpsüz');
   assert.equal(PLAYERS['emre_mor'].clubId, undefined);
   assert.equal(PLAYERS['mauro_icardi'].clubName, 'Kulüpsüz');
@@ -216,6 +220,8 @@ test('career chronology sorter preserves same-year order without guessing, and a
   assert.equal(PLAYERS['ronald_araujo'].clubName, 'Liverpool FC (Kiralık)');
   assert.match(PLAYERS['ciro_immobile'].clubName || '', /\(Emekli\)$/);
   assert.match(PLAYERS['ivan_rakitic'].clubName || '', /\(Emekli\)$/);
+  // Unverified veterans age >= 45 MUST NOT be auto-marked retired by age alone (e.g. active GK Fábio age 46)
+  assert.equal(PLAYERS['fabio_q677923'].clubName, 'Fluminense FC');
 
   // 5. Google Play compliance gates stay off
   assert.equal(isAdsEnabled(), false);

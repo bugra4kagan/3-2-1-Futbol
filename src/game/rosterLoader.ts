@@ -7,6 +7,7 @@ import {
   extractCareerEndYear,
   extractCareerStartYear,
   isCareerChronologyVerified,
+  isReserveOrYouthClubName,
   normalizeCareerYearRange,
   sortAndCleanCareerHistory,
 } from './expandedQuestionPools';
@@ -395,6 +396,87 @@ export function hydrateCompactRoster(data: CompactRosterPayload): RosterHydratio
 
     if (qFlag === 1) {
       QUESTION_ELIGIBLE_PLAYER_IDS.add(id);
+    }
+  }
+
+  // 3b. Back-link any exact/unambiguous 345-club matches onto base & compact players + senior steps
+  const normClubName = (raw: string): string =>
+    raw
+      .replace(/\s*\((?:Kiralık|Emekli|Efsane|Altyapı)[^)]*\)$/i, '')
+      .toLowerCase()
+      .normalize('NFKD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/ı/g, 'i')
+      .replace(/ş/g, 's')
+      .replace(/ç/g, 'c')
+      .replace(/ğ/g, 'g')
+      .replace(/ü/g, 'u')
+      .replace(/ö/g, 'o')
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim();
+
+  const exact345Map = new Map<string, string>();
+  for (const [cid, club] of Object.entries(CLUBS)) {
+    const key = normClubName(club.name);
+    if (key && !exact345Map.has(key)) exact345Map.set(key, cid);
+  }
+  const safeAliasToId: Array<[string, string]> = [
+    ['corinthians', 'sc_corinthians_paulista'],
+    ['sao paulo', 'sao_paulo_fc'],
+    ['atletico mineiro', 'clube_atletico_mineiro'],
+    ['vasco da gama', 'cr_vasco_da_gama'],
+    ['dinamo zagreb', 'gnk_dinamo_zagreb'],
+    ['hajduk split', 'hnk_hajduk_split'],
+    ['botafogo fr', 'botafogo_fr'],
+    ['nec nijmegen', 'nec_nijmegen'],
+    ['al ahli saudi', 'al_ahli_saudi'],
+    ['al qadsiah', 'al_qadsiah'],
+    ['burnley fc', 'burnley_f_c'],
+    ['cd leganes', 'cd_leganes'],
+    ['man united', 'manchester_united'],
+    ['man city', 'manchester_city'],
+    ['rams basaksehir', 'basaksehir'],
+    ['istanbul basaksehir', 'basaksehir'],
+    ['olympique marsilya', 'marseille'],
+    ['olympique lyon', 'lyon'],
+    ['olympique lyonnais', 'lyon'],
+    ['losc lille', 'lille'],
+    ['fc bayern munih', 'bayern_munich'],
+    ['bayern munich', 'bayern_munich'],
+    ['bayer 04 leverkusen', 'bayer_leverkusen'],
+    ['ajax', 'ajax'],
+    ['krc genk', 'krc_genk'],
+    ['az alkmaar', 'az_alkmaar'],
+    ['los angeles fc', 'los_angeles_fc'],
+  ];
+  for (const [aliasKey, cid] of safeAliasToId) {
+    if (CLUBS[cid] && !exact345Map.has(aliasKey)) {
+      exact345Map.set(aliasKey, cid);
+    }
+  }
+
+  for (const player of PLAYERS_LIST) {
+    if (!player.clubId && player.clubName && player.clubName !== 'Kulüpsüz' && !player.clubName.includes('/')) {
+      const bare = player.clubName.replace(/\s*\((?:Kiralık|Emekli|Efsane)[^)]*\)$/i, '').trim();
+      if (!isReserveOrYouthClubName(bare)) {
+        const matched = exact345Map.get(normClubName(bare));
+        if (matched && CLUBS[matched]) {
+          player.clubId = matched;
+          if (PLAYER_ASSETS[player.id]) {
+            PLAYER_ASSETS[player.id].clubId = matched;
+          }
+        }
+      }
+    }
+    for (const step of player.careerHistory || []) {
+      if (step.isYouth || step.clubId) continue;
+      const bare = step.club.replace(/\s*\((?:Kiralık|Emekli|Efsane)[^)]*\)$/i, '').trim();
+      if (isReserveOrYouthClubName(bare)) continue;
+      const matched = exact345Map.get(normClubName(bare));
+      if (matched && CLUBS[matched]) {
+        step.clubId = matched;
+        step.countryFlag = CLUBS[matched].countryFlag;
+      }
     }
   }
 
