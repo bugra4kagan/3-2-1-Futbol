@@ -30,6 +30,7 @@ import {
   chooseBotXoxCell,
   computeHumanizedBotDelayMs,
   decideBotRoundAction,
+  decideBotXoxAction,
   getBotRoundPlan,
   getBotXoxTurnConfig,
   pickBotValidPlayer,
@@ -379,7 +380,11 @@ export const MinigameArenaView: React.FC<MinigameArenaViewProps> = React.memo(({
     }
 
     botOnStatusRef.current?.('thinking');
-    const { delayMs, missRate } = getBotXoxTurnConfig(botDifficulty);
+    const currentSecLeft = botGetTimeRemainingRef.current
+      ? botGetTimeRemainingRef.current()
+      : botTimeRemainingRef.current;
+    const maxRemainingMs = Math.max(1000, currentSecLeft * 1000);
+    const xoxTurnCfg = getBotXoxTurnConfig(botDifficulty, Math.random, maxRemainingMs);
 
     const t = setTimeout(() => {
       const curState = botXoxStateRef.current;
@@ -389,6 +394,14 @@ export const MinigameArenaView: React.FC<MinigameArenaViewProps> = React.memo(({
       const moveCb = botOnXoxMoveRef.current;
       if (botDisabledRef.current || !curState || !moveCb) return;
       if (curState.currentTurnPlayerId !== p2.id) return;
+
+      const xoxAction = decideBotXoxAction(xoxTurnCfg);
+      if (xoxAction === 'pass') {
+        // Bot cannot find a player this turn -> realistically lets turn timer expire
+        botOnStatusRef.current?.('idle');
+        return;
+      }
+
       botOnStatusRef.current?.('answered');
 
       const chosenCell = chooseBotXoxCell(
@@ -402,7 +415,7 @@ export const MinigameArenaView: React.FC<MinigameArenaViewProps> = React.memo(({
 
       const validIds = getRoundValidPlayerIds(curRound, chosenCell);
 
-      if (Math.random() < missRate) {
+      if (xoxAction === 'wrong') {
         const wrongPlayer = pickBotWrongPlayer(validIds);
         botOnWrongRef.current?.(wrongPlayer?.name || '');
         moveCb(
@@ -440,7 +453,7 @@ export const MinigameArenaView: React.FC<MinigameArenaViewProps> = React.memo(({
 
       const isEnded = Boolean(winCheck.winnerId) || winCheck.isBoardFull;
       moveCb(nextState, winCheck.winnerId, isEnded, playerName, true);
-    }, delayMs);
+    }, xoxTurnCfg.delayMs);
 
     return () => clearTimeout(t);
   }, [roundKey, isBotMatch, isOnlineMatch, disabled, isXox, xoxTurnOwner, xoxMoveCount, botDifficulty]);

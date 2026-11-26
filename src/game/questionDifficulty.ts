@@ -1,4 +1,6 @@
 import { CLUBS, MATCH_PAIRINGS, PLAYERS } from './database';
+import rawPlayersData from '../data/players.json';
+import { EXTRA_PLAYERS_50 } from './extraPlayers50';
 import {
   CAREER_CHALLENGES,
   COUNTRY_CLUB_CHALLENGES,
@@ -38,11 +40,11 @@ export interface DifficultyDistribution {
 }
 
 export const DIFFICULTY_DISTRIBUTIONS: Record<DifficultyProfile, DifficultyDistribution> = {
-  bot_easy: { easy: 0.8, medium: 0.2, hard: 0 },
-  bot_medium: { easy: 0.4, medium: 0.5, hard: 0.1 },
-  bot_hard: { easy: 0.2, medium: 0.5, hard: 0.3 },
-  online: { easy: 0.5, medium: 0.4, hard: 0.1 },
-  balanced: { easy: 0.4, medium: 0.4, hard: 0.2 },
+  bot_easy: { easy: 1.0, medium: 0.0, hard: 0.0 },
+  bot_medium: { easy: 0.70, medium: 0.30, hard: 0.0 },
+  bot_hard: { easy: 0.40, medium: 0.45, hard: 0.15 },
+  online: { easy: 0.70, medium: 0.25, hard: 0.05 },
+  balanced: { easy: 0.50, medium: 0.35, hard: 0.15 },
 };
 
 export function getDifficultyProfileForBot(difficulty: BotDifficulty): DifficultyProfile {
@@ -102,6 +104,60 @@ const MAJOR_NATIONS = new Set([
   'Uruguay',
 ]);
 
+const RECOGNIZABLE_EUROPEAN_CLUB_IDS = new Set([
+  ...HIGH_PROFILE_CLUB_IDS,
+  'basaksehir',
+  'sevilla',
+  'valencia',
+  'villarreal',
+  'olympique_lyon',
+  'olympique_marseille',
+  'monaco',
+  'lille',
+  'lazio',
+  'fiorentina',
+  'atalanta',
+  'bayer_leverkusen',
+  'rb_leipzig',
+  'sporting_cp',
+  'psv_eindhoven',
+  'feyenoord',
+  'everton',
+  'west_ham',
+  'aston_villa',
+  'newcastle_united',
+  'leicester_city',
+]);
+
+/**
+ * Geniş 25.000 futbolculuk geçerli cevap havuzundan bağımsız olarak,
+ * Türkiye ve dünya futbolunda yaygın bilinen yıldızlar, Süper Lig ikonları ve efsaneler çekirdeği.
+ */
+const HOUSEHOLD_STAR_PLAYER_IDS = new Set<string>([
+  ...(rawPlayersData as Array<{ id: string }>).map((p) => p.id),
+  ...EXTRA_PLAYERS_50.map((p) => p.id),
+]);
+
+export function isHouseholdStarPlayer(playerId?: string | null): boolean {
+  if (!playerId) return false;
+  return HOUSEHOLD_STAR_PLAYER_IDS.has(playerId);
+}
+
+export function getHouseholdStarCount(validPlayerIds: readonly string[]): number {
+  let count = 0;
+  for (const id of validPlayerIds) {
+    if (HOUSEHOLD_STAR_PLAYER_IDS.has(id)) count += 1;
+  }
+  return count;
+}
+
+export function hasHouseholdStarAnswer(validPlayerIds: readonly string[]): boolean {
+  for (const id of validPlayerIds) {
+    if (HOUSEHOLD_STAR_PLAYER_IDS.has(id)) return true;
+  }
+  return false;
+}
+
 const pairingDifficultyCache = new Map<string, QuestionDifficulty>();
 const careerDifficultyCache = new Map<string, QuestionDifficulty>();
 const countryClubDifficultyCache = new Map<string, QuestionDifficulty>();
@@ -111,6 +167,10 @@ const silhouetteDifficultyCache = new Map<string, QuestionDifficulty>();
 function getPlayerFamiliarityScore(player?: Player | null): number {
   if (!player) return 0;
   let score = 0;
+
+  if (HOUSEHOLD_STAR_PLAYER_IDS.has(player.id)) {
+    score += 5;
+  }
 
   const era = String(player.era || '').toLowerCase();
   if (era.includes('2020') || era.includes('günümüz')) {
@@ -148,28 +208,28 @@ export function classifyPairingDifficulty(pairing: MatchPairing): QuestionDiffic
 
   const c1Giant = HIGH_PROFILE_CLUB_IDS.has(pairing.club1Id);
   const c2Giant = HIGH_PROFILE_CLUB_IDS.has(pairing.club2Id);
+  const c1Recognizable = RECOGNIZABLE_EUROPEAN_CLUB_IDS.has(pairing.club1Id);
+  const c2Recognizable = RECOGNIZABLE_EUROPEAN_CLUB_IDS.has(pairing.club2Id);
   const hasSuperLig =
     SUPER_LIG_CLUB_IDS.has(pairing.club1Id) || SUPER_LIG_CLUB_IDS.has(pairing.club2Id);
   const validCount = pairing.validPlayerIds.length;
-  const maxFame = pairing.validPlayerIds.reduce((best, id) => {
-    const score = getPlayerFamiliarityScore(PLAYERS[id]);
-    return score > best ? score : best;
-  }, 0);
+  const famousCount = getHouseholdStarCount(pairing.validPlayerIds);
 
+  // Çok sayıda geçerli cevap tek başına kolaylık anlamına gelmez:
+  // En az 1 yaygın olarak bilinen futbolcu + tanınmış büyük kulüp eşleşmesi şarttır.
   let tier: QuestionDifficulty;
   if (
-    (validCount >= 6 && (c1Giant || c2Giant)) ||
-    (validCount >= 4 && c1Giant && c2Giant && maxFame >= 5) ||
-    (validCount >= 3 && hasSuperLig && maxFame >= 5)
+    (c1Giant && c2Giant && famousCount >= 1) ||
+    (hasSuperLig && c1Recognizable && c2Recognizable && famousCount >= 2)
   ) {
     tier = 'easy';
   } else if (
-    validCount <= 2 ||
-    (validCount <= 3 && !(c1Giant && c2Giant) && !hasSuperLig)
+    famousCount >= 1 ||
+    (validCount >= 5 && c1Recognizable && c2Recognizable)
   ) {
-    tier = 'hard';
-  } else {
     tier = 'medium';
+  } else {
+    tier = 'hard';
   }
 
   pairingDifficultyCache.set(pairing.id, tier);
@@ -179,6 +239,12 @@ export function classifyPairingDifficulty(pairing: MatchPairing): QuestionDiffic
 export function classifyCareerDifficulty(challenge: CareerChallenge): QuestionDifficulty {
   const cached = careerDifficultyCache.get(challenge.id);
   if (cached) return cached;
+
+  // Kariyer Yolu kolay seviyesinde yalnızca gerçekten tanınmış yıldızlar ve efsaneler sorulur.
+  if (isHouseholdStarPlayer(challenge.playerId)) {
+    careerDifficultyCache.set(challenge.id, 'easy');
+    return 'easy';
+  }
 
   const player = PLAYERS[challenge.playerId];
   let score = getPlayerFamiliarityScore(player);
@@ -197,15 +263,7 @@ export function classifyCareerDifficulty(challenge: CareerChallenge): QuestionDi
   if (hasStepSuperLig) score += 2;
   if (hasRecentStep) score += 1;
 
-  let tier: QuestionDifficulty;
-  if (score >= 8) {
-    tier = 'easy';
-  } else if (score >= 4) {
-    tier = 'medium';
-  } else {
-    tier = 'hard';
-  }
-
+  const tier: QuestionDifficulty = score >= 7 ? 'medium' : 'hard';
   careerDifficultyCache.set(challenge.id, tier);
   return tier;
 }
@@ -220,23 +278,23 @@ export function classifyCountryClubDifficulty(
   const isSuperLig = SUPER_LIG_CLUB_IDS.has(challenge.clubId);
   const isMajorNation = MAJOR_NATIONS.has(challenge.country);
   const validCount = challenge.validPlayerIds.length;
-  const maxFame = challenge.validPlayerIds.reduce((best, id) => {
-    const sc = getPlayerFamiliarityScore(PLAYERS[id]);
-    return sc > best ? sc : best;
-  }, 0);
+  const famousCount = getHouseholdStarCount(challenge.validPlayerIds);
 
+  // Kolay Ülke + Kulüp sorusu için büyük/Süper Lig kulübü + en az 1 yaygın bilinen futbolcu şarttır.
   let tier: QuestionDifficulty;
   if (
-    (validCount >= 3 && (isMajorClub || isSuperLig) && isMajorNation) ||
-    (validCount >= 4 && isMajorClub)
+    (isMajorClub || isSuperLig) &&
+    famousCount >= 1 &&
+    (isMajorNation || famousCount >= 2)
   ) {
     tier = 'easy';
-  } else if (validCount === 1 && (!isMajorNation || !isMajorClub) && maxFame < 6) {
-    tier = 'hard';
-  } else if (validCount <= 2 && !isMajorClub && !isSuperLig) {
-    tier = 'hard';
-  } else {
+  } else if (
+    famousCount >= 1 ||
+    (validCount >= 4 && (isMajorClub || isSuperLig) && isMajorNation)
+  ) {
     tier = 'medium';
+  } else {
+    tier = 'hard';
   }
 
   countryClubDifficultyCache.set(challenge.id, tier);
@@ -247,23 +305,26 @@ export function classifyXoxDifficulty(board: XoxBoardChallenge): QuestionDifficu
   const cached = xoxDifficultyCache.get(board.id);
   if (cached) return cached;
 
-  const cellCounts = Object.values(board.cellValidPlayerIds).map((arr) => arr.length);
+  const cells = Object.values(board.cellValidPlayerIds);
+  const cellCounts = cells.map((arr) => arr.length);
   const minCell = cellCounts.length > 0 ? Math.min(...cellCounts) : 0;
-  const avgCell =
-    cellCounts.length > 0
-      ? cellCounts.reduce((a, b) => a + b, 0) / cellCounts.length
-      : 0;
+  const famousCells = cells.filter((ids) => hasHouseholdStarAnswer(ids)).length;
+  const allCellsHaveFamousPlayer = cells.length === 9 && famousCells === 9;
   const giantAxes = [...board.rows, ...board.cols].filter(
-    (axis) => axis.type === 'club' && HIGH_PROFILE_CLUB_IDS.has(axis.id)
+    (axis) =>
+      (axis.type === 'club' && HIGH_PROFILE_CLUB_IDS.has(axis.id)) ||
+      (axis.type === 'country' && MAJOR_NATIONS.has(axis.label)) ||
+      axis.type === 'teammate'
   ).length;
 
+  // Çırak / kolay XOX tahtasında 9 hücrenin TAMAMI yaygın bilinen en az 1 futbolcuyla çözülebilmelidir.
   let tier: QuestionDifficulty;
-  if (avgCell >= 9.5 && minCell >= 2 && giantAxes >= 2) {
+  if (allCellsHaveFamousPlayer && giantAxes >= 2) {
     tier = 'easy';
-  } else if (avgCell < 6.2 || minCell <= 1 || giantAxes === 0) {
-    tier = 'hard';
-  } else {
+  } else if (cells.length === 9 && famousCells >= 6 && minCell >= 2 && giantAxes >= 1) {
     tier = 'medium';
+  } else {
+    tier = 'hard';
   }
 
   xoxDifficultyCache.set(board.id, tier);
@@ -385,7 +446,15 @@ export function selectDifficultyWeightedItems<T>(
     buckets[getDifficulty(item)].push(item);
   }
 
-  // If online profile, optionally weight high-familiarity stars/leagues to front (75% priority window)
+  const allowedTiers = (['easy', 'medium', 'hard'] as const).filter(
+    (tier) => distribution[tier] > 0
+  );
+  const allowedPool = allowedTiers.flatMap((tier) => buckets[tier]);
+  const effectivePool = allowedPool.length > 0 ? allowedPool : [...pool];
+  const targetCount = Math.min(count, effectivePool.length);
+  const adjustedQuotas = allocateQuotaCounts(targetCount, distribution);
+
+  // If online profile, optionally weight high-familiarity stars/leagues to front
   const prioritizeBucket = (items: T[]): T[] => {
     if (!options?.prioritizePredicate) return items;
     const priority = items.filter(options.prioritizePredicate);
@@ -397,8 +466,6 @@ export function selectDifficultyWeightedItems<T>(
   const usedIds = new Set<string>();
   const usedCanons = new Set<string>();
   const baseExclude = new Set(excludeIds);
-
-  const targetCount = Math.min(count, pool.length);
 
   const pickFromTier = (
     tier: QuestionDifficulty,
@@ -438,13 +505,13 @@ export function selectDifficultyWeightedItems<T>(
   };
 
   // Pass 1: hit exact difficulty quotas using unseen items first
-  pickFromTier('easy', quotas.easy, true);
-  pickFromTier('medium', quotas.medium, true);
-  pickFromTier('hard', quotas.hard, true);
+  pickFromTier('easy', adjustedQuotas.easy, true);
+  pickFromTier('medium', adjustedQuotas.medium, true);
+  pickFromTier('hard', adjustedQuotas.hard, true);
 
-  // Pass 2: if a tier lacked unseen items, try unseen items from other tiers before repeating
-  if (chosen.length < Math.min(count, pool.length)) {
-    const remainingUnseen = pool.filter((item) => {
+  // Pass 2: if a tier lacked unseen items, try unseen items ONLY from allowed tiers before repeating
+  if (chosen.length < targetCount) {
+    const remainingUnseen = effectivePool.filter((item) => {
       const id = getId(item);
       const canon = options?.getCanonicalKey ? options.getCanonicalKey(item) : id;
       return !usedIds.has(id) && !usedCanons.has(canon) && !baseExclude.has(id) && !baseExclude.has(canon);
@@ -453,13 +520,14 @@ export function selectDifficultyWeightedItems<T>(
       const combinedExclude = new Set<string>([...baseExclude, ...usedIds, ...usedCanons]);
       const { items } = selectDiverseItems(
         prioritizeBucket(remainingUnseen),
-        Math.min(count - chosen.length, remainingUnseen.length),
+        Math.min(targetCount - chosen.length, remainingUnseen.length),
         combinedExclude,
         getId,
         rng,
         options
       );
       for (const item of items) {
+        if (chosen.length >= targetCount) break;
         const id = getId(item);
         const canon = options?.getCanonicalKey ? options.getCanonicalKey(item) : id;
         if (!usedIds.has(id) && !usedCanons.has(canon)) {
@@ -471,16 +539,16 @@ export function selectDifficultyWeightedItems<T>(
     }
   }
 
-  // Pass 3: only if total unseen pool is exhausted, backfill with previously seen items honoring quotas
-  if (chosen.length < Math.min(count, pool.length)) {
-    pickFromTier('easy', Math.max(0, quotas.easy - chosen.filter((i) => getDifficulty(i) === 'easy').length), false);
-    pickFromTier('medium', Math.max(0, quotas.medium - chosen.filter((i) => getDifficulty(i) === 'medium').length), false);
-    pickFromTier('hard', Math.max(0, quotas.hard - chosen.filter((i) => getDifficulty(i) === 'hard').length), false);
+  // Pass 3: only if unseen pool in allowed tiers is exhausted, backfill with previously seen items honoring quotas
+  if (chosen.length < targetCount) {
+    pickFromTier('easy', Math.max(0, adjustedQuotas.easy - chosen.filter((i) => getDifficulty(i) === 'easy').length), false);
+    pickFromTier('medium', Math.max(0, adjustedQuotas.medium - chosen.filter((i) => getDifficulty(i) === 'medium').length), false);
+    pickFromTier('hard', Math.max(0, adjustedQuotas.hard - chosen.filter((i) => getDifficulty(i) === 'hard').length), false);
   }
 
-  // Final safeguard fill
-  if (chosen.length < Math.min(count, pool.length)) {
-    const remaining = pool.filter((item) => {
+  // Final safeguard fill (strictly within allowed tiers when available)
+  if (chosen.length < targetCount) {
+    const remaining = effectivePool.filter((item) => {
       const id = getId(item);
       const canon = options?.getCanonicalKey ? options.getCanonicalKey(item) : id;
       return !usedIds.has(id) && !usedCanons.has(canon);
@@ -488,13 +556,14 @@ export function selectDifficultyWeightedItems<T>(
     const combinedExclude = new Set<string>([...baseExclude, ...usedIds, ...usedCanons]);
     const { items } = selectDiverseItems(
       prioritizeBucket(remaining),
-      Math.min(count - chosen.length, remaining.length),
+      Math.min(targetCount - chosen.length, remaining.length),
       combinedExclude,
       getId,
       rng,
       options
     );
     for (const item of items) {
+      if (chosen.length >= targetCount) break;
       const id = getId(item);
       const canon = options?.getCanonicalKey ? options.getCanonicalKey(item) : id;
       if (!usedIds.has(id) && !usedCanons.has(canon)) {

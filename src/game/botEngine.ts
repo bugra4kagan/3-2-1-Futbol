@@ -33,6 +33,7 @@ export interface CentralizedBotConfig {
   xoxMinDelayMs: number;
   xoxMaxDelayMs: number;
   xoxMissRate: number;
+  xoxPassRate: number;
 }
 
 export const BOT_CONFIG: Record<BotDifficulty, CentralizedBotConfig> = {
@@ -40,46 +41,49 @@ export const BOT_CONFIG: Record<BotDifficulty, CentralizedBotConfig> = {
     id: 'easy',
     title: 'Çırak',
     emoji: '🌱',
-    minDelayMs: 5000,
-    maxDelayMs: 10000,
-    accuracy: 0.55,
-    accuracyPct: 55,
-    passRate: 0.16,
-    subtitle: '5–10 sn • %55 isabet',
-    delayLabel: '5–10 sn',
-    xoxMinDelayMs: 4200,
-    xoxMaxDelayMs: 8500,
-    xoxMissRate: 0.45,
+    minDelayMs: 8000,
+    maxDelayMs: 14000,
+    accuracy: 0.35,
+    accuracyPct: 35,
+    passRate: 0.30,
+    subtitle: '8–14 sn • %35 isabet',
+    delayLabel: '8–14 sn',
+    xoxMinDelayMs: 8000,
+    xoxMaxDelayMs: 14000,
+    xoxMissRate: 0.65,
+    xoxPassRate: 0.30,
   },
   medium: {
     id: 'medium',
     title: 'Şampiyon',
     emoji: '🏆',
-    minDelayMs: 3000,
-    maxDelayMs: 8000,
-    accuracy: 0.75,
-    accuracyPct: 75,
-    passRate: 0.08,
-    subtitle: '3–8 sn • %75 isabet',
-    delayLabel: '3–8 sn',
-    xoxMinDelayMs: 2800,
-    xoxMaxDelayMs: 6500,
-    xoxMissRate: 0.25,
+    minDelayMs: 5000,
+    maxDelayMs: 10000,
+    accuracy: 0.60,
+    accuracyPct: 60,
+    passRate: 0.14,
+    subtitle: '5–10 sn • %60 isabet',
+    delayLabel: '5–10 sn',
+    xoxMinDelayMs: 5000,
+    xoxMaxDelayMs: 10000,
+    xoxMissRate: 0.40,
+    xoxPassRate: 0.14,
   },
   hard: {
     id: 'hard',
     title: 'Efsane',
     emoji: '👑',
-    minDelayMs: 2500,
-    maxDelayMs: 6000,
-    accuracy: 0.90,
-    accuracyPct: 90,
-    passRate: 0.03,
-    subtitle: '2,5–6 sn • %90 isabet',
-    delayLabel: '2,5–6 sn',
-    xoxMinDelayMs: 2200,
-    xoxMaxDelayMs: 5000,
-    xoxMissRate: 0.10,
+    minDelayMs: 3000,
+    maxDelayMs: 7000,
+    accuracy: 0.85,
+    accuracyPct: 85,
+    passRate: 0.05,
+    subtitle: '3–7 sn • %85 isabet',
+    delayLabel: '3–7 sn',
+    xoxMinDelayMs: 3000,
+    xoxMaxDelayMs: 7000,
+    xoxMissRate: 0.15,
+    xoxPassRate: 0.05,
   },
 };
 
@@ -113,6 +117,7 @@ export const BOT_TIER_METADATA: Record<BotDifficulty, BotTierMetadata> = {
 export interface BotXoxTurnConfig {
   delayMs: number;
   missRate: number;
+  passRate: number;
 }
 
 const XOX_LINES: [number, number][][] = [
@@ -161,8 +166,8 @@ export function getBotRoundPlan(
     : 1;
 
   if (minigameType === 'silhouette') {
-    const baseMin = difficulty === 'easy' ? 5500 : difficulty === 'hard' ? 2800 : 3500;
-    const baseMax = difficulty === 'easy' ? 10500 : difficulty === 'hard' ? 6500 : 8500;
+    const baseMin = difficulty === 'easy' ? 8500 : difficulty === 'hard' ? 3500 : 5500;
+    const baseMax = difficulty === 'easy' ? 14500 : difficulty === 'hard' ? 7500 : 10500;
     return {
       minDelayMs: Math.round(baseMin * factor),
       maxDelayMs: Math.round(baseMax * factor),
@@ -171,9 +176,15 @@ export function getBotRoundPlan(
     };
   }
 
+  // Keep each tier strictly inside its promised response window while nudging slightly by question complexity
+  const scaledMin = Math.round(cfg.minDelayMs * factor);
+  const scaledMax = Math.round(cfg.maxDelayMs * factor);
+  const clampedMin = Math.max(cfg.minDelayMs, Math.min(cfg.maxDelayMs - 500, scaledMin));
+  const clampedMax = Math.max(clampedMin + 500, Math.min(Math.min(14400, cfg.maxDelayMs), scaledMax));
+
   return {
-    minDelayMs: Math.min(13200, Math.round(cfg.minDelayMs * factor)),
-    maxDelayMs: Math.min(14200, Math.round(cfg.maxDelayMs * factor)),
+    minDelayMs: clampedMin,
+    maxDelayMs: clampedMax,
     accuracy: cfg.accuracy,
     passRate: cfg.passRate,
   };
@@ -220,13 +231,29 @@ export function computeHumanizedBotDelayMs(
 
 export function getBotXoxTurnConfig(
   difficulty: BotDifficulty,
-  rng: () => number = Math.random
+  rng: () => number = Math.random,
+  maxAllowedMs?: number
 ): BotXoxTurnConfig {
   const cfg = BOT_CONFIG[difficulty];
-  const delayMs = Math.round(
-    cfg.xoxMinDelayMs + rng() * (cfg.xoxMaxDelayMs - cfg.xoxMinDelayMs)
-  );
-  return { delayMs, missRate: cfg.xoxMissRate };
+  const r1 = Math.max(0, Math.min(1, rng()));
+  const r2 = Math.max(0, Math.min(1, rng()));
+  const centered = (r1 + r2) / 2;
+  let delayMs = Math.round(cfg.xoxMinDelayMs + centered * (cfg.xoxMaxDelayMs - cfg.xoxMinDelayMs));
+  if (typeof maxAllowedMs === 'number' && Number.isFinite(maxAllowedMs) && maxAllowedMs > 500) {
+    delayMs = Math.min(delayMs, Math.max(500, Math.floor(maxAllowedMs - 350)));
+  }
+  return { delayMs, missRate: cfg.xoxMissRate, passRate: cfg.xoxPassRate };
+}
+
+export function decideBotXoxAction(
+  config: Pick<BotXoxTurnConfig, 'missRate' | 'passRate'>,
+  rng: () => number = Math.random
+): BotRoundOutcome {
+  const accuracy = Math.max(0, Math.min(1, 1 - config.missRate));
+  const roll = Math.max(0, Math.min(0.999999, rng()));
+  if (roll < accuracy) return 'correct';
+  if (roll - accuracy < config.passRate) return 'pass';
+  return 'wrong';
 }
 
 /**

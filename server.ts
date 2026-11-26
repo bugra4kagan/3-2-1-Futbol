@@ -1265,6 +1265,18 @@ app.post('/api/friends/request', (req, res) => {
     return res.status(400).json({ ok: false, error: 'Kendine arkadaşlık isteği gönderemezsin.' });
   }
 
+  if (
+    Boolean(body.isBot) ||
+    /^bot[_-]/i.test(fromPlayerId) ||
+    /^BOT(\d+|_|$)/i.test(fromFriendCode) ||
+    /^(çırak|cirak|şampiyon|sampiyon|efsane|yapay\s*zeka|ai)\s*bot$/i.test(fromName) ||
+    (resolvedToId && /^bot[_-]/i.test(resolvedToId)) ||
+    (resolvedToCode && /^BOT(\d+|_|$)/i.test(resolvedToCode)) ||
+    /^(çırak|cirak|şampiyon|sampiyon|efsane|yapay\s*zeka|ai)\s*bot$/i.test(resolvedToName)
+  ) {
+    return res.status(400).json({ ok: false, error: 'Bot hesaplar arkadaşlık sistemine dahil edilemez.' });
+  }
+
   const senderProfile = liveLeaderboard.get(fromPlayerId);
   const existing = serverFriendRequests.find(
     (r) =>
@@ -1368,6 +1380,9 @@ app.get('/api/friends/pending', (req, res) => {
   const incoming = serverFriendRequests.filter(
     (r) =>
       r.status === 'pending' &&
+      !r.isBot &&
+      !/^bot[_-]/i.test(r.fromPlayerId) &&
+      !/^(çırak|cirak|şampiyon|sampiyon|efsane|yapay\s*zeka|ai)\s*bot$/i.test(r.fromName) &&
       ((pid && r.toPlayerId === pid) ||
         (code && r.toFriendCode?.toUpperCase() === code) ||
         (nameKey.length >= 2 && normalizeUsernameKey(r.toName) === nameKey))

@@ -26,6 +26,7 @@ import { UiTheme } from '../game/themeEngine';
 import { useLanguage } from '../game/LanguageContext';
 import { sounds } from '../utils/audio';
 import { haptics, isHapticsEnabled, setHapticsEnabled } from '../utils/haptics';
+import { getAppVersionMetadata } from '../game/appVersion';
 import { GameLogoAppIconPreview } from './GameLogo';
 
 export interface CloudUserSummary {
@@ -58,6 +59,8 @@ interface SettingsModalProps {
   onUnlinkSocial: (provider: SocialProvider) => void;
   onOpenTutorial?: () => void;
   onExitApp?: () => void;
+  pwaUpdateAvailable?: boolean;
+  onApplyPwaUpdate?: () => void;
   onClose: () => void;
 }
 
@@ -79,8 +82,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onUnlinkSocial,
   onOpenTutorial,
   onExitApp,
+  pwaUpdateAvailable = false,
+  onApplyPwaUpdate,
   onClose,
 }) => {
+  const versionMeta = getAppVersionMetadata();
   const { language, setLanguage, t } = useLanguage();
   const [busyProvider, setBusyProvider] = useState<'google' | null>(null);
   const [hapticsOn, setHapticsOn] = useState<boolean>(() => isHapticsEnabled());
@@ -649,6 +655,42 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <span>Ana Giriş Ekranına Dön (Çıkış)</span>
             </button>
           )}
+
+          {/* 7. App, Roster Data & Build Version Info Footer */}
+          <section
+            data-testid="settings-version-footer"
+            className="p-3 rounded-2xl bg-[#092316]/90 border border-white/10 space-y-2 text-[11px] text-[#C4D6CA]"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="font-bold text-slate-400">Uygulama Sürümü</span>
+              <span data-testid="settings-app-version" className="font-mono font-black text-[#F5F3EB]">
+                v{versionMeta.appVersion}
+              </span>
+            </div>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="font-bold text-slate-400">Futbolcu Veri Sürümü</span>
+              <span data-testid="settings-roster-version" className="font-mono font-bold text-emerald-300">
+                {versionMeta.rosterVersion}
+              </span>
+            </div>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="font-bold text-slate-400">Build Commit</span>
+              <span data-testid="settings-build-commit" className="font-mono font-bold text-amber-300">
+                {versionMeta.buildCommit}
+              </span>
+            </div>
+            {pwaUpdateAvailable && onApplyPwaUpdate && (
+              <button
+                type="button"
+                data-testid="settings-pwa-update-btn"
+                onClick={onApplyPwaUpdate}
+                className="w-full mt-1 py-2 px-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs flex items-center justify-center gap-1.5 cursor-pointer transition active:scale-95"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                <span>Yeni güncelleme hazır — Güncelle</span>
+              </button>
+            )}
+          </section>
         </div>
       </div>
     </div>

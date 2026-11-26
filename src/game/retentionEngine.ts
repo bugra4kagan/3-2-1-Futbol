@@ -1456,6 +1456,11 @@ export function unlinkSocialAccount(
   };
 }
 
+const KNOWN_BOT_NAME_PATTERNS: RegExp[] = [
+  /^(çırak|cirak|şampiyon|sampiyon|efsane|yapay\s*zeka|ai)\s*bot$/i,
+  /^bot\s*(çırak|cirak|şampiyon|sampiyon|efsane|\d+)$/i,
+];
+
 export function isBotFriendRecord(
   record:
     | {
@@ -1465,6 +1470,14 @@ export function isBotFriendRecord(
         fromPlayerId?: string | null;
         toFriendCode?: string | null;
         fromFriendCode?: string | null;
+        name?: string | null;
+        fromName?: string | null;
+        toName?: string | null;
+        avatar?: string | null;
+        fromAvatar?: string | null;
+        toAvatar?: string | null;
+        subtitle?: string | null;
+        statusText?: string | null;
         isBot?: boolean | null;
       }
     | null
@@ -1473,11 +1486,38 @@ export function isBotFriendRecord(
   if (!record) return false;
   if (record.isBot) return true;
   const ids = [record.id, record.toPlayerId, record.fromPlayerId];
-  if (ids.some((id) => typeof id === 'string' && /^bot_/i.test(id.trim()))) {
+  if (
+    ids.some(
+      (id) =>
+        typeof id === 'string' &&
+        (/^bot[_-]/i.test(id.trim()) || /^bot$/i.test(id.trim()))
+    )
+  ) {
     return true;
   }
   const codes = [record.friendCode, record.toFriendCode, record.fromFriendCode];
   if (codes.some((code) => typeof code === 'string' && /^BOT(\d+|_|$)/i.test(code.trim()))) {
+    return true;
+  }
+  const names = [record.name, record.fromName, record.toName];
+  if (
+    names.some(
+      (nm) =>
+        typeof nm === 'string' &&
+        KNOWN_BOT_NAME_PATTERNS.some((pattern) => pattern.test(nm.trim()))
+    )
+  ) {
+    return true;
+  }
+  const hasBotAvatar = [record.avatar, record.fromAvatar, record.toAvatar].some(
+    (av) => typeof av === 'string' && av.trim() === '🤖'
+  );
+  if (
+    hasBotAvatar &&
+    [...names, record.subtitle, record.statusText].some(
+      (txt) => typeof txt === 'string' && /\bbot\b/i.test(txt)
+    )
+  ) {
     return true;
   }
   return false;
@@ -1635,7 +1675,14 @@ export function hasPendingOutgoingRequest(
 }
 
 export function getPendingIncomingRequestCount(prog: UserProgression): number {
-  return (prog.incomingFriendRequests ?? []).filter((r) => r.status === 'pending').length;
+  const blockedIds = new Set(prog.blockedPlayerIds || []);
+  return (prog.incomingFriendRequests ?? []).filter(
+    (r) =>
+      r &&
+      r.status === 'pending' &&
+      !blockedIds.has(r.fromPlayerId) &&
+      !isBotFriendRecord(r)
+  ).length;
 }
 
 export function resolveFriendTargetCandidate(
@@ -1876,6 +1923,12 @@ export function acceptIncomingFriendRequest(
   const targetReq = incoming.find((r) => r.id === requestId && r.status === 'pending');
   if (!targetReq) {
     return { ok: false, progression: prog };
+  }
+  if (isBotFriendRecord(targetReq)) {
+    return {
+      ok: false,
+      progression: sanitizeBotFriendsProgression(prog),
+    };
   }
 
   const remainingIncoming = incoming.filter((r) => r.id !== requestId);

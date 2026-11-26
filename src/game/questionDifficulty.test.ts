@@ -52,21 +52,23 @@ test('bot and online difficulty profiles follow requested exact percentages', ()
         profile,
         rng: createSeededRng(4242),
       });
+      assert.ok(sample.length >= 60, `${mode}/${profile} should produce rich pool (${sample.length})`);
       const actual = { easy: 0, medium: 0, hard: 0 };
       for (const r of sample) {
         actual[classifyQuestionDifficulty(r)] += 1;
       }
+      const total = sample.length;
       assert.ok(
-        Math.abs(actual.easy / 100 - expected.easy) <= 0.05,
-        `${mode}/${profile} easy ratio ${actual.easy}% vs expected ${expected.easy * 100}%`
+        Math.abs(actual.easy / total - expected.easy) <= 0.05,
+        `${mode}/${profile} easy ratio ${((actual.easy / total) * 100).toFixed(1)}% vs expected ${expected.easy * 100}%`
       );
       assert.ok(
-        Math.abs(actual.medium / 100 - expected.medium) <= 0.05,
-        `${mode}/${profile} medium ratio ${actual.medium}% vs expected ${expected.medium * 100}%`
+        Math.abs(actual.medium / total - expected.medium) <= 0.05,
+        `${mode}/${profile} medium ratio ${((actual.medium / total) * 100).toFixed(1)}% vs expected ${expected.medium * 100}%`
       );
       assert.ok(
-        Math.abs(actual.hard / 100 - expected.hard) <= 0.05,
-        `${mode}/${profile} hard ratio ${actual.hard}% vs expected ${expected.hard * 100}%`
+        Math.abs(actual.hard / total - expected.hard) <= 0.05,
+        `${mode}/${profile} hard ratio ${((actual.hard / total) * 100).toFixed(1)}% vs expected ${expected.hard * 100}%`
       );
     }
   }

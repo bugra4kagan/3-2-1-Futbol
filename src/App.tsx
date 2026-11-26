@@ -92,6 +92,7 @@ import {
   grantFreeAdCoins,
   hasPendingOutgoingRequest,
   hasUnlimitedEnergy,
+  isBotFriendRecord,
   linkSocialAccount,
   purchaseGift,
   purchaseStoreItem,
@@ -102,6 +103,7 @@ import {
   rejectIncomingFriendRequest,
   removeFriend,
   resolveFriendTargetCandidate,
+  sanitizeBotFriendsProgression,
   selectDefaultPitchTheme,
   sendFriendRequest,
   syncProgressionForToday,
@@ -122,6 +124,13 @@ import {
 import { sounds } from './utils/audio';
 import { soundManager } from './utils/soundManager';
 import { haptics } from './utils/haptics';
+import {
+  applyPwaUpdateNow,
+  dismissPwaUpdateBanner,
+  shouldShowPwaUpdateBanner,
+  subscribePwaUpdateState,
+  type PwaUpdateState,
+} from './services/pwaUpdateService';
 import {
   UiTheme,
   applyUiTheme,
@@ -515,20 +524,22 @@ function loadInitialProgression(playerId: string): UserProgression {
         ? parsed.linkedAccounts
         : fallback.linkedAccounts,
       friends: Array.isArray(parsed.friends)
-        ? parsed.friends.filter((f) => f && !String(f.id).startsWith('rival_'))
+        ? parsed.friends.filter(
+            (f) => f && !String(f.id).startsWith('rival_') && !isBotFriendRecord(f)
+          )
         : fallback.friends,
       outgoingFriendRequests: Array.isArray(parsed.outgoingFriendRequests)
-        ? parsed.outgoingFriendRequests
+        ? parsed.outgoingFriendRequests.filter((r) => r && !isBotFriendRecord(r))
         : fallback.outgoingFriendRequests,
       incomingFriendRequests: Array.isArray(parsed.incomingFriendRequests)
-        ? parsed.incomingFriendRequests
+        ? parsed.incomingFriendRequests.filter((r) => r && !isBotFriendRecord(r))
         : fallback.incomingFriendRequests,
       dailyChallengeHistory:
         parsed.dailyChallengeHistory && typeof parsed.dailyChallengeHistory === 'object'
           ? parsed.dailyChallengeHistory
           : fallback.dailyChallengeHistory,
     };
-    const synced = syncProgressionForToday(merged);
+    const synced = sanitizeBotFriendsProgression(syncProgressionForToday(merged));
     writeProgressionWithDigest(synced);
     return synced;
   } catch {
@@ -575,6 +586,11 @@ export default function App() {
   }, []);
   const [achievementToast, setAchievementToast] = useState<CareerAchievementDef | null>(null);
   const [showSettingsModal, setShowSettingsModal] = useState<boolean>(false);
+  const [pwaUpdateState, setPwaUpdateState] = useState<PwaUpdateState>({
+    updateAvailable: false,
+    isUpdating: false,
+    dismissed: false,
+  });
   const [showAuthModal, setShowAuthModal] = useState<boolean>(false);
   const [authModalTab, setAuthModalTab] = useState<'profile' | 'email'>('profile');
   const [showOnboardingModal, setShowOnboardingModal] = useState<boolean>(false);
@@ -1057,9 +1073,10 @@ export default function App() {
   }, []);
 
   const persistProgression = useCallback((next: UserProgression) => {
-    progressionRef.current = next;
-    setProgression(next);
-    writeProgressionWithDigest(next);
+    const clean = sanitizeBotFriendsProgression(next);
+    progressionRef.current = clean;
+    setProgression(clean);
+    writeProgressionWithDigest(clean);
   }, []);
 
   const syncPendingFriendRequestsFromServer = useCallback(async () => {
@@ -1467,7 +1484,9 @@ export default function App() {
         ])
       );
       const friendMap = new Map(
-        [...(localProg.friends || []), ...(remoteProg.friends || [])].map((f) => [f.id, f])
+        [...(localProg.friends || []), ...(remoteProg.friends || [])]
+          .filter((f) => f && !isBotFriendRecord(f))
+          .map((f) => [f.id, f])
       );
       const friendIdsSet = new Set(Array.from(friendMap.values()).map((f) => f.id));
       const outgoingMap = new Map(
@@ -1475,7 +1494,13 @@ export default function App() {
           ...(remoteProg.outgoingFriendRequests || []),
           ...(localProg.outgoingFriendRequests || []),
         ]
-          .filter((r) => r && r.status === 'pending' && (!r.toPlayerId || !friendIdsSet.has(r.toPlayerId)))
+          .filter(
+            (r) =>
+              r &&
+              r.status === 'pending' &&
+              !isBotFriendRecord(r) &&
+              (!r.toPlayerId || !friendIdsSet.has(r.toPlayerId))
+          )
           .map((r) => [r.id, r])
       );
       const incomingMap = new Map(
@@ -1483,7 +1508,13 @@ export default function App() {
           ...(remoteProg.incomingFriendRequests || []),
           ...(localProg.incomingFriendRequests || []),
         ]
-          .filter((r) => r && r.status === 'pending' && !friendIdsSet.has(r.fromPlayerId))
+          .filter(
+            (r) =>
+              r &&
+              r.status === 'pending' &&
+              !isBotFriendRecord(r) &&
+              !friendIdsSet.has(r.fromPlayerId)
+          )
           .map((r) => [r.id, r])
       );
       const todayEnergyKey = syncProgressionForToday(
@@ -1564,6 +1595,10 @@ export default function App() {
     },
     []
   );
+
+  useEffect(() => {
+    return subscribePwaUpdateState(setPwaUpdateState);
+  }, []);
 
   useEffect(() => {
     initializeFirebaseAppCheck();
@@ -6012,6 +6047,22 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
               setShowOnboardingModal(true);
             }}
             onExitApp={screen === 'lobby' ? handlePromptExitApp : undefined}
+            pwaUpdateAvailable={
+              pwaUpdateState.updateAvailable &&
+              screen !== 'playing' &&
+              screen !== 'room_waiting' &&
+              !isRoundPlaying &&
+              countdown === null
+            }
+            onApplyPwaUpdate={() => {
+              applyPwaUpdateNow({
+                isInActiveMatch:
+                  screen === 'playing' ||
+                  screen === 'room_waiting' ||
+                  isRoundPlaying ||
+                  countdown !== null,
+              });
+            }}
             onClose={() => setShowSettingsModal(false)}
           />
         </Suspense>
@@ -6196,6 +6247,60 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
           }
         }}
       />
+
+      {/* PWA Safe Update Banner (only outside active matches; never clears user data) */}
+      {shouldShowPwaUpdateBanner({
+        updateAvailable: pwaUpdateState.updateAvailable,
+        isInActiveMatch:
+          screen === 'playing' ||
+          screen === 'room_waiting' ||
+          isRoundPlaying ||
+          countdown !== null,
+        dismissed: pwaUpdateState.dismissed,
+      }) && (
+        <div
+          data-testid="pwa-update-banner"
+          role="status"
+          className="fixed bottom-[calc(env(safe-area-inset-bottom)+72px)] left-1/2 -translate-x-1/2 z-[60] w-[calc(100%-24px)] max-w-md px-3.5 py-2.5 rounded-2xl bg-[#0F273E]/96 border-2 border-[#E5B94F]/75 shadow-2xl flex items-center justify-between gap-2.5 backdrop-blur-md"
+        >
+          <div className="min-w-0 text-left">
+            <span className="block text-xs font-black text-[#F5F3EB] leading-tight">
+              Yeni güncelleme hazır
+            </span>
+            <span className="block text-[10px] text-[#C4D6CA] truncate">
+              Hesabın ve coinlerin korunarak güncel sürüme geçilecek.
+            </span>
+          </div>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button
+              type="button"
+              data-testid="pwa-update-apply-btn"
+              disabled={pwaUpdateState.isUpdating}
+              onClick={() => {
+                applyPwaUpdateNow({
+                  isInActiveMatch:
+                    screen === 'playing' ||
+                    screen === 'room_waiting' ||
+                    isRoundPlaying ||
+                    countdown !== null,
+                });
+              }}
+              className="px-3 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs cursor-pointer transition active:scale-95 disabled:opacity-60"
+            >
+              {pwaUpdateState.isUpdating ? 'Güncelleniyor...' : 'Güncelle'}
+            </button>
+            <button
+              type="button"
+              data-testid="pwa-update-dismiss-btn"
+              aria-label="Kapat"
+              onClick={() => dismissPwaUpdateBanner()}
+              className="w-7 h-7 rounded-lg bg-white/10 hover:bg-white/20 text-[#C4D6CA] font-bold text-xs flex items-center justify-center cursor-pointer"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Exit Confirmation Dialog */}
       {showExitConfirm && (

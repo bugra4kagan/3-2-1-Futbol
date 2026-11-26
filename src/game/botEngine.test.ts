@@ -7,6 +7,7 @@ import {
   computeHumanizedBotDelayMs,
   computeQuestionDifficultyDelayFactor,
   decideBotRoundAction,
+  decideBotXoxAction,
   getBotRoundPlan,
   getBotXoxTurnConfig,
   pickBotValidPlayer,
@@ -35,17 +36,17 @@ test('bot speed and accuracy follow central BOT_CONFIG across Çırak < Şampiyo
   const med = getBotRoundPlan('medium', 'two_clubs');
   const hard = getBotRoundPlan('hard', 'two_clubs');
 
-  assert.equal(easy.minDelayMs, 5000);
-  assert.equal(easy.maxDelayMs, 10000);
-  assert.equal(easy.accuracy, 0.55);
+  assert.equal(easy.minDelayMs, 8000);
+  assert.equal(easy.maxDelayMs, 14000);
+  assert.equal(easy.accuracy, 0.35);
 
-  assert.equal(med.minDelayMs, 3000);
-  assert.equal(med.maxDelayMs, 8000);
-  assert.equal(med.accuracy, 0.75);
+  assert.equal(med.minDelayMs, 5000);
+  assert.equal(med.maxDelayMs, 10000);
+  assert.equal(med.accuracy, 0.60);
 
-  assert.equal(hard.minDelayMs, 2500);
-  assert.equal(hard.maxDelayMs, 6000);
-  assert.equal(hard.accuracy, 0.90);
+  assert.equal(hard.minDelayMs, 3000);
+  assert.equal(hard.maxDelayMs, 7000);
+  assert.equal(hard.accuracy, 0.85);
 
   assert.equal(BOT_TIER_METADATA.easy.accuracyPct, BOT_CONFIG.easy.accuracyPct);
   assert.equal(BOT_TIER_METADATA.medium.accuracyPct, BOT_CONFIG.medium.accuracyPct);
@@ -56,9 +57,9 @@ test('bot speed and accuracy follow central BOT_CONFIG across Çırak < Şampiyo
   assert.ok(hard.accuracy > med.accuracy && med.accuracy > easy.accuracy);
 
   assert.ok(computeQuestionDifficultyDelayFactor(1, 'hard') > computeQuestionDifficultyDelayFactor(15, 'easy'));
-  assert.equal(decideBotRoundAction(easy, () => 0.1), 'correct');
-  assert.equal(decideBotRoundAction(easy, () => 0.6), 'pass');
-  assert.equal(decideBotRoundAction(easy, () => 0.9), 'wrong');
+  assert.equal(decideBotRoundAction(easy, () => 0.10), 'correct');
+  assert.equal(decideBotRoundAction(easy, () => 0.50), 'pass');
+  assert.equal(decideBotRoundAction(easy, () => 0.85), 'wrong');
 
   for (const r of [0, 0.15, 0.5, 0.85, 0.9999]) {
     const d = computeHumanizedBotDelayMs(med, () => r);
@@ -72,9 +73,12 @@ test('bot speed and accuracy follow central BOT_CONFIG across Çırak < Şampiyo
   const xoxHard = getBotXoxTurnConfig('hard', () => 0.5);
   const xoxMed = getBotXoxTurnConfig('medium', () => 0.5);
   const xoxEasy = getBotXoxTurnConfig('easy', () => 0.5);
-  assert.equal(xoxHard.missRate, 0.10);
-  assert.equal(xoxMed.missRate, 0.25);
-  assert.equal(xoxEasy.missRate, 0.45);
+  assert.equal(xoxHard.missRate, 0.15);
+  assert.equal(xoxMed.missRate, 0.40);
+  assert.equal(xoxEasy.missRate, 0.65);
+  assert.equal(decideBotXoxAction(xoxEasy, () => 0.10), 'correct');
+  assert.equal(decideBotXoxAction(xoxEasy, () => 0.50), 'pass');
+  assert.equal(decideBotXoxAction(xoxEasy, () => 0.85), 'wrong');
   assert.ok(xoxHard.delayMs < xoxMed.delayMs && xoxMed.delayMs < xoxEasy.delayMs);
 });
 
@@ -168,9 +172,10 @@ test('100-match simulation across all 4 modes x 3 bot tiers verifies accuracy, s
               }
               if (turn === 'bot') {
                 totalAttempts += 1;
-                const { delayMs, missRate } = getBotXoxTurnConfig(tier, rng);
-                totalDelayMs += delayMs;
-                if (rng() >= missRate) {
+                const xoxCfg = getBotXoxTurnConfig(tier, rng, 15000);
+                totalDelayMs += xoxCfg.delayMs;
+                const xoxOutcome = decideBotXoxAction(xoxCfg, rng);
+                if (xoxOutcome === 'correct') {
                   correctAttempts += 1;
                   const chosen = pickBotValidPlayer(
                     validIds.map((id) => PLAYERS[id]).filter(Boolean),
