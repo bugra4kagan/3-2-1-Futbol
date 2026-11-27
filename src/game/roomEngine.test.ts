@@ -504,3 +504,43 @@ test('applyRoomBeginRound rejects premature start before 3-2-1 countdown complet
   assert.equal(abandoned.scores.u_host01, 1);
   assert.equal(abandoned.disconnectGrace, null);
 });
+
+test('reconnect lifecycle covers 5s/15s/30s drops, host & guest disconnects, XOX board preservation, 90s cap, and 1.1.0 legacy doc compat', () => {
+  // 1. Host drops on XOX mid-round after placing a cell -> resumes at +15s with board & clock intact
+  const xoxStarted = playingRoom('xox');
+  const firstMove = applyRoomAnswer(xoxStarted, host.id, validAnswerFor(xoxStarted, { row: 0, col: 0 }), {
+    cellPos: { row: 0, col: 0 },
+  }, NOW + 5000);
+  assert.equal(firstMove.outcome.accepted, true);
+  assert.ok(firstMove.next);
+  const boardBeforeDrop = firstMove.next.xoxBoardJson;
+  const pausedHost = applyRoomDisconnectGrace(firstMove.next, host.id, 12000, NOW + 7000);
+  assert.ok(pausedHost);
+  const resumedHost = applyRoomResumeFromDisconnect(pausedHost, host.id, NOW + 22000);
+  assert.ok(resumedHost);
+  assert.equal(resumedHost.xoxBoardJson, boardBeforeDrop);
+  assert.equal(resumedHost.state, 'playing');
+  assert.equal(resumedHost.pauseUsedMsByPlayer?.u_host01, 15000);
+
+  // 2. Guest drops for 30s -> resumes cleanly within 45s -> second drop for 30s -> third drop for 30s -> 4th drop rejected at 90s cap
+  let cur = resumedHost;
+  for (let i = 0; i < 3; i += 1) {
+    const dropAt = NOW + 30000 + i * 40000;
+    const p = applyRoomDisconnectGrace(cur, guest.id, 10000, dropAt);
+    assert.ok(p, `drop ${i + 1} within 90s budget should pause`);
+    const r = applyRoomResumeFromDisconnect(p, guest.id, dropAt + 30000);
+    assert.ok(r, `resume ${i + 1} at 30s (<45s) should succeed`);
+    cur = r;
+  }
+  assert.equal(cur.pauseUsedMsByPlayer?.u_guest02, 90000);
+  assert.equal(applyRoomDisconnectGrace(cur, guest.id, 10000, NOW + 200000), null);
+
+  // 3. Legacy 1.1.0 room document (without pauseUsedMsByPlayer) normalizes and plays identically
+  const legacyRaw = { ...playingRoom('career') } as Record<string, unknown>;
+  delete legacyRaw.pauseUsedMsByPlayer;
+  const normalizedLegacy = normalizeRoomRecord(legacyRaw);
+  assert.deepEqual(normalizedLegacy.pauseUsedMsByPlayer, {});
+  const legacyPayload = getRoomRoundPayload(normalizedLegacy);
+  assert.ok(legacyPayload);
+  assert.equal(legacyPayload.minigameType, 'career');
+});

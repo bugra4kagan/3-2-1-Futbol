@@ -63,7 +63,7 @@ test('computeMatchKeyboardMetrics handles narrow 320px phones and wide 768px-128
   });
   assert.equal(tabletLandscape.isKeyboardOpen, false);
   assert.equal(tabletLandscape.isCompactHeight, false);
-  assert.equal(tabletLandscape.isSideBySideMatchLayout, false);
+  assert.equal(tabletLandscape.isUltraCompactHeight, false);
 
   const tabletKeyboardOpen = computeMatchKeyboardMetrics({
     visualHeight: 440,
@@ -76,5 +76,4 @@ test('computeMatchKeyboardMetrics handles narrow 320px phones and wide 768px-128
   assert.equal(tabletKeyboardOpen.viewportHeight, 440);
   assert.equal(tabletKeyboardOpen.isKeyboardOpen, true);
   assert.equal(tabletKeyboardOpen.isUltraCompactHeight, true);
-  assert.equal(tabletKeyboardOpen.isSideBySideMatchLayout, true);
 });

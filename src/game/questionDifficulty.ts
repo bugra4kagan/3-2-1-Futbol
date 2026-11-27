@@ -4,6 +4,7 @@ import { EXTRA_PLAYERS_50 } from './extraPlayers50';
 import {
   CAREER_CHALLENGES,
   COUNTRY_CLUB_CHALLENGES,
+  CURATED_CAREER_CHALLENGES,
   SILHOUETTE_CHALLENGES,
   XOX_BOARDS,
 } from './minigamesData';
@@ -132,13 +133,26 @@ const RECOGNIZABLE_EUROPEAN_CLUB_IDS = new Set([
 ]);
 
 /**
- * Geniş 25.000 futbolculuk geçerli cevap havuzundan bağımsız olarak,
+ * Geniş 24.959 futbolculuk geçerli cevap havuzundan bağımsız olarak,
  * Türkiye ve dünya futbolunda yaygın bilinen yıldızlar, Süper Lig ikonları ve efsaneler çekirdeği.
  */
 const HOUSEHOLD_STAR_PLAYER_IDS = new Set<string>([
   ...(rawPlayersData as Array<{ id: string }>).map((p) => p.id),
   ...EXTRA_PLAYERS_50.map((p) => p.id),
+  ...CURATED_CAREER_CHALLENGES.map((c) => c.playerId),
 ]);
+
+/**
+ * 3.049 kürasyonlu tanınmış uluslararası & Süper Lig futbolcusu (genişletilmiş 21.910
+ * cevap-genişletme oyuncularından ayrıştırılır; kariyer kolay/orta sorularında bilinmeyen
+ * yedek oyuncuların sızmasını önler).
+ */
+const CURATED_KNOWN_PLAYER_IDS = new Set<string>(Object.keys(PLAYERS));
+
+export function isCuratedKnownPlayer(playerId?: string | null): boolean {
+  if (!playerId) return false;
+  return CURATED_KNOWN_PLAYER_IDS.has(playerId);
+}
 
 export function isHouseholdStarPlayer(playerId?: string | null): boolean {
   if (!playerId) return false;
@@ -248,9 +262,18 @@ export function classifyCareerDifficulty(challenge: CareerChallenge): QuestionDi
     return 'easy';
   }
 
+  // Yalnızca büyük kulüpte kadroda bulunmuş genişletilmiş veri tabanı oyuncuları orta havuza sızamaz.
+  if (!CURATED_KNOWN_PLAYER_IDS.has(challenge.playerId)) {
+    careerDifficultyCache.set(challenge.id, 'hard');
+    return 'hard';
+  }
+
   const player = PLAYERS[challenge.playerId];
   let score = getPlayerFamiliarityScore(player);
 
+  const uniqueClubCount = new Set(
+    challenge.steps.map((s) => (s.clubId || s.clubName.toLowerCase().trim()))
+  ).size;
   const highClubCount = challenge.steps.filter(
     (s) => s.clubId && HIGH_PROFILE_CLUB_IDS.has(s.clubId)
   ).length;
@@ -265,12 +288,12 @@ export function classifyCareerDifficulty(challenge: CareerChallenge): QuestionDi
   if (highClubCount >= 2) score += 1;
   if (hasStepSuperLig) score += 2;
   if (hasRecentStep) score += 1;
-  if (challenge.steps.length >= 3) score += 1;
+  if (uniqueClubCount >= 3) score += 1;
 
-  // 2 adımlı az bilinen oyuncular orta havuza sızmasın; bilinirliği yüksek oyuncular medium olur.
+  // Tanınmış kürasyonlu futbolculardan en az 2 farklı kulüplü ve güçlü lig/kulüp bağlantılı olanlar medium olur.
   const hasRecognizableAnchor = highClubCount >= 1 || hasStepSuperLig;
   const tier: QuestionDifficulty =
-    score >= 8 && hasRecognizableAnchor && challenge.steps.length >= 3
+    score >= 7 && hasRecognizableAnchor && uniqueClubCount >= 2
       ? 'medium'
       : 'hard';
   careerDifficultyCache.set(challenge.id, tier);
@@ -382,7 +405,9 @@ export function isPopularOnlineItem(round: MinigameRoundPayload): boolean {
     const p = PLAYERS[round.career.playerId];
     return (
       isHouseholdStarPlayer(round.career.playerId) ||
-      (getPlayerFamiliarityScore(p) >= 8 && round.career.steps.length >= 3)
+      (CURATED_KNOWN_PLAYER_IDS.has(round.career.playerId) &&
+        getPlayerFamiliarityScore(p) >= 7 &&
+        round.career.steps.length >= 3)
     );
   }
   if (round.minigameType === 'country_club' && round.countryClub) {

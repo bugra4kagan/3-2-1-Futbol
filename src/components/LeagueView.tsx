@@ -160,7 +160,7 @@ export const LeagueView: React.FC<LeagueViewProps> = ({
   return (
     <div
       data-testid="league-view"
-      className="w-full max-w-xl md:max-w-3xl lg:max-w-4xl mx-auto px-3 sm:px-4 pt-3 pb-24 flex flex-col"
+      className="w-full max-w-[560px] mx-auto px-3 sm:px-4 pt-3 pb-24 flex flex-col"
     >
       {/* Season Reset Reward / Promotion Banner */}
       {seasonNotice && seasonNoticeNewTier && (

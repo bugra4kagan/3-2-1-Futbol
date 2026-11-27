@@ -166,7 +166,7 @@ export const FriendsView: React.FC<FriendsViewProps> = ({
   return (
     <div
       data-testid="friends-view"
-      className="w-full max-w-xl md:max-w-3xl lg:max-w-4xl mx-auto px-3 sm:px-4 pt-3 pb-24 flex flex-col gap-4 text-left"
+      className="w-full max-w-[560px] mx-auto px-3 sm:px-4 pt-3 pb-24 flex flex-col gap-4 text-left"
     >
       {/* My Friend Code Card */}
       <div className="p-3.5 sm:p-4 rounded-2xl bg-gradient-to-r from-slate-900 via-emerald-950/40 to-slate-900 border border-emerald-500/40 flex flex-wrap items-center justify-between gap-2.5 sm:gap-3 shadow-xl">
@@ -212,7 +212,7 @@ export const FriendsView: React.FC<FriendsViewProps> = ({
             </span>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 gap-2">
             {incomingRequests.map((req) => {
               const safeFromName = sanitizePublicDisplayName(req.fromName, req.fromPlayerId);
               return (
@@ -527,7 +527,7 @@ export const FriendsView: React.FC<FriendsViewProps> = ({
             Henüz arkadaş eklemedin. Arkadaş kodunu paylaşabilir veya yukarıdan arkadaşlık isteği gönderebilirsin!
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 gap-2">
             {realFriends.map((friend) => {
               const safeFriendName = sanitizePublicDisplayName(friend.name, friend.id);
               return (

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Settings, LogOut, Bot } from 'lucide-react';
+import { Settings, LogOut } from 'lucide-react';
 import { MatchPlayerStats, MinigameType, PlayerProfile } from '../game/types';
 import { getMinigameMeta } from '../game/minigameEngine';
 import { getCrestBadgeInfo } from '../game/storeCatalog';
@@ -70,12 +70,12 @@ export const ScoreBoard: React.FC<ScoreBoardProps> = React.memo(({
 
   return (
     <header
-      className={`shrink-0 z-30 w-full max-w-4xl lg:max-w-5xl mx-auto px-2 sm:px-4 bg-[#0E3120]/95 border-b border-[#E5B94F]/30 ${
+      className={`shrink-0 z-30 w-full max-w-[560px] mx-auto px-2 sm:px-3 bg-[#0E3120]/95 border-b border-[#E5B94F]/30 ${
         ultraCompact
           ? 'pt-[max(0.2rem,env(safe-area-inset-top))] pb-1'
           : compact
           ? 'pt-[max(0.35rem,calc(env(safe-area-inset-top)+0.2rem))] pb-1'
-          : 'pt-[max(0.65rem,calc(env(safe-area-inset-top)+0.4rem))] pb-1 sm:pb-1.5'
+          : 'pt-[max(0.65rem,calc(env(safe-area-inset-top)+0.4rem))] pb-1.5'
       }`}
     >
       {/* Top utility bar */}
@@ -129,17 +129,16 @@ export const ScoreBoard: React.FC<ScoreBoardProps> = React.memo(({
         </button>
       </div>
 
-      {/* Main Scoreboard Banner */}
+      {/* Main Scoreboard Banner (Unified Portrait Layout across all screen sizes) */}
       <div
-        className={`relative overflow-hidden rounded-2xl sm:rounded-3xl bg-[#124029] border border-[#E5B94F]/30 ${
-          ultraCompact ? 'p-1 sm:p-1.5' : compact ? 'p-1.5 sm:p-2.5' : 'p-2.5 sm:p-4'
+        className={`relative overflow-hidden rounded-2xl bg-[#124029] border border-[#E5B94F]/30 ${
+          ultraCompact ? 'p-1.5' : compact ? 'p-2' : 'p-2.5'
         }`}
       >
-        {/* MOBILE LAYOUT (< 640px) */}
-        <div className="relative z-10 grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-1.5 sm:hidden">
-          {/* Mobile Player 1 Card */}
+        <div className="relative z-10 grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-1.5 sm:gap-2">
+          {/* Player 1 Card */}
           <div
-            className={`min-w-0 p-2 rounded-xl transition ${
+            className={`min-w-0 rounded-xl transition ${ultraCompact ? 'px-2 py-1' : 'p-2'} ${
               p1Leading
                 ? 'bg-[#183D2B] border border-[#168A52]/75'
                 : 'bg-[#16212E] border border-white/10'
@@ -151,32 +150,39 @@ export const ScoreBoard: React.FC<ScoreBoardProps> = React.memo(({
                 name={p1Name}
                 size="xs"
                 frame={player1Frame}
-                className="!w-7 !h-7"
+                className={ultraCompact ? '!w-6 !h-6' : '!w-7 !h-7'}
               />
               <span className="font-bold text-[#F8FAFC] text-xs truncate min-w-0 flex-1">
                 {crestInfo ? `${crestInfo.icon} ` : ''}
                 {p1Name}
                 {player1Badge ? ` ${player1Badge}` : ''}
               </span>
-            </div>
-            <div className="flex items-center justify-between mt-1.5 gap-1">
-              <div className="flex items-center gap-1 min-w-0">
-                <span className="text-[10px] text-[#94A3B8] font-bold tabular-nums">
-                  {p1Correct}✓
+              {ultraCompact && (
+                <span className="font-black text-lg text-[#22C55E] font-mono tabular-nums leading-none shrink-0">
+                  {player1.score}
                 </span>
-                {p1Streak >= 2 && (
-                  <span className="text-[10px] font-black text-[#FBBF24] tabular-nums">
-                    🔥{p1Streak}
-                  </span>
-                )}
-              </div>
-              <span className="font-black text-xl text-[#22C55E] font-mono tabular-nums leading-none">
-                {player1.score}
-              </span>
+              )}
             </div>
+            {!ultraCompact && (
+              <div className="flex items-center justify-between mt-1.5 gap-1">
+                <div className="flex items-center gap-1 min-w-0">
+                  <span className="text-[10px] text-[#94A3B8] font-bold tabular-nums">
+                    {p1Correct}✓
+                  </span>
+                  {p1Streak >= 2 && (
+                    <span className="text-[10px] font-black text-[#FBBF24] tabular-nums">
+                      🔥{p1Streak}
+                    </span>
+                  )}
+                </div>
+                <span className="font-black text-xl text-[#22C55E] font-mono tabular-nums leading-none">
+                  {player1.score}
+                </span>
+              </div>
+            )}
           </div>
 
-          {/* Mobile Center VS Badge */}
+          {/* Center VS Badge */}
           <div className="flex items-center justify-center shrink-0">
             <div className="w-7 h-7 rounded-lg bg-[#080E14] border border-[#22C55E]/40 flex items-center justify-center">
               <span className="font-black text-[10px] text-[#FBBF24] tracking-tighter">
@@ -185,15 +191,20 @@ export const ScoreBoard: React.FC<ScoreBoardProps> = React.memo(({
             </div>
           </div>
 
-          {/* Mobile Player 2 Card */}
+          {/* Player 2 Card */}
           <div
-            className={`min-w-0 p-2 rounded-xl transition ${
+            className={`min-w-0 rounded-xl transition ${ultraCompact ? 'px-2 py-1' : 'p-2'} ${
               p2Leading
                 ? 'bg-[#183D2B] border border-[#168A52]/75'
                 : 'bg-[#16212E] border border-white/10'
             }`}
           >
             <div className="flex items-center justify-end gap-1.5 min-w-0">
+              {ultraCompact && (
+                <span className="font-black text-lg text-[#22C55E] font-mono tabular-nums leading-none shrink-0">
+                  {player2.score}
+                </span>
+              )}
               <div className="min-w-0 flex-1 text-right">
                 <div className="flex items-center justify-end gap-1 min-w-0">
                   {isBotMatch && (
@@ -208,7 +219,7 @@ export const ScoreBoard: React.FC<ScoreBoardProps> = React.memo(({
                     {p2Name}
                   </span>
                 </div>
-                {isBotMatch && botStatus === 'thinking' && (
+                {!ultraCompact && isBotMatch && botStatus === 'thinking' && (
                   <span
                     data-testid="bot-thinking-indicator"
                     className="block text-[9px] font-bold text-[#FBBF24] animate-pulse leading-tight"
@@ -221,160 +232,33 @@ export const ScoreBoard: React.FC<ScoreBoardProps> = React.memo(({
                 avatar={isBotMatch ? '🤖' : player2.avatar || '⚽'}
                 name={p2Name}
                 size="xs"
-                className="!w-7 !h-7"
+                className={ultraCompact ? '!w-6 !h-6' : '!w-7 !h-7'}
               />
             </div>
-            <div className="flex items-center justify-between mt-1.5 gap-1">
-              <span className="font-black text-xl text-[#22C55E] font-mono tabular-nums leading-none">
-                {player2.score}
-              </span>
-              <div className="flex items-center gap-1 min-w-0">
-                {p2Streak >= 2 && (
-                  <span className="text-[10px] font-black text-[#FBBF24] tabular-nums">
-                    🔥{p2Streak}
-                  </span>
-                )}
-                <span className="text-[10px] text-[#94A3B8] font-bold tabular-nums">
-                  {p2Correct}✓
+            {!ultraCompact && (
+              <div className="flex items-center justify-between mt-1.5 gap-1">
+                <span className="font-black text-xl text-[#22C55E] font-mono tabular-nums leading-none">
+                  {player2.score}
                 </span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* DESKTOP & TABLET LAYOUT (>= 640px) */}
-        <div className={`relative z-10 hidden sm:flex items-center justify-between ${ultraCompact ? 'gap-2.5' : 'gap-4 md:gap-6'}`}>
-          {/* Player 1 Card */}
-          <div
-            className={`flex-1 min-w-0 flex items-center rounded-2xl transition ${
-              ultraCompact ? 'gap-2 px-2.5 py-1' : 'gap-3 md:gap-4 p-3'
-            } ${
-              p1Leading
-                ? 'bg-[#183D2B] border border-[#168A52]/75'
-                : 'bg-[#16212E] border border-white/10'
-            }`}
-          >
-            <PlayerAvatar
-              avatar={player1.avatar || '⚽'}
-              name={p1Name}
-              size={ultraCompact ? 'sm' : 'lg'}
-              frame={player1Frame}
-            />
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-1.5">
-                {crestInfo && (
-                  <span title={crestInfo.label} className="text-sm shrink-0">
-                    {crestInfo.icon}
-                  </span>
-                )}
-                <span className={`font-extrabold text-[#F8FAFC] truncate ${ultraCompact ? 'text-xs' : 'text-sm md:text-base'}`}>
-                  {p1Name}
-                </span>
-                {player1Badge && (
-                  <span className="text-sm shrink-0">{player1Badge}</span>
-                )}
-              </div>
-              {!ultraCompact && (
-                <div className="flex items-center gap-2 mt-1 text-xs font-bold text-[#94A3B8]">
-                  <span className="tabular-nums">Doğru: {p1Correct}</span>
-                  {p1Streak >= 1 && (
-                    <span className="text-[#FBBF24] font-black tabular-nums">
-                      🔥 Seri: {p1Streak}
+                <div className="flex items-center gap-1 min-w-0">
+                  {p2Streak >= 2 && (
+                    <span className="text-[10px] font-black text-[#FBBF24] tabular-nums">
+                      🔥{p2Streak}
                     </span>
                   )}
-                </div>
-              )}
-            </div>
-            <div className="text-right pl-1 shrink-0">
-              <span className={`font-black text-[#22C55E] font-mono tabular-nums tracking-tight ${ultraCompact ? 'text-xl leading-none' : 'text-3xl md:text-4xl'}`}>
-                {player1.score}
-              </span>
-              {!ultraCompact && (
-                <span className="block text-[10px] text-[#94A3B8] uppercase font-black tracking-wider">
-                  SKOR
-                </span>
-              )}
-            </div>
-          </div>
-
-          {/* Center VS Indicator */}
-          <div className="flex flex-col items-center justify-center shrink-0 px-0.5">
-            <div className={`rounded-xl bg-[#080E14] border border-[#22C55E]/40 flex items-center justify-center ${ultraCompact ? 'w-8 h-8' : 'w-10 h-10 md:w-11 md:h-11'}`}>
-              <span className={`font-black text-[#FBBF24] tracking-tighter ${ultraCompact ? 'text-[10px]' : 'text-xs md:text-sm'}`}>
-                VS
-              </span>
-            </div>
-          </div>
-
-          {/* Player 2 Card */}
-          <div
-            className={`flex-1 min-w-0 flex items-center justify-end rounded-2xl transition ${
-              ultraCompact ? 'gap-2 px-2.5 py-1' : 'gap-3 md:gap-4 p-3'
-            } ${
-              p2Leading
-                ? 'bg-[#183D2B] border border-[#168A52]/75'
-                : 'bg-[#16212E] border border-white/10'
-            }`}
-          >
-            <div className="text-left pr-1 shrink-0">
-              <span className={`font-black text-[#22C55E] font-mono tabular-nums tracking-tight ${ultraCompact ? 'text-xl leading-none' : 'text-3xl md:text-4xl'}`}>
-                {player2.score}
-              </span>
-              {!ultraCompact && (
-                <span className="block text-[10px] text-[#94A3B8] uppercase font-black tracking-wider">
-                  SKOR
-                </span>
-              )}
-            </div>
-            <div className="min-w-0 flex-1 text-right">
-              <div className="flex items-center justify-end gap-1.5">
-                {isBotMatch && (
-                  <span
-                    data-testid="scoreboard-bot-badge-desktop"
-                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-[#080E14] border border-white/15 text-[10px] font-black text-[#94A3B8] shrink-0"
-                  >
-                    <Bot className="w-3 h-3 text-[#22C55E]" />
-                    BOT
+                  <span className="text-[10px] text-[#94A3B8] font-bold tabular-nums">
+                    {p2Correct}✓
                   </span>
-                )}
-                <span className={`font-extrabold text-[#F8FAFC] truncate ${ultraCompact ? 'text-xs' : 'text-sm md:text-base'}`}>
-                  {p2Name}
-                </span>
-              </div>
-              {!ultraCompact && (
-                <div className="flex items-center justify-end gap-2 mt-1 text-xs font-bold text-[#94A3B8]">
-                  {isBotMatch && botStatus === 'thinking' ? (
-                    <span
-                      data-testid="bot-thinking-indicator-desktop"
-                      className="text-[#FBBF24] font-black animate-pulse"
-                    >
-                      Düşünüyor...
-                    </span>
-                  ) : (
-                    <>
-                      {p2Streak >= 1 && (
-                        <span className="text-[#FBBF24] font-black tabular-nums">
-                          🔥 Seri: {p2Streak}
-                        </span>
-                      )}
-                      <span className="tabular-nums">Doğru: {p2Correct}</span>
-                    </>
-                  )}
                 </div>
-              )}
-            </div>
-            <PlayerAvatar
-              avatar={isBotMatch ? '🤖' : player2.avatar || '⚽'}
-              name={p2Name}
-              size={ultraCompact ? 'sm' : 'lg'}
-            />
+              </div>
+            )}
           </div>
         </div>
 
         {/* Progress Bar for Current Round Time */}
         <div
-          className={`w-full bg-[#080E14] h-1.5 sm:h-2 rounded-full overflow-hidden border border-white/10 ${
-            compact ? 'mt-1.5' : 'mt-2.5'
+          className={`w-full bg-[#080E14] h-1.5 rounded-full overflow-hidden border border-white/10 ${
+            ultraCompact ? 'mt-1' : compact ? 'mt-1.5' : 'mt-2'
           }`}
         >
           <div

@@ -33,13 +33,8 @@ public class MainActivity extends BridgeActivity {
             insetsController.setAppearanceLightNavigationBars(false);
         }
 
-        // Telefonları dikey (portrait) koru; 600dp ve üzeri tabletlerde yatay & dikey desteği aç
-        int smallestWidthDp = getResources().getConfiguration().smallestScreenWidthDp;
-        if (smallestWidthDp >= 600) {
-            setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_FULL_USER);
-        } else {
-            setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
-        }
+        // Telefon ve tabletlerde daima dikey (portrait) oyun deneyimi uygula
+        setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
 
         // Sistem çubukları, ekran kesimi ve IME klavye yüksekliğini YALNIZCA BİR KEZ uygula ve tüket (çift IME boşluğunu önler)
         View contentView = findViewById(android.R.id.content);

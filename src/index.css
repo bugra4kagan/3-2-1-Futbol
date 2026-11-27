@@ -1,7 +1,5 @@
 @import "tailwindcss";
 
-@custom-variant tablet-land (@media (min-width: 840px) and (orientation: landscape));
-
 :root {
   --bg-primary: #0D3822;
   --bg-secondary: #134A2D;

@@ -95,7 +95,7 @@ export const StatsView: React.FC<StatsViewProps> = ({
   return (
     <div
       data-testid="stats-view"
-      className="w-full max-w-xl md:max-w-3xl lg:max-w-4xl mx-auto px-3 sm:px-4 pt-3 pb-24 flex flex-col gap-5 text-left"
+      className="w-full max-w-[560px] mx-auto px-3 sm:px-4 pt-3 pb-24 flex flex-col gap-5 text-left"
     >
       {/* Inspect Another Player Stats Card */}
       {onInspectPlayer && (
@@ -227,8 +227,8 @@ export const StatsView: React.FC<StatsViewProps> = ({
         </div>
       )}
 
-      {/* Top 2x2 Summary KPI Grid matching screenshot -> 4-col on tablet */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 sm:gap-3">
+      {/* Top 2x2 Summary KPI Grid (Portrait Vertical Mobile Layout) */}
+      <div className="grid grid-cols-2 gap-2.5 sm:gap-3">
         <div className="p-3.5 sm:p-4 rounded-2xl bg-gradient-to-br from-amber-950/35 to-slate-900 border border-amber-400/55 shadow-lg">
           <span className="block text-xs font-semibold text-slate-300">
             Toplam puan

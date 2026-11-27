@@ -98,6 +98,9 @@ export interface PersistedActiveRoomSession {
   playerId?: string;
   memberUid?: string | null;
   opponentName?: string;
+  myScore?: number;
+  opponentScore?: number;
+  disconnectGraceExpiresAt?: number | null;
   matchSeq?: number;
   matchSessionId?: string | null;
   savedAt: number;
