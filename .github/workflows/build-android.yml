@@ -141,7 +141,7 @@ jobs:
             grep -E 'package=|versionCode=|versionName=' "$MERGED_MANIFEST" | head -n 5
           fi
           grep -q 'applicationId "com.futbol321.challenge"' app/build.gradle
-          grep -q 'versionCode 4' app/build.gradle
+          grep -q 'versionCode 5' app/build.gradle
           grep -q 'versionName "1.1.0"' app/build.gradle
 
           # Verify compiled AAB contains the configured Render backend URL inside base/assets/public

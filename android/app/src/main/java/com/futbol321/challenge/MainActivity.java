@@ -13,6 +13,7 @@ public class MainActivity extends BridgeActivity {
     protected void onCreate(Bundle savedInstanceState) {
         registerPlugin(PlayBillingPlugin.class);
         registerPlugin(PlayIntegrityPlugin.class);
+        registerPlugin(GoogleAuthPlugin.class);
         super.onCreate(savedInstanceState);
 
         // Telefonları dikey (portrait) koru; 600dp ve üzeri tabletlerde yatay & dikey desteği aç

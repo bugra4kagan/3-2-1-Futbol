@@ -19,3 +19,6 @@
 -keep class com.google.android.play.core.integrity.** { *; }
 -keep class com.futbol321.challenge.PlayBillingPlugin { *; }
 -keep class com.futbol321.challenge.PlayIntegrityPlugin { *; }
+-keep class com.futbol321.challenge.GoogleAuthPlugin { *; }
+-keep class androidx.credentials.** { *; }
+-keep class com.google.android.libraries.identity.googleid.** { *; }
