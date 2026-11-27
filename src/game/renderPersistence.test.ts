@@ -389,9 +389,16 @@ test('ServerMatchLedger rejects forged Firestore room scores higher than server-
     assert.equal(legitComplete.verifiedScore, 1);
   }
 
-  // 3. Completed matches award +100 league points for win and +50 for loss
+  // 3. ServerMatchLedger synchronizes +100 win / -50 loss / 0 draw across bot & online modes (2x affects Coins only, min 0 LP)
+  const lpStore = new AccountStore(null);
+  lpStore.registerOrUpdate({
+    accountId: 'acc_sync_lp',
+    profile: { id: 'acc_sync_lp', name: 'PuanSenkron', avatar: '⚽', score: 0 },
+    progression: { ...createInitialProgression('acc_sync_lp'), weeklyPoints: 20, totalPoints: 20 },
+  });
+
   const botSession = ledger.issueSession({
-    accountId: 'acc_bot_player',
+    accountId: 'acc_sync_lp',
     minigameType: 'xox',
     mode: 'bot',
     now: startedAt,
@@ -403,7 +410,7 @@ test('ServerMatchLedger rejects forged Firestore room scores higher than server-
     if (pid) {
       const xoxAns = ledger.submitVerifiedAnswer({
         sessionId: botSession.sessionId,
-        accountId: 'acc_bot_player',
+        accountId: 'acc_sync_lp',
         roundIndex: 0,
         answer: pid,
         cellPos: { row: 0, col },
@@ -413,18 +420,31 @@ test('ServerMatchLedger rejects forged Firestore room scores higher than server-
   }
   const botRes = ledger.consumeVerifiedMatchSession({
     sessionId: botSession.sessionId,
-    accountId: 'acc_bot_player',
-    hasMultiplier2x: false,
+    accountId: 'acc_sync_lp',
+    hasMultiplier2x: true,
+    botScores: { playerScore: 1, opponentScore: 0 },
     minDurationMs: 1000,
     now: Date.now(),
   });
   assert.equal(botRes.ok, true);
   if (botRes.ok) {
-    assert.equal(botRes.pointsAwarded, botRes.won ? 100 : 50);
-    assert.ok(botRes.coinsAwarded > 0);
+    assert.equal(botRes.won, true);
+    // 2x multiplier doubles coins, NOT league points
+    assert.equal(botRes.pointsAwarded, 100);
+    assert.ok(botRes.coinsAwarded > 200);
+    const afterWin = lpStore.recordVerifiedMatchReward({
+      accountId: 'acc_sync_lp',
+      coinsAwarded: botRes.coinsAwarded,
+      pointsAwarded: botRes.pointsAwarded,
+      won: botRes.won,
+      isDraw: botRes.drew,
+    });
+    assert.equal(afterWin.ok, true);
+    assert.equal(afterWin.account?.progression.weeklyPoints, 120);
+    assert.equal(afterWin.account?.progression.totalPoints, 120);
   }
 
-  // 4. Online win awards +100 and loss awards +50 league points on server match ledger
+  // 4. Online win awards +100 and loss deducts -50 (clamping safely at minimum 0)
   assert.equal(legitComplete.ok, true);
   if (legitComplete.ok) {
     assert.equal(legitComplete.won, true);
@@ -432,14 +452,14 @@ test('ServerMatchLedger rejects forged Firestore room scores higher than server-
   }
 
   const lossSession = ledger.issueSession({
-    accountId: 'acc_loss_player',
+    accountId: 'acc_sync_lp',
     minigameType: 'two_clubs',
     mode: 'online_match',
     now: startedAt,
   });
   const lossRes = ledger.consumeVerifiedMatchSession({
     sessionId: lossSession.sessionId,
-    accountId: 'acc_loss_player',
+    accountId: 'acc_sync_lp',
     hasMultiplier2x: false,
     serverVerifiedOpponentScore: 3,
     requireServerOpponentVerification: true,
@@ -449,6 +469,54 @@ test('ServerMatchLedger rejects forged Firestore room scores higher than server-
   assert.equal(lossRes.ok, true);
   if (lossRes.ok) {
     assert.equal(lossRes.won, false);
-    assert.equal(lossRes.pointsAwarded, 50);
+    assert.equal(lossRes.drew, false);
+    assert.equal(lossRes.pointsAwarded, -50);
+    const afterFirstLoss = lpStore.recordVerifiedMatchReward({
+      accountId: 'acc_sync_lp',
+      coinsAwarded: lossRes.coinsAwarded,
+      pointsAwarded: lossRes.pointsAwarded,
+      won: false,
+      isDraw: false,
+    });
+    assert.equal(afterFirstLoss.account?.progression.weeklyPoints, 70);
+    assert.equal(afterFirstLoss.account?.progression.totalPoints, 70);
+
+    lpStore.recordVerifiedMatchReward({
+      accountId: 'acc_sync_lp',
+      coinsAwarded: 10,
+      pointsAwarded: -50,
+      won: false,
+    });
+    const floored = lpStore.recordVerifiedMatchReward({
+      accountId: 'acc_sync_lp',
+      coinsAwarded: 10,
+      pointsAwarded: -50,
+      won: false,
+    });
+    assert.equal(floored.account?.progression.weeklyPoints, 0);
+    assert.equal(floored.account?.progression.totalPoints, 0);
+  }
+
+  // 5. Online 0-0 draw awards 0 LP and increments neither wins nor losses
+  const drawSession = ledger.issueSession({
+    accountId: 'acc_sync_lp',
+    minigameType: 'career',
+    mode: 'online_room',
+    now: startedAt,
+  });
+  const drawRes = ledger.consumeVerifiedMatchSession({
+    sessionId: drawSession.sessionId,
+    accountId: 'acc_sync_lp',
+    hasMultiplier2x: true,
+    serverVerifiedOpponentScore: 0,
+    requireServerOpponentVerification: true,
+    minDurationMs: 1000,
+    now: Date.now(),
+  });
+  assert.equal(drawRes.ok, true);
+  if (drawRes.ok) {
+    assert.equal(drawRes.won, false);
+    assert.equal(drawRes.drew, true);
+    assert.equal(drawRes.pointsAwarded, 0);
   }
 });

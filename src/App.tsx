@@ -1056,35 +1056,42 @@ export default function App() {
     []
   );
 
-  const completeServerVerifiedMatchSession = useCallback(async (matchRoomCode?: string | null) => {
-    const aid = sessionPlayerIdRef.current;
-    if (!aid) return;
-    try {
-      const sid =
-        serverMatchSessionIdRef.current ||
-        (serverMatchStartPromiseRef.current ? await serverMatchStartPromiseRef.current : null);
-      if (!sid) return;
-      if (serverMatchAnswerPromisesRef.current.length > 0) {
-        await Promise.allSettled(serverMatchAnswerPromisesRef.current);
+  const completeServerVerifiedMatchSession = useCallback(
+    async (
+      matchRoomCode?: string | null,
+      botScores?: { playerScore: number; opponentScore: number }
+    ) => {
+      const aid = sessionPlayerIdRef.current;
+      if (!aid) return;
+      try {
+        const sid =
+          serverMatchSessionIdRef.current ||
+          (serverMatchStartPromiseRef.current ? await serverMatchStartPromiseRef.current : null);
+        if (!sid) return;
+        if (serverMatchAnswerPromisesRef.current.length > 0) {
+          await Promise.allSettled(serverMatchAnswerPromisesRef.current);
+        }
+        const res = await fetchSignedAccountApi(
+          aid,
+          '/api/matches/complete',
+          {
+            accountId: aid,
+            matchSessionId: sid,
+            roomCode: matchRoomCode || undefined,
+            botScores: !matchRoomCode ? botScores : undefined,
+          },
+          { timeoutMs: 25000, retries: 2, retryDelayMs: 2000 }
+        );
+        if (res.ok) {
+          serverMatchSessionIdRef.current = null;
+          serverMatchStartPromiseRef.current = null;
+        }
+      } catch {
+        // Non-blocking cold-start / offline fallback
       }
-      const res = await fetchSignedAccountApi(
-        aid,
-        '/api/matches/complete',
-        {
-          accountId: aid,
-          matchSessionId: sid,
-          roomCode: matchRoomCode || undefined,
-        },
-        { timeoutMs: 25000, retries: 2, retryDelayMs: 2000 }
-      );
-      if (res.ok) {
-        serverMatchSessionIdRef.current = null;
-        serverMatchStartPromiseRef.current = null;
-      }
-    } catch {
-      // Non-blocking cold-start / offline fallback
-    }
-  }, []);
+    },
+    []
+  );
 
   // Timers
   const roundTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -1408,7 +1415,7 @@ export default function App() {
         startBotMatch('medium', 'two_clubs');
       } else if (urlParams.get('demo_victory') === '1') {
         suppressDemoAutoRecordRef.current = true;
-        setLastMatchRewards({ earnedPoints: 229, earnedCoins: 100 });
+        setLastMatchRewards({ earnedPoints: 100, earnedCoins: 100 });
         setPlayer1({
           id: sessionPlayerIdRef.current,
           name: 'Futbol Gurmesi',
@@ -2359,7 +2366,8 @@ trackGameEvent('match_complete', {
       suppressAutoHighScore: hsMilestone.isHighScore,
     });
     void completeServerVerifiedMatchSession(
-      mode === 'online_match' || mode === 'online_room' ? activeRoomCodeRef.current : undefined
+      mode === 'online_match' || mode === 'online_room' ? activeRoomCodeRef.current : undefined,
+      mode === 'bot' ? { playerScore: p1Score, opponentScore: p2Score } : undefined
     ).then(() => {
       void fetchServerLeaderboard();
     });
@@ -3247,7 +3255,7 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
           Boolean(curProg.permanentMultiplier2x) ||
           (curProg.multiplier2xMatches ?? 0) > 0;
         const roundCoins = has2x ? 50 : 25;
-        const roundPoints = mode === 'bot' ? 0 : has2x ? 60 : 30;
+        const roundPoints = 0;
         setLastRoundReward({ coins: roundCoins, points: roundPoints });
         setRoundDoubledByAd(false);
         const withBonus = grantExtraRewards(curProg, roundCoins, roundPoints);

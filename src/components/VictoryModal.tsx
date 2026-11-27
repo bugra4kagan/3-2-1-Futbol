@@ -661,11 +661,17 @@ Ortak futbolcuları benden hızlı bulabilir misin? Meydan okuyorum! 🔥`;
             <div className="flex flex-wrap items-center justify-center gap-2.5">
               <span
                 className={`flex items-center gap-1 ${
-                  matchRewards.earnedPoints < 0 ? 'text-[#EF4444]' : 'text-[#22C55E]'
+                  matchRewards.earnedPoints < 0
+                    ? 'text-[#EF4444]'
+                    : matchRewards.earnedPoints === 0
+                    ? 'text-[#94A3B8]'
+                    : 'text-[#22C55E]'
                 }`}
               >
                 {matchRewards.earnedPoints < 0
                   ? `📉 ${matchRewards.earnedPoints} Lig Puanı`
+                  : matchRewards.earnedPoints === 0
+                  ? '⚖️ 0 Lig Puanı'
                   : `🏆 +${matchRewards.earnedPoints} Lig Puanı`}
               </span>
               <span className="text-white/20">•</span>

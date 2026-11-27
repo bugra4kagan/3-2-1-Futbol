@@ -29,7 +29,7 @@ export const STORE_ITEMS: ShopGiftItem[] = [
   {
     id: 'store_mult_2x_5',
     title: 'Ödül Katlayıcı 2x (5 Maç)',
-    description: 'Sonraki 5 maçta kazandığın tüm Coin ve Lig Puanlarını otomatik 2x katlar!',
+    description: 'Sonraki 5 maçta kazandığın maç Coin ödülünü otomatik 2x katlar!',
     costCoins: 2000,
     priceTry: 39.99,
     icon: '⚡',
@@ -41,7 +41,7 @@ export const STORE_ITEMS: ShopGiftItem[] = [
   {
     id: 'store_mult_2x_forever',
     title: 'Kalıcı 2x Ödül Katlayıcı',
-    description: 'Süresiz olarak tüm maçlarda 2x Coin ve Lig Puanı kazancı sağlar!',
+    description: 'Süresiz olarak tüm maçlarda 2x Coin kazancı sağlar!',
     costCoins: 12000,
     priceTry: 129.99,
     icon: '👑',
@@ -88,7 +88,7 @@ export const STORE_ITEMS: ShopGiftItem[] = [
   {
     id: 'store_league_shield',
     title: '🛡️ Lig Kalkanı',
-    description: 'Bir sonraki mağlubiyetinde Lig Puanı (LP) kaybını tamamen önler. Tek kullanımlık.',
+    description: 'Koleksiyon ve envanter rozeti. Standart lig puanı kuralları (+100 / -50 / 0 LP) geçerlidir.',
     costCoins: 1000,
     priceTry: 24.99,
     icon: '🛡️',

@@ -140,10 +140,13 @@ export function applyVerifiedMatchRewardToProgression(
     coinsAwarded: number;
     pointsAwarded: number;
     won: boolean;
+    isDraw?: boolean;
   }
 ): UserProgression {
   const coinCredit = Math.max(0, Math.round(params.coinsAwarded));
-  const pointCredit = Math.max(0, Math.round(params.pointsAwarded));
+  const pointDelta = Math.max(-50, Math.min(350, Math.round(params.pointsAwarded)));
+  const isWin = Boolean(params.won) && !params.isDraw;
+  const isLoss = !params.won && !params.isDraw;
   const nextMultMatches =
     !prev.permanentMultiplier2x && (prev.multiplier2xMatches ?? 0) > 0
       ? (prev.multiplier2xMatches ?? 1) - 1
@@ -154,17 +157,17 @@ export function applyVerifiedMatchRewardToProgression(
     {
       ...prev,
       coins: prev.coins + coinCredit,
-      weeklyPoints: prev.weeklyPoints + pointCredit,
-      totalPoints: prev.totalPoints + pointCredit,
+      weeklyPoints: Math.max(0, prev.weeklyPoints + pointDelta),
+      totalPoints: Math.max(0, prev.totalPoints + pointDelta),
       matchesPlayed: (prev.matchesPlayed ?? 0) + 1,
-      wins: (prev.wins ?? 0) + (params.won ? 1 : 0),
-      losses: (prev.losses ?? 0) + (params.won ? 0 : 1),
+      wins: (prev.wins ?? 0) + (isWin ? 1 : 0),
+      losses: (prev.losses ?? 0) + (isLoss ? 1 : 0),
       multiplier2xMatches: nextMultMatches,
     },
     {
       strictActionVerification: true,
       verifiedCoinCredit: coinCredit,
-      verifiedPointCredit: pointCredit,
+      verifiedPointCredit: pointDelta,
     }
   );
 }
@@ -744,6 +747,7 @@ export class AccountStore {
     coinsAwarded: number;
     pointsAwarded: number;
     won: boolean;
+    isDraw?: boolean;
   }): { ok: boolean; account?: PersistentAccountRecord } {
     const cleanId = String(params.accountId || '').trim().slice(0, 64);
     const existing = this.byId.get(cleanId);

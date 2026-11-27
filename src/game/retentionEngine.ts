@@ -772,9 +772,9 @@ export interface MatchOutcomeInput {
 }
 
 export const MATCH_WIN_LEAGUE_POINTS = 100;
-export const MATCH_LOSS_LEAGUE_POINTS = 50;
-export const MATCH_DRAW_LEAGUE_POINTS = 50;
-export const MATCH_LOSS_LP_PENALTY = 0;
+export const MATCH_LOSS_LEAGUE_POINTS = -50;
+export const MATCH_DRAW_LEAGUE_POINTS = 0;
+export const MATCH_LOSS_LP_PENALTY = 50;
 
 export function recordMatchOutcome(
   prog: UserProgression,
@@ -794,7 +794,8 @@ export function recordMatchOutcome(
   const newWinStreak = isWin ? synced.winStreak + 1 : isLoss ? 0 : synced.winStreak;
   const bestWinStreak = Math.max(synced.bestWinStreak, newWinStreak);
 
-  // League standings update immediately on every completed match: Win +100, Loss/Draw +50.
+  // League standings use fixed rules across all modes: Win +100 LP, Loss -50 LP, Draw 0 LP (min 0 LP).
+  // Neither League Shields nor 2x multipliers alter league points.
   const currentShields = Math.max(0, Math.round(synced.leagueShields ?? 0));
   const shieldProtected = false;
   const nextLeagueShields = currentShields;
@@ -820,7 +821,8 @@ export function recordMatchOutcome(
   const hasPerm2x = Boolean(synced.permanentMultiplier2x);
   const remaining2xMatches = Math.max(0, synced.multiplier2xMatches ?? 0);
   const multiplierApplied = hasPerm2x || remaining2xMatches > 0;
-  const earnedPoints = basePoints > 0 && multiplierApplied ? basePoints * 2 : basePoints;
+  // 2x multiplier applies ONLY to Coin rewards, never to League Points.
+  const earnedPoints = basePoints;
   const earnedCoins = multiplierApplied ? baseCoins * 2 : baseCoins;
   const nextMultiplier2xMatches =
     !hasPerm2x && remaining2xMatches > 0 ? remaining2xMatches - 1 : remaining2xMatches;

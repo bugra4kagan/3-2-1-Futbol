@@ -923,6 +923,7 @@ export async function claimMatchRewardAtomicAdmin(params: {
   coinsAwarded: number;
   pointsAwarded: number;
   won?: boolean;
+  isDraw?: boolean;
   fallbackAccountRecord?: PersistentAccountRecord;
   requireAccountCredit?: boolean;
 }): Promise<{
@@ -971,6 +972,7 @@ export async function claimMatchRewardAtomicAdmin(params: {
           coinsAwarded: params.coinsAwarded,
           pointsAwarded: params.pointsAwarded,
           won: Boolean(params.won),
+          isDraw: Boolean(params.isDraw),
         });
         creditedAccount = {
           ...baseAccount,

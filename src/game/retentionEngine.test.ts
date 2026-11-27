@@ -263,6 +263,7 @@ test('store dual purchase (Coin & TRY), energy drinks, 2x multiplier, and social
   });
   assert.equal(matchRes.multiplierApplied, true);
   assert.equal(matchRes.earnedCoins, 100 * 2);
+  assert.equal(matchRes.earnedPoints, 100);
   assert.equal(matchRes.progression.multiplier2xMatches, 4);
 
   // 6. Grant extra rewards (Rewarded Ad 2x)
@@ -647,7 +648,7 @@ test('coin economy rebalance: boosted quests, +100 match win, League Shield, Ext
   assert.equal(win1.progression.totalPoints, totalBeforeWin + 100);
   prog = win1.progression;
 
-  // 3. Defeat awards +50 League Points and immediately updates profile & league standings
+  // 3. Defeat deducts -50 League Points and immediately updates profile & league standings
   const lpBeforeLoss = prog.weeklyPoints;
   const totalBeforeLoss = prog.totalPoints;
   const lossNoShield = recordMatchOutcome(prog, {
@@ -666,12 +667,12 @@ test('coin economy rebalance: boosted quests, +100 match win, League Shield, Ext
     now: today,
   });
   assert.equal(lossNoShield.shieldProtected, false);
-  assert.equal(lossNoShield.earnedPoints, 50);
-  assert.equal(lossNoShield.progression.weeklyPoints, lpBeforeLoss + 50);
-  assert.equal(lossNoShield.progression.totalPoints, totalBeforeLoss + 50);
+  assert.equal(lossNoShield.earnedPoints, -50);
+  assert.equal(lossNoShield.progression.weeklyPoints, Math.max(0, lpBeforeLoss - 50));
+  assert.equal(lossNoShield.progression.totalPoints, Math.max(0, totalBeforeLoss - 50));
   prog = lossNoShield.progression;
 
-  // 4. Purchase League Shield (1.000 Coin) -> inventory persists and is not consumed when defeat grants +50 LP
+  // 4. Purchase League Shield (1.000 Coin) -> stays untouched and does NOT alter fixed -50 LP loss
   prog = { ...prog, coins: 6000 };
   const shieldItem = STORE_ITEMS.find((i) => i.id === 'store_league_shield');
   assert.equal(shieldItem?.costCoins, 1000);
@@ -682,6 +683,7 @@ test('coin economy rebalance: boosted quests, +100 match win, League Shield, Ext
   prog = buyShield.progression;
 
   const lpProtectedBefore = prog.weeklyPoints;
+  const totalProtectedBefore = prog.totalPoints;
   const lossWithShield = recordMatchOutcome(prog, {
     won: false,
     isDraw: false,
@@ -698,8 +700,9 @@ test('coin economy rebalance: boosted quests, +100 match win, League Shield, Ext
     now: today,
   });
   assert.equal(lossWithShield.shieldProtected, false);
-  assert.equal(lossWithShield.earnedPoints, 50);
-  assert.equal(lossWithShield.progression.weeklyPoints, lpProtectedBefore + 50);
+  assert.equal(lossWithShield.earnedPoints, -50);
+  assert.equal(lossWithShield.progression.weeklyPoints, Math.max(0, lpProtectedBefore - 50));
+  assert.equal(lossWithShield.progression.totalPoints, Math.max(0, totalProtectedBefore - 50));
   assert.equal(lossWithShield.progression.leagueShields, 1);
   prog = lossWithShield.progression;
 
@@ -827,9 +830,15 @@ test('5-tier weekly league standings, Sunday 23:59 countdown, automatic promotio
   assert.equal(metrics.movesLabel, '6 Hamle');
 });
 
-test('matches immediately award +100 league points for win and +50 for loss and update league standings', () => {
+test('matches enforce +100 win / -50 loss / 0 draw LP with 0 floor across all modes and ignore 2x/shields for LP', () => {
   const now = new Date(2026, 10, 15, 14, 0, 0);
-  const start = { ...createInitialProgression('bot_tester', now), weeklyPoints: 240, totalPoints: 500 };
+  const start = {
+    ...createInitialProgression('bot_tester', now),
+    weeklyPoints: 240,
+    totalPoints: 500,
+    permanentMultiplier2x: true,
+    leagueShields: 2,
+  };
   const profile = { id: 'bot_tester', name: 'LigTestci', avatar: '⚽', score: 0 };
 
   const botWin = recordMatchOutcome(start, {
@@ -848,8 +857,9 @@ test('matches immediately award +100 league points for win and +50 for loss and 
     now,
   });
 
+  // 2x doubles coins (60 * 2 = 120) but LP stays strictly +100
   assert.equal(botWin.earnedPoints, 100);
-  assert.ok(botWin.earnedCoins > 0);
+  assert.equal(botWin.earnedCoins, 120);
   assert.equal(botWin.progression.weeklyPoints, 340);
   assert.equal(botWin.progression.totalPoints, 600);
 
@@ -858,8 +868,31 @@ test('matches immediately award +100 league points for win and +50 for loss and 
   assert.equal(userRowAfterWin?.weeklyPoints, 340);
   assert.equal(userRowAfterWin?.totalPoints, 600);
 
-  const botLoss = recordMatchOutcome(botWin.progression, {
+  // Draw awards 0 LP
+  const drawRes = recordMatchOutcome(botWin.progression, {
     won: false,
+    isDraw: true,
+    isBotMatch: false,
+    minigameType: 'career',
+    stats: {
+      fastestAnswerSec: 3.1,
+      totalCorrect: 2,
+      totalWrongAttempts: 1,
+      currentStreak: 0,
+      maxStreak: 1,
+      clutchAnswers: 0,
+      trailedThenWon: false,
+    },
+    now,
+  });
+  assert.equal(drawRes.earnedPoints, 0);
+  assert.equal(drawRes.progression.weeklyPoints, 340);
+  assert.equal(drawRes.progression.totalPoints, 600);
+
+  // Loss deducts -50 LP (League Shield does not cancel it and is not consumed)
+  const botLoss = recordMatchOutcome(drawRes.progression, {
+    won: false,
+    isDraw: false,
     isBotMatch: true,
     minigameType: 'xox',
     stats: {
@@ -874,14 +907,38 @@ test('matches immediately award +100 league points for win and +50 for loss and 
     now,
   });
 
-  assert.equal(botLoss.earnedPoints, 50);
-  assert.equal(botLoss.progression.weeklyPoints, 390);
-  assert.equal(botLoss.progression.totalPoints, 650);
+  assert.equal(botLoss.shieldProtected, false);
+  assert.equal(botLoss.earnedPoints, -50);
+  assert.equal(botLoss.progression.leagueShields, 2);
+  assert.equal(botLoss.progression.weeklyPoints, 290);
+  assert.equal(botLoss.progression.totalPoints, 550);
 
   const standingsAfterLoss = buildLeagueStandings(botLoss.progression, profile, 'weekly');
   const userRowAfterLoss = standingsAfterLoss.entries.find((e) => e.isUser);
-  assert.equal(userRowAfterLoss?.weeklyPoints, 390);
-  assert.equal(userRowAfterLoss?.totalPoints, 650);
+  assert.equal(userRowAfterLoss?.weeklyPoints, 290);
+  assert.equal(userRowAfterLoss?.totalPoints, 550);
+
+  // Minimum LP floor is strictly 0 (never negative)
+  const lowBase = { ...createInitialProgression('floor_tester', now), weeklyPoints: 20, totalPoints: 20 };
+  const floorLoss = recordMatchOutcome(lowBase, {
+    won: false,
+    isDraw: false,
+    isBotMatch: false,
+    minigameType: 'country_club',
+    stats: {
+      fastestAnswerSec: null,
+      totalCorrect: 0,
+      totalWrongAttempts: 1,
+      currentStreak: 0,
+      maxStreak: 0,
+      clutchAnswers: 0,
+      trailedThenWon: false,
+    },
+    now,
+  });
+  assert.equal(floorLoss.earnedPoints, -50);
+  assert.equal(floorLoss.progression.weeklyPoints, 0);
+  assert.equal(floorLoss.progression.totalPoints, 0);
 });
 
 test('bot friend accounts and requests are blocked and stripped while real friends and favorite clubs stay intact', () => {

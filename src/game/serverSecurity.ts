@@ -92,6 +92,7 @@ export interface MatchSessionCloudAdapter {
     coinsAwarded: number;
     pointsAwarded: number;
     won: boolean;
+    isDraw?: boolean;
     fallbackAccountRecord?: PersistentAccountRecord;
     requireAccountCredit?: boolean;
   }) => Promise<{
@@ -363,6 +364,7 @@ export class ServerMatchLedger {
     accountId: string;
     hasMultiplier2x: boolean;
     roomVerifiedScores?: { playerScore: number; opponentScore: number };
+    botScores?: { playerScore: number; opponentScore: number };
     serverVerifiedOpponentScore?: number | null;
     requireServerOpponentVerification?: boolean;
     roomClaimKey?: string;
@@ -375,6 +377,7 @@ export class ServerMatchLedger {
         coinsAwarded: number;
         pointsAwarded: number;
         won: boolean;
+        drew: boolean;
         verifiedScore: number;
       }
     | { ok: false; reason: string } {
@@ -446,18 +449,32 @@ export class ServerMatchLedger {
           )
         : session.verifiedPlayerScore;
 
+    const hasBotScores =
+      session.mode === 'bot' &&
+      !params.roomVerifiedScores &&
+      params.serverVerifiedOpponentScore === undefined &&
+      Boolean(params.botScores);
+
     const oppScore =
       typeof params.serverVerifiedOpponentScore === 'number' &&
       Number.isFinite(params.serverVerifiedOpponentScore)
         ? Math.max(0, Math.min(20, Math.round(params.serverVerifiedOpponentScore)))
         : params.roomVerifiedScores
         ? Math.max(0, Math.min(20, Math.round(params.roomVerifiedScores.opponentScore)))
+        : hasBotScores && params.botScores
+        ? Math.max(0, Math.min(20, Math.round(params.botScores.opponentScore)))
         : verifiedScore >= 3
         ? Math.max(0, verifiedScore - 1)
         : 3;
 
-    const won = verifiedScore > oppScore && verifiedScore > 0;
-    const drew = verifiedScore === oppScore && verifiedScore > 0;
+    const hasExplicitOpponentScore =
+      (typeof params.serverVerifiedOpponentScore === 'number' &&
+        Number.isFinite(params.serverVerifiedOpponentScore)) ||
+      Boolean(params.roomVerifiedScores) ||
+      hasBotScores;
+
+    const won = verifiedScore > oppScore && (verifiedScore > 0 || hasExplicitOpponentScore);
+    const drew = verifiedScore === oppScore && (verifiedScore > 0 || hasExplicitOpponentScore);
 
     const baseCoins = won
       ? 180 + verifiedScore * 35
@@ -477,9 +494,11 @@ export class ServerMatchLedger {
       ok: true,
       session,
       won,
+      drew,
       verifiedScore,
       coinsAwarded: Math.min(MAX_SERVER_MATCH_COINS * mult, baseCoins * mult),
-      pointsAwarded: Math.min(MAX_SERVER_MATCH_POINTS * mult, basePoints * mult),
+      // Fixed +100 / -50 / 0 league points rule: 2x multiplier doubles Coins only.
+      pointsAwarded: basePoints,
     };
   }
 
@@ -488,13 +507,21 @@ export class ServerMatchLedger {
     accountId: string;
     hasMultiplier2x: boolean;
     roomVerifiedScores?: { playerScore: number; opponentScore: number };
+    botScores?: { playerScore: number; opponentScore: number };
     serverVerifiedOpponentScore?: number | null;
     requireServerOpponentVerification?: boolean;
     roomClaimKey?: string;
     now?: number;
     minDurationMs?: number;
   }):
-    | { ok: true; coinsAwarded: number; pointsAwarded: number; won: boolean; verifiedScore: number }
+    | {
+        ok: true;
+        coinsAwarded: number;
+        pointsAwarded: number;
+        won: boolean;
+        drew: boolean;
+        verifiedScore: number;
+      }
     | { ok: false; reason: string } {
     const evalRes = this.evaluateMatchReward(params);
     if (!evalRes.ok) return evalRes;
@@ -512,6 +539,7 @@ export class ServerMatchLedger {
     return {
       ok: true,
       won: evalRes.won,
+      drew: evalRes.drew,
       verifiedScore: evalRes.verifiedScore,
       coinsAwarded: evalRes.coinsAwarded,
       pointsAwarded: evalRes.pointsAwarded,
@@ -523,6 +551,7 @@ export class ServerMatchLedger {
     accountId: string;
     hasMultiplier2x: boolean;
     roomVerifiedScores?: { playerScore: number; opponentScore: number };
+    botScores?: { playerScore: number; opponentScore: number };
     serverVerifiedOpponentScore?: number | null;
     requireServerOpponentVerification?: boolean;
     roomClaimKey?: string;
@@ -536,6 +565,7 @@ export class ServerMatchLedger {
         coinsAwarded: number;
         pointsAwarded: number;
         won: boolean;
+        drew: boolean;
         verifiedScore: number;
         creditedAccount?: PersistentAccountRecord | null;
       }
@@ -561,6 +591,7 @@ export class ServerMatchLedger {
           coinsAwarded: evalRes.coinsAwarded,
           pointsAwarded: evalRes.pointsAwarded,
           won: evalRes.won,
+          isDraw: evalRes.drew,
           fallbackAccountRecord: params.fallbackAccountRecord,
           requireAccountCredit: params.requireAccountCredit,
         });
@@ -600,6 +631,7 @@ export class ServerMatchLedger {
       return {
         ok: true,
         won: evalRes.won,
+        drew: evalRes.drew,
         verifiedScore: evalRes.verifiedScore,
         coinsAwarded: evalRes.coinsAwarded,
         pointsAwarded: evalRes.pointsAwarded,
@@ -755,17 +787,21 @@ export function sanitizeProgressionUpdate(
   const prevWeekly = Math.max(0, Math.round(Number(prev.weeklyPoints) || 0));
   const prevTotal = Math.max(0, Math.round(Number(prev.totalPoints) || 0));
   // Strict sunucu doğrulamasında istemcinin gönderdiği matchesPlayed / sayaçlara ASLA güvenilmez;
-  // yalnızca sunucu tarafından doğrulanmış kredi (verifiedCoinCredit / verifiedPointCredit) eklenebilir.
+  // yalnızca sunucu tarafından doğrulanmış kredi (verifiedCoinCredit / verifiedPointCredit) eklenebilir
+  // veya sunucu tarafından doğrulanmış maç mağlubiyeti (-50 LP) minimum 0'a kadar düşülebilir.
   const verifiedCoinDelta = Math.max(0, Math.round(options?.verifiedCoinCredit ?? 0));
-  const verifiedPointDelta = Math.max(0, Math.round(options?.verifiedPointCredit ?? 0));
+  const rawVerifiedPointDelta = Math.round(options?.verifiedPointCredit ?? 0);
+  const verifiedPointMaxGain = Math.max(0, rawVerifiedPointDelta);
+  const verifiedPointMinFloor =
+    rawVerifiedPointDelta < 0 ? Math.max(0, prevTotal + rawVerifiedPointDelta) : prevTotal;
   const allowances = options?.strictActionVerification
-    ? { maxCoinGain: verifiedCoinDelta, maxPointGain: verifiedPointDelta }
+    ? { maxCoinGain: verifiedCoinDelta, maxPointGain: verifiedPointMaxGain }
     : { maxCoinGain: MAX_COIN_GAIN_PER_SYNC, maxPointGain: MAX_POINTS_GAIN_PER_SYNC };
 
   const clampedCoins = Math.min(rawCoins, prevCoins + allowances.maxCoinGain);
-  const clampedWeekly = Math.min(rawWeekly, prevWeekly + allowances.maxPointGain);
+  const clampedWeekly = Math.max(0, Math.min(rawWeekly, prevWeekly + allowances.maxPointGain));
   const clampedTotal = Math.max(
-    prevTotal,
+    verifiedPointMinFloor,
     Math.min(rawTotal, prevTotal + allowances.maxPointGain)
   );
 
