@@ -672,16 +672,14 @@ test('coin economy rebalance: boosted quests, +100 match win, League Shield, Ext
   assert.equal(lossNoShield.progression.totalPoints, Math.max(0, totalBeforeLoss - 50));
   prog = lossNoShield.progression;
 
-  // 4. Purchase League Shield (1.000 Coin) -> stays untouched and does NOT alter fixed -50 LP loss
-  prog = { ...prog, coins: 6000 };
-  const shieldItem = STORE_ITEMS.find((i) => i.id === 'store_league_shield');
-  assert.equal(shieldItem?.costCoins, 1000);
+  // 4. League Shield is blocked from new store purchases while existing inventory stays intact and does NOT alter -50 LP
+  const coinsBeforeBlockedBuy = prog.coins;
   const buyShield = purchaseStoreItem(prog, 'store_league_shield', 'coins');
-  assert.equal(buyShield.ok, true);
-  assert.equal(buyShield.progression.coins, 5000);
-  assert.equal(buyShield.progression.leagueShields, 1);
-  prog = buyShield.progression;
+  assert.equal(buyShield.ok, false);
+  assert.equal(buyShield.progression.coins, coinsBeforeBlockedBuy);
 
+  // Pre-existing user inventory (leagueShields: 1) is preserved and does not block -50 LP loss
+  prog = { ...prog, coins: 6000, leagueShields: 1 };
   const lpProtectedBefore = prog.weeklyPoints;
   const totalProtectedBefore = prog.totalPoints;
   const lossWithShield = recordMatchOutcome(prog, {

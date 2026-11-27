@@ -961,6 +961,13 @@ export function equipStoreItem(
   if (!item) {
     return { ok: false, reason: 'Ürün bulunamadı.', progression: prog };
   }
+  if (item.type === 'league_shield') {
+    return {
+      ok: false,
+      reason: 'Lig Kalkanı mağazada satışa kapalıdır. Mevcut envanterin korunur.',
+      progression: prog,
+    };
+  }
   if (!prog.unlockedGiftIds.includes(itemId) && item.type !== 'avatar') {
     return { ok: false, reason: 'Önce bu ürünü açmalısın.', progression: prog };
   }
@@ -988,11 +995,17 @@ export function purchaseStoreItem(
   if (!item) {
     return { ok: false, reason: 'Ürün bulunamadı.', progression: prog };
   }
+  if (item.type === 'league_shield') {
+    return {
+      ok: false,
+      reason: 'Lig Kalkanı mağazada satışa kapalıdır. Mevcut envanterin korunur.',
+      progression: prog,
+    };
+  }
 
   const isConsumable =
     item.type === 'coin_pack' ||
     item.type === 'energy_pack' ||
-    item.type === 'league_shield' ||
     item.type === 'extra_time_card' ||
     (item.type === 'multiplier_2x' && item.value !== 'forever');
 
@@ -1053,12 +1066,6 @@ export function purchaseStoreItem(
     nextProg = {
       ...nextProg,
       energyDrinks: (nextProg.energyDrinks ?? 0) + addedDrinks,
-    };
-  } else if (item.type === 'league_shield') {
-    const addedShields = item.quantity ?? 1;
-    nextProg = {
-      ...nextProg,
-      leagueShields: (nextProg.leagueShields ?? 0) + addedShields,
     };
   } else if (item.type === 'extra_time_card') {
     const addedCards = item.quantity ?? 1;

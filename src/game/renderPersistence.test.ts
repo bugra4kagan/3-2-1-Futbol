@@ -519,4 +519,53 @@ test('ServerMatchLedger rejects forged Firestore room scores higher than server-
     assert.equal(drawRes.drew, true);
     assert.equal(drawRes.pointsAwarded, 0);
   }
+
+  // 6. Reloading account after a -50 LP loss preserves the lowered LP (never reverts to higher pre-loss LP)
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), '321-lp-persist-'));
+  try {
+    const dbPath = path.join(tmpDir, 'accounts.json');
+    const storeBeforeRestart = new AccountStore(dbPath);
+    storeBeforeRestart.registerOrUpdate({
+      accountId: 'acc_reopen_lp',
+      profile: { id: 'acc_reopen_lp', name: 'YenidenAcilis', avatar: '⚽', score: 0 },
+      progression: { ...createInitialProgression('acc_reopen_lp'), weeklyPoints: 300, totalPoints: 450 },
+    });
+    const afterLossWrite = storeBeforeRestart.recordVerifiedMatchReward({
+      accountId: 'acc_reopen_lp',
+      coinsAwarded: 15,
+      pointsAwarded: -50,
+      won: false,
+      isDraw: false,
+    });
+    assert.equal(afterLossWrite.ok, true);
+    assert.equal(afterLossWrite.account?.progression.weeklyPoints, 250);
+    assert.equal(afterLossWrite.account?.progression.totalPoints, 400);
+
+    // Reopen app / restart server: points stay 250 / 400 (do NOT revert to 300 / 450)
+    const storeAfterRestart = new AccountStore(dbPath);
+    const reloaded = storeAfterRestart.getByAccountId('acc_reopen_lp');
+    assert.equal(reloaded?.progression.weeklyPoints, 250);
+    assert.equal(reloaded?.progression.totalPoints, 400);
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+
+  // 7. Legacy 1.1.0 client payload (without botScores) remains compatible with 1.1.1 ServerMatchLedger
+  const legacy110Session = ledger.issueSession({
+    accountId: 'acc_sync_lp',
+    minigameType: 'two_clubs',
+    mode: 'bot',
+    now: startedAt,
+  });
+  const legacyComplete = ledger.consumeVerifiedMatchSession({
+    sessionId: legacy110Session.sessionId,
+    accountId: 'acc_sync_lp',
+    hasMultiplier2x: false,
+    minDurationMs: 1000,
+    now: Date.now(),
+  });
+  assert.equal(legacyComplete.ok, true);
+  if (legacyComplete.ok) {
+    assert.equal(legacyComplete.pointsAwarded, -50);
+  }
 });

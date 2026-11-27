@@ -139,14 +139,14 @@ test('signOutNativeAndroidGoogle clears credential state safely without throwing
   assert.equal(signedOut, true);
 });
 
-test('Android build config, Credential Manager plugin registration, versionCode 5 and OAuth Web Client ID stay consistent', () => {
+test('Android build config, Credential Manager plugin registration, versionCode 6 and OAuth Web Client ID stay consistent', () => {
   const buildGradle = fs.readFileSync(
     path.resolve(process.cwd(), 'android/app/build.gradle'),
     'utf8'
   );
   assert.match(buildGradle, /applicationId\s+"com\.futbol321\.challenge"/);
-  assert.match(buildGradle, /versionCode\s+5\b/);
-  assert.match(buildGradle, /versionName\s+"1\.1\.0"/);
+  assert.match(buildGradle, /versionCode\s+6\b/);
+  assert.match(buildGradle, /versionName\s+"1\.1\.1"/);
   assert.match(buildGradle, /androidx\.credentials:credentials:/);
   assert.match(buildGradle, /androidx\.credentials:credentials-play-services-auth:/);
   assert.match(buildGradle, /com\.google\.android\.libraries\.identity\.googleid:googleid:/);
@@ -171,7 +171,8 @@ test('Android build config, Credential Manager plugin registration, versionCode 
     path.resolve(process.cwd(), '.github/workflows/build-android.yml'),
     'utf8'
   );
-  assert.match(workflow, /versionCode 5/);
+  assert.match(workflow, /versionCode 6/);
+  assert.match(workflow, /versionName "1\.1\.1"/);
   assert.doesNotMatch(workflow, /branches:\s*\n\s*-\s*main/);
 
   const googleServices = JSON.parse(
