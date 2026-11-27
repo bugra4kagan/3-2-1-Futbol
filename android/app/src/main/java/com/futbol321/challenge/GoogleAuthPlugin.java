@@ -2,8 +2,8 @@ package com.futbol321.challenge;
 
 import android.app.Activity;
 import android.content.Context;
-import android.os.Build;
 import androidx.annotation.NonNull;
+import androidx.core.content.ContextCompat;
 import androidx.credentials.ClearCredentialStateRequest;
 import androidx.credentials.Credential;
 import androidx.credentials.CredentialManager;
@@ -22,7 +22,6 @@ import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption;
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential;
-import com.google.android.libraries.identity.googleid.GoogleIdTokenParsingException;
 import java.util.concurrent.Executor;
 
 /**
@@ -55,10 +54,7 @@ public class GoogleAuthPlugin extends Plugin {
     }
 
     private Executor resolveMainExecutor(Context ctx) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            return ctx.getMainExecutor();
-        }
-        return command -> getActivity().runOnUiThread(command);
+        return ContextCompat.getMainExecutor(ctx);
     }
 
     @PluginMethod
@@ -134,7 +130,7 @@ public class GoogleAuthPlugin extends Plugin {
                                 ok.put("email", tokenCred.getId());
                                 ok.put("displayName", tokenCred.getDisplayName());
                                 call.resolve(ok);
-                            } catch (GoogleIdTokenParsingException parseEx) {
+                            } catch (Throwable parseEx) {
                                 JSObject bad = new JSObject();
                                 bad.put("ok", false);
                                 bad.put("code", "TOKEN_PARSE_ERROR");
