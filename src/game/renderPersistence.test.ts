@@ -389,7 +389,7 @@ test('ServerMatchLedger rejects forged Firestore room scores higher than server-
     assert.equal(legitComplete.verifiedScore, 1);
   }
 
-  // 3. Bot matches give coins but strictly 0 league points
+  // 3. Completed matches award +100 league points for win and +50 for loss
   const botSession = ledger.issueSession({
     accountId: 'acc_bot_player',
     minigameType: 'xox',
@@ -420,7 +420,35 @@ test('ServerMatchLedger rejects forged Firestore room scores higher than server-
   });
   assert.equal(botRes.ok, true);
   if (botRes.ok) {
-    assert.equal(botRes.pointsAwarded, 0);
+    assert.equal(botRes.pointsAwarded, botRes.won ? 100 : 50);
     assert.ok(botRes.coinsAwarded > 0);
+  }
+
+  // 4. Online win awards +100 and loss awards +50 league points on server match ledger
+  assert.equal(legitComplete.ok, true);
+  if (legitComplete.ok) {
+    assert.equal(legitComplete.won, true);
+    assert.equal(legitComplete.pointsAwarded, 100);
+  }
+
+  const lossSession = ledger.issueSession({
+    accountId: 'acc_loss_player',
+    minigameType: 'two_clubs',
+    mode: 'online_match',
+    now: startedAt,
+  });
+  const lossRes = ledger.consumeVerifiedMatchSession({
+    sessionId: lossSession.sessionId,
+    accountId: 'acc_loss_player',
+    hasMultiplier2x: false,
+    serverVerifiedOpponentScore: 3,
+    requireServerOpponentVerification: true,
+    minDurationMs: 1000,
+    now: Date.now(),
+  });
+  assert.equal(lossRes.ok, true);
+  if (lossRes.ok) {
+    assert.equal(lossRes.won, false);
+    assert.equal(lossRes.pointsAwarded, 50);
   }
 });

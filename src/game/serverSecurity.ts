@@ -8,7 +8,12 @@ import {
   validateMinigameAnswer,
 } from './minigameEngine.js';
 import type { PersistentAccountRecord } from './accountStore.js';
-import { createInitialProgression } from './retentionEngine.js';
+import {
+  createInitialProgression,
+  MATCH_DRAW_LEAGUE_POINTS,
+  MATCH_LOSS_LEAGUE_POINTS,
+  MATCH_WIN_LEAGUE_POINTS,
+} from './retentionEngine.js';
 import type { MinigameRoundPayload, MinigameType, UserProgression } from './types';
 
 export const SERVER_STARTER_COINS = 200;
@@ -461,16 +466,11 @@ export class ServerMatchLedger {
       : verifiedScore > 0
       ? 40 + verifiedScore * 15
       : 15;
-    const basePoints =
-      session.mode === 'bot'
-        ? 0
-        : won
-        ? 120 + verifiedScore * 20
-        : drew
-        ? 50
-        : verifiedScore > 0
-        ? 15
-        : 0;
+    const basePoints = won
+      ? MATCH_WIN_LEAGUE_POINTS
+      : drew
+      ? MATCH_DRAW_LEAGUE_POINTS
+      : MATCH_LOSS_LEAGUE_POINTS;
     const mult = params.hasMultiplier2x ? 2 : 1;
 
     return {

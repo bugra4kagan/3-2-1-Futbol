@@ -624,7 +624,9 @@ test('coin economy rebalance: boosted quests, +100 match win, League Shield, Ext
   assert.equal(questMap.q_minigame_1, 320);
   assert.equal(questMap.q_win_3, 850);
 
-  // 2. Standard match win awards +100 Coin
+  // 2. Standard match win awards +100 Coin and +100 League Points
+  const lpBeforeWin = prog.weeklyPoints;
+  const totalBeforeWin = prog.totalPoints;
   const win1 = recordMatchOutcome(prog, {
     won: true,
     minigameType: 'two_clubs',
@@ -640,11 +642,14 @@ test('coin economy rebalance: boosted quests, +100 match win, League Shield, Ext
     now: today,
   });
   assert.equal(win1.earnedCoins, 100);
-  assert.ok(win1.earnedPoints > 0);
+  assert.equal(win1.earnedPoints, 100);
+  assert.equal(win1.progression.weeklyPoints, lpBeforeWin + 100);
+  assert.equal(win1.progression.totalPoints, totalBeforeWin + 100);
   prog = win1.progression;
 
-  // 3. Defeat without League Shield drops LP (30 LP)
+  // 3. Defeat awards +50 League Points and immediately updates profile & league standings
   const lpBeforeLoss = prog.weeklyPoints;
+  const totalBeforeLoss = prog.totalPoints;
   const lossNoShield = recordMatchOutcome(prog, {
     won: false,
     isDraw: false,
@@ -661,11 +666,12 @@ test('coin economy rebalance: boosted quests, +100 match win, League Shield, Ext
     now: today,
   });
   assert.equal(lossNoShield.shieldProtected, false);
-  assert.equal(lossNoShield.earnedPoints, -30);
-  assert.equal(lossNoShield.progression.weeklyPoints, lpBeforeLoss - 30);
+  assert.equal(lossNoShield.earnedPoints, 50);
+  assert.equal(lossNoShield.progression.weeklyPoints, lpBeforeLoss + 50);
+  assert.equal(lossNoShield.progression.totalPoints, totalBeforeLoss + 50);
   prog = lossNoShield.progression;
 
-  // 4. Purchase League Shield (1.000 Coin) -> blocks LP loss on next defeat
+  // 4. Purchase League Shield (1.000 Coin) -> inventory persists and is not consumed when defeat grants +50 LP
   prog = { ...prog, coins: 6000 };
   const shieldItem = STORE_ITEMS.find((i) => i.id === 'store_league_shield');
   assert.equal(shieldItem?.costCoins, 1000);
@@ -691,10 +697,10 @@ test('coin economy rebalance: boosted quests, +100 match win, League Shield, Ext
     },
     now: today,
   });
-  assert.equal(lossWithShield.shieldProtected, true);
-  assert.equal(lossWithShield.earnedPoints, 0);
-  assert.equal(lossWithShield.progression.weeklyPoints, lpProtectedBefore);
-  assert.equal(lossWithShield.progression.leagueShields, 0);
+  assert.equal(lossWithShield.shieldProtected, false);
+  assert.equal(lossWithShield.earnedPoints, 50);
+  assert.equal(lossWithShield.progression.weeklyPoints, lpProtectedBefore + 50);
+  assert.equal(lossWithShield.progression.leagueShields, 1);
   prog = lossWithShield.progression;
 
   // 5. Purchase Extra +10s Card (500 Coin) & consume in match
@@ -821,9 +827,10 @@ test('5-tier weekly league standings, Sunday 23:59 countdown, automatic promotio
   assert.equal(metrics.movesLabel, '6 Hamle');
 });
 
-test('bot matches award coins without inflating or penalizing weekly league points', () => {
+test('matches immediately award +100 league points for win and +50 for loss and update league standings', () => {
   const now = new Date(2026, 10, 15, 14, 0, 0);
   const start = { ...createInitialProgression('bot_tester', now), weeklyPoints: 240, totalPoints: 500 };
+  const profile = { id: 'bot_tester', name: 'LigTestci', avatar: '⚽', score: 0 };
 
   const botWin = recordMatchOutcome(start, {
     won: true,
@@ -841,10 +848,15 @@ test('bot matches award coins without inflating or penalizing weekly league poin
     now,
   });
 
-  assert.equal(botWin.earnedPoints, 0);
+  assert.equal(botWin.earnedPoints, 100);
   assert.ok(botWin.earnedCoins > 0);
-  assert.equal(botWin.progression.weeklyPoints, 240);
-  assert.equal(botWin.progression.totalPoints, 500);
+  assert.equal(botWin.progression.weeklyPoints, 340);
+  assert.equal(botWin.progression.totalPoints, 600);
+
+  const standingsAfterWin = buildLeagueStandings(botWin.progression, profile, 'weekly');
+  const userRowAfterWin = standingsAfterWin.entries.find((e) => e.isUser);
+  assert.equal(userRowAfterWin?.weeklyPoints, 340);
+  assert.equal(userRowAfterWin?.totalPoints, 600);
 
   const botLoss = recordMatchOutcome(botWin.progression, {
     won: false,
@@ -862,9 +874,14 @@ test('bot matches award coins without inflating or penalizing weekly league poin
     now,
   });
 
-  assert.equal(botLoss.earnedPoints, 0);
-  assert.equal(botLoss.progression.weeklyPoints, 240);
-  assert.equal(botLoss.progression.totalPoints, 500);
+  assert.equal(botLoss.earnedPoints, 50);
+  assert.equal(botLoss.progression.weeklyPoints, 390);
+  assert.equal(botLoss.progression.totalPoints, 650);
+
+  const standingsAfterLoss = buildLeagueStandings(botLoss.progression, profile, 'weekly');
+  const userRowAfterLoss = standingsAfterLoss.entries.find((e) => e.isUser);
+  assert.equal(userRowAfterLoss?.weeklyPoints, 390);
+  assert.equal(userRowAfterLoss?.totalPoints, 650);
 });
 
 test('bot friend accounts and requests are blocked and stripped while real friends and favorite clubs stay intact', () => {

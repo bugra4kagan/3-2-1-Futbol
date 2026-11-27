@@ -659,21 +659,15 @@ Ortak futbolcuları benden hızlı bulabilir misin? Meydan okuyorum! 🔥`;
             className="mb-4 p-3 rounded-2xl bg-[#14232C] border border-white/10 flex flex-col items-center gap-2 text-xs font-black"
           >
             <div className="flex flex-wrap items-center justify-center gap-2.5">
-              {isBotMatch ? (
-                <span className="text-[#94A3B8]">
-                  🤖 Bot Maçı • 0 Lig Puanı (Lig puanını etkilemez)
-                </span>
-              ) : (
-                <span
-                  className={`flex items-center gap-1 ${
-                    matchRewards.earnedPoints < 0 ? 'text-[#EF4444]' : 'text-[#22C55E]'
-                  }`}
-                >
-                  {matchRewards.earnedPoints < 0
-                    ? `📉 ${matchRewards.earnedPoints} Lig Puanı`
-                    : `🏆 +${matchRewards.earnedPoints} Lig Puanı`}
-                </span>
-              )}
+              <span
+                className={`flex items-center gap-1 ${
+                  matchRewards.earnedPoints < 0 ? 'text-[#EF4444]' : 'text-[#22C55E]'
+                }`}
+              >
+                {matchRewards.earnedPoints < 0
+                  ? `📉 ${matchRewards.earnedPoints} Lig Puanı`
+                  : `🏆 +${matchRewards.earnedPoints} Lig Puanı`}
+              </span>
               <span className="text-white/20">•</span>
               <span className="text-[#FBBF24] flex items-center gap-1">
                 <CoinIcon size="xs" />

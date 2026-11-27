@@ -2360,7 +2360,9 @@ trackGameEvent('match_complete', {
     });
     void completeServerVerifiedMatchSession(
       mode === 'online_match' || mode === 'online_room' ? activeRoomCodeRef.current : undefined
-    );
+    ).then(() => {
+      void fetchServerLeaderboard();
+    });
 
     if (hsMilestone.isHighScore) {
       const eventId = `hs_${player1.id}_${Math.round(hsMilestone.scoreValue)}_${matchInstanceIdRef.current}`;

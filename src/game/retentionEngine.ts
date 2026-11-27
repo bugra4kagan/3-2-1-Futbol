@@ -771,7 +771,10 @@ export interface MatchOutcomeInput {
   now?: Date;
 }
 
-export const MATCH_LOSS_LP_PENALTY = 30;
+export const MATCH_WIN_LEAGUE_POINTS = 100;
+export const MATCH_LOSS_LEAGUE_POINTS = 50;
+export const MATCH_DRAW_LEAGUE_POINTS = 50;
+export const MATCH_LOSS_LP_PENALTY = 0;
 
 export function recordMatchOutcome(
   prog: UserProgression,
@@ -791,19 +794,16 @@ export function recordMatchOutcome(
   const newWinStreak = isWin ? synced.winStreak + 1 : isLoss ? 0 : synced.winStreak;
   const bestWinStreak = Math.max(synced.bestWinStreak, newWinStreak);
 
-  // Bot matches award Coins & match practice without unfairly inflating PvP League rankings
-  const streakBonusPts = isWin && newWinStreak >= 2 ? Math.min(80, newWinStreak * 20) : 0;
+  // League standings update immediately on every completed match: Win +100, Loss/Draw +50.
   const currentShields = Math.max(0, Math.round(synced.leagueShields ?? 0));
-  const shieldProtected = !isBotMatch && isLoss && currentShields > 0;
-  const nextLeagueShields = shieldProtected ? currentShields - 1 : currentShields;
+  const shieldProtected = false;
+  const nextLeagueShields = currentShields;
 
-  const basePoints = isBotMatch
-    ? 0
+  const basePoints = isWin
+    ? MATCH_WIN_LEAGUE_POINTS
     : isLoss
-    ? shieldProtected
-      ? 0
-      : -MATCH_LOSS_LP_PENALTY
-    : 45 + input.stats.totalCorrect * 18 + (isWin ? 130 : 0) + streakBonusPts;
+    ? MATCH_LOSS_LEAGUE_POINTS
+    : MATCH_DRAW_LEAGUE_POINTS;
 
   const baseCoins = isBotMatch
     ? isWin
