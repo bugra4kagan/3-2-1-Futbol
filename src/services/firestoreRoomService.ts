@@ -17,6 +17,7 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDoc,
   limit,
   onSnapshot,
   orderBy,
@@ -49,6 +50,7 @@ import {
   RoomRecord,
   RoomState,
   applyRoomAdvance,
+  applyRoomAbandon,
   applyRoomAnswer,
   applyRoomBeginRound,
   applyRoomDisconnectForfeit,
@@ -81,35 +83,87 @@ const ROOMS_COLLECTION = 'rooms';
 const ROOM_TTL_MS = 6 * 60 * 60 * 1000;
 const QUEUE_TTL_MS = 60 * 1000;
 const PRESENCE_HEARTBEAT_MS = 4000;
-/** Short disconnect triggers pause + 30s grace; stale hard drop backs it up cleanly. */
-const PRESENCE_SUSPECTED_DROP_MS = 10000;
-const PRESENCE_STALE_MS = 60000;
+/** Short disconnect triggers pause + 45s grace; stale hard drop backs it up cleanly after grace ends. */
+const PRESENCE_SUSPECTED_DROP_MS = 12000;
+const PRESENCE_STALE_MS = 75000;
 const MATCHMAKING_QUERY_LIMIT = 20;
 const ACTIVE_ROOM_SESSION_KEY = '321_active_online_room_v1';
+const ACTIVE_ROOM_PERSISTED_KEY = '321_active_online_room_v2';
 
-export function saveActiveRoomSession(code: string | null): void {
-  if (typeof window === 'undefined' || !window.sessionStorage) return;
+export interface PersistedActiveRoomSession {
+  code: string;
+  minigameType?: MinigameType;
+  source?: 'private' | 'matchmaking';
+  playerKey?: string;
+  playerId?: string;
+  memberUid?: string | null;
+  opponentName?: string;
+  matchSeq?: number;
+  matchSessionId?: string | null;
+  savedAt: number;
+}
+
+export function saveActiveRoomSession(
+  input: string | Partial<PersistedActiveRoomSession> | null
+): void {
+  if (typeof window === 'undefined') return;
   try {
-    if (code) {
-      window.sessionStorage.setItem(ACTIVE_ROOM_SESSION_KEY, normalizeRoomCode(code));
-    } else {
-      window.sessionStorage.removeItem(ACTIVE_ROOM_SESSION_KEY);
+    if (!input) {
+      window.sessionStorage?.removeItem(ACTIVE_ROOM_SESSION_KEY);
+      window.localStorage?.removeItem(ACTIVE_ROOM_PERSISTED_KEY);
+      return;
     }
+    const rawCode = typeof input === 'string' ? input : input.code || '';
+    const cleanCode = normalizeRoomCode(rawCode);
+    if (!isValidRoomCode(cleanCode)) return;
+    window.sessionStorage?.setItem(ACTIVE_ROOM_SESSION_KEY, cleanCode);
+    const prev = loadActiveRoomSessionMeta();
+    const payload: PersistedActiveRoomSession = {
+      ...(prev && prev.code === cleanCode ? prev : {}),
+      ...(typeof input === 'string' ? {} : input),
+      code: cleanCode,
+      savedAt: Date.now(),
+    };
+    window.localStorage?.setItem(ACTIVE_ROOM_PERSISTED_KEY, JSON.stringify(payload));
   } catch {
     // ignore storage errors
   }
 }
 
-export function loadActiveRoomSession(): string | null {
-  if (typeof window === 'undefined' || !window.sessionStorage) return null;
+export function updateActiveRoomSessionMeta(
+  partial: Partial<PersistedActiveRoomSession>
+): void {
+  const existing = loadActiveRoomSessionMeta();
+  if (!existing) return;
+  saveActiveRoomSession({ ...existing, ...partial, code: existing.code });
+}
+
+export function loadActiveRoomSessionMeta(): PersistedActiveRoomSession | null {
+  if (typeof window === 'undefined') return null;
   try {
-    const raw = window.sessionStorage.getItem(ACTIVE_ROOM_SESSION_KEY);
+    const rawJson = window.localStorage?.getItem(ACTIVE_ROOM_PERSISTED_KEY);
+    if (rawJson) {
+      const parsed = JSON.parse(rawJson) as PersistedActiveRoomSession;
+      const clean = normalizeRoomCode(parsed?.code || '');
+      if (isValidRoomCode(clean)) {
+        const ageMs = Date.now() - (Number(parsed?.savedAt) || 0);
+        if (ageMs >= 0 && ageMs <= ROOM_TTL_MS) {
+          return { ...parsed, code: clean };
+        }
+        window.localStorage?.removeItem(ACTIVE_ROOM_PERSISTED_KEY);
+      }
+    }
+    const raw = window.sessionStorage?.getItem(ACTIVE_ROOM_SESSION_KEY);
     if (!raw) return null;
     const clean = normalizeRoomCode(raw);
-    return isValidRoomCode(clean) ? clean : null;
+    return isValidRoomCode(clean) ? { code: clean, savedAt: Date.now() } : null;
   } catch {
     return null;
   }
+}
+
+export function loadActiveRoomSession(): string | null {
+  return loadActiveRoomSessionMeta()?.code ?? null;
 }
 
 let activeQueueCleanup: (() => void) | null = null;
@@ -295,12 +349,13 @@ export async function joinRoom(
 }
 
 /**
- * Live room listener. `onChange(null)` means the room was deleted (cancelled /
- * opponent left) or became unreadable.
+ * Live room listener. `onChange(null)` means the room was deleted or is no longer accessible.
+ * Transient network listener errors call `onError` so an active match is NOT killed immediately.
  */
 export function subscribeRoom(
   code: string,
-  onChange: (room: RoomRecord | null) => void
+  onChange: (room: RoomRecord | null) => void,
+  onError?: (err: unknown) => void
 ): () => void {
   const cleanCode = normalizeRoomCode(code);
   return onSnapshot(
@@ -316,9 +371,67 @@ export function subscribeRoom(
     },
     (err) => {
       console.warn('[rooms] room listener error', err);
-      onChange(null);
+      if (onError) {
+        onError(err);
+      } else {
+        onChange(null);
+      }
     }
   );
+}
+
+export type ActiveRoomResumeCheck =
+  | { status: 'active'; room: RoomRecord }
+  | { status: 'finished' | 'not_found' | 'not_member' }
+  | { status: 'network_error'; error: string };
+
+/**
+ * Authoritatively verifies an active match session against Firestore + Firebase Auth UID.
+ * Never trusts localStorage timestamps or client clock alone.
+ */
+export async function fetchActiveRoomForResume(
+  rawCode: string,
+  playerId: string
+): Promise<ActiveRoomResumeCheck> {
+  const cleanCode = normalizeRoomCode(rawCode);
+  if (!isValidRoomCode(cleanCode)) return { status: 'not_found' };
+  try {
+    const user = await ensureRoomAuthUser();
+    const snap = await getDoc(roomRef(cleanCode));
+    if (!snap.exists()) return { status: 'not_found' };
+    let room = normalizeRoomRecord(snap.data());
+    const playerKey = getRoomPlayerKey(playerId);
+    const isMemberUid = Array.isArray(room.memberUids) && room.memberUids.includes(user.uid);
+    const isMemberPlayer = Boolean(room.players?.[playerKey]);
+    if (!isMemberUid && !isMemberPlayer) {
+      return { status: 'not_member' };
+    }
+    if (!isMemberUid) {
+      return { status: 'not_member' };
+    }
+    if (
+      room.disconnectGrace &&
+      getAuthoritativeServerNowMs() >= room.disconnectGrace.expiresAt &&
+      room.state !== 'game_over'
+    ) {
+      await forfeitRoomAfterDisconnectGrace(cleanCode).catch(() => {});
+      const refreshed = await getDoc(roomRef(cleanCode));
+      if (!refreshed.exists()) return { status: 'not_found' };
+      room = normalizeRoomRecord(refreshed.data());
+    }
+    if (room.state === 'game_over') {
+      return { status: 'finished' };
+    }
+    return { status: 'active', room };
+  } catch (err) {
+    if (
+      err instanceof FirebaseError &&
+      (err.code === 'permission-denied' || err.code === 'firestore/permission-denied')
+    ) {
+      return { status: 'not_member' };
+    }
+    return { status: 'network_error', error: describeRoomError(err) };
+  }
 }
 
 export function beginRoomRound(code: string, phase: RoomPhase): Promise<void> {
@@ -467,6 +580,37 @@ export function forfeitRoomAfterDisconnectGrace(code: string): Promise<void> {
     }),
     undefined
   );
+}
+
+/**
+ * Explicitly abandons a room on user confirmation: deletes waiting rooms or
+ * commits a clean forfeit on active 2-player matches without stranding the opponent.
+ */
+export async function abandonRoomMatch(
+  code: string,
+  abandoningRawPlayerId: string
+): Promise<void> {
+  const clean = normalizeRoomCode(code);
+  if (!isValidRoomCode(clean)) return;
+  const action = await mutateRoom<'delete' | 'forfeited' | 'noop'>(
+    clean,
+    (room) => {
+      if (room.state === 'waiting') {
+        return { next: null, result: 'delete' };
+      }
+      const next = applyRoomAbandon(
+        room,
+        abandoningRawPlayerId,
+        getAuthoritativeServerNowMs()
+      );
+      return { next, result: next ? 'forfeited' : 'noop' };
+    },
+    'noop'
+  ).catch(() => 'noop' as const);
+
+  if (action === 'delete') {
+    await deleteRoom(clean);
+  }
 }
 
 /** Deletes the room; the other device's listener receives `null` and leaves. */

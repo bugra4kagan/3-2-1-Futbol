@@ -35,6 +35,7 @@ interface SinglePlayerViewProps {
   roundSeed?: string;
   isKeyboardOpen?: boolean;
   isCompactViewport?: boolean;
+  isSideBySideLayout?: boolean;
   onSpendCoinsForJoker?: (costCoins: number) => { ok: boolean; reason?: string };
   onUseEnergyDrinkHint?: () => boolean;
   onUseEnergyDrinkPass?: () => void;
@@ -65,6 +66,7 @@ export const SinglePlayerView: React.FC<SinglePlayerViewProps> = React.memo(({
   roundSeed,
   isKeyboardOpen = false,
   isCompactViewport = false,
+  isSideBySideLayout = false,
   onSpendCoinsForJoker,
   onAnswerWinner,
   onBotWrongAttempt,
@@ -280,12 +282,18 @@ export const SinglePlayerView: React.FC<SinglePlayerViewProps> = React.memo(({
   return (
     <div
       data-testid="single-player-view"
-      className={`w-full flex flex-col items-center justify-between flex-1 min-h-0 overflow-hidden px-2.5 sm:px-4 ${
-        isKeyboardOpen ? 'pt-1 pb-1' : 'py-1.5 sm:py-3'
+      className={`w-full flex-1 min-h-0 overflow-hidden px-2.5 sm:px-4 ${
+        isSideBySideLayout
+          ? 'grid grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)] items-center gap-3 py-1.5 max-w-5xl mx-auto'
+          : `flex flex-col items-center justify-between ${isKeyboardOpen ? 'pt-1 pb-1' : 'py-1.5 sm:py-3'}`
       }`}
     >
-      {/* Club Match Display — shrinks smoothly when keyboard opens so clubs + scores remain visible */}
-      <div className="w-full max-w-xl md:max-w-2xl flex-1 min-h-0 overflow-y-auto overscroll-contain flex items-center justify-center py-0.5">
+      {/* Club Match Display — shrinks cleanly on portrait or sits beside dock on landscape keyboard */}
+      <div
+        className={`w-full min-h-0 overflow-y-auto overscroll-contain flex items-center justify-center py-0.5 ${
+          isSideBySideLayout ? 'h-full' : 'max-w-xl md:max-w-2xl flex-1'
+        }`}
+      >
         <div
           key={pairing.id}
           className={`w-full flex items-stretch justify-center animate-card-pop ${
@@ -361,7 +369,11 @@ export const SinglePlayerView: React.FC<SinglePlayerViewProps> = React.memo(({
       {/* Answer Input Section — Input anchored flush at bottom right above soft keyboard */}
       <div
         data-testid="match-answer-dock"
-        className={`w-full max-w-md md:max-w-xl mt-auto shrink-0 ${isKeyboardOpen ? 'mb-0 pt-1' : 'mb-1 pt-1'}`}
+        className={`w-full shrink-0 ${
+          isSideBySideLayout
+            ? 'self-end pb-1'
+            : `max-w-md md:max-w-xl mt-auto ${isKeyboardOpen ? 'mb-0 pt-1' : 'mb-1 pt-1'}`
+        }`}
       >
         {showOpponentMissed && (
           <div className="mb-1.5 px-3 py-1 rounded-xl bg-amber-950/80 border border-amber-500/40 text-amber-300 text-xs font-bold flex items-center justify-center gap-1.5 animate-in fade-in">

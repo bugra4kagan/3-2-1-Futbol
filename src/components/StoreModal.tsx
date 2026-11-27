@@ -139,10 +139,10 @@ export const StoreModal: React.FC<StoreModalProps> = ({
               <ShoppingBag className="w-5 h-5" />
             </div>
             <div className="min-w-0">
-              <h2 className="font-display text-lg sm:text-xl font-extrabold text-[#FFFFFF] uppercase leading-tight truncate">
+              <h2 className="font-display text-lg sm:text-xl font-extrabold text-[#FFFFFF] uppercase leading-tight">
                 Mağaza
               </h2>
-              <p className="text-[11px] text-[#C4D6CA] font-medium truncate">
+              <p className="text-[11px] text-[#C4D6CA] font-medium leading-snug">
                 Coinlerinle kulüp arması, çerçeve, rozet ve ünvan aç
               </p>
             </div>

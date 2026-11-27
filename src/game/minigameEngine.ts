@@ -137,7 +137,7 @@ export function generateMinigameRounds(
 ): MinigameRoundPayload[] {
   const profile: DifficultyProfile = options?.profile ?? 'balanced';
   const rng = options?.rng ?? Math.random;
-  const preferPopular = profile === 'online';
+  const preferPopular = profile === 'online' || profile === 'private_room';
 
   if (minigameType === 'two_clubs') {
     const items = selectDifficultyWeightedItems(
@@ -183,7 +183,10 @@ export function generateMinigameRounds(
 
   if (minigameType === 'career') {
     const eligible = CAREER_CHALLENGES.filter(
-      (c) => !isSouthAmericaLocalOnlyPlayer(PLAYERS[c.playerId])
+      (c) =>
+        !isSouthAmericaLocalOnlyPlayer(PLAYERS[c.playerId]) &&
+        c.steps.length >= 2 &&
+        c.steps.every((st) => Boolean(st.clubName?.trim()) && /\d{4}/.test(st.years || ''))
     );
     const items = selectDifficultyWeightedItems(
       eligible,
@@ -194,6 +197,8 @@ export function generateMinigameRounds(
       profile,
       rng,
       {
+        getCanonicalKey: (c) =>
+          `car:${c.steps.map((st) => `${st.clubId || st.clubName}:${st.years}`).join('>')}`,
         getClubKeys: (c) => c.steps.map((st) => st.clubId || st.clubName),
         prioritizePredicate: preferPopular
           ? (c) => isPopularOnlineItem({ minigameType: 'career', career: c })

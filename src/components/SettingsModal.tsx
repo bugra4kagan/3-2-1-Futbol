@@ -179,10 +179,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <Settings className="w-5 h-5 stroke-[2.4]" />
             </div>
             <div className="min-w-0">
-              <h2 className="font-display text-lg sm:text-xl font-black text-[#F5F3EB] leading-tight truncate uppercase">
+              <h2 className="font-display text-lg sm:text-xl font-black text-[#F5F3EB] leading-tight uppercase">
                 {t('settings')}
               </h2>
-              <p className="text-[11px] text-[#C4D6CA] font-medium truncate">
+              <p className="text-[11px] text-[#C4D6CA] font-medium leading-snug">
                 {t('settingsSubtitle')}
               </p>
             </div>

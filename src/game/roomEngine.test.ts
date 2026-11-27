@@ -7,6 +7,7 @@ import {
   MatchmakingQueueCandidate,
   RoomRecord,
   applyRoomAdvance,
+  applyRoomAbandon,
   applyRoomAnswer,
   applyRoomBeginRound,
   applyRoomDisconnectForfeit,
@@ -16,6 +17,7 @@ import {
   applyRoomRematch,
   applyRoomRematchResponse,
   applyRoomResumeFromDisconnect,
+  DISCONNECT_GRACE_MAX_TOTAL_MS_PER_PLAYER,
   DISCONNECT_GRACE_TIMEOUT_MS,
   REMATCH_OFFER_TIMEOUT_MS,
   REMATCH_REQUEST_COOLDOWN_MS,
@@ -286,14 +288,14 @@ test('rematch decline and 20s timeout expire cleanly without restarting', () => 
   assert.ok(expired);
   assert.equal(expired.state, 'game_over');
   assert.equal(expired.rematchOffer?.status, 'expired');
-  assert.equal(DISCONNECT_GRACE_TIMEOUT_MS, 30000);
+  assert.equal(DISCONNECT_GRACE_TIMEOUT_MS, 45000);
 });
 
-test('30s disconnect grace pauses timer, restores room without state change, and forfeits after 30s', () => {
+test('45s disconnect grace pauses timer, enforces cumulative cap, restores room, and forfeits after 45s', () => {
   const room = playingRoom();
   const baseRoundStartedAt = room.roundStartedAt!;
 
-  // Trigger 30s grace when guest drops
+  // Trigger 45s grace when guest drops
   const paused = applyRoomDisconnectGrace(room, guest.id, 11000, NOW + 5000);
   assert.ok(paused);
   // Firestore rule compatibility: room.state remains in allowed enum
@@ -301,16 +303,24 @@ test('30s disconnect grace pauses timer, restores room without state change, and
   assert.equal(paused.disconnectGrace?.disconnectedKey, 'u_guest02');
   assert.equal(paused.disconnectGrace?.expiresAt, NOW + 5000 + DISCONNECT_GRACE_TIMEOUT_MS);
 
-  // Cannot forfeit before 30s expires
-  assert.equal(applyRoomDisconnectForfeit(paused, NOW + 25000), null);
+  // Cannot forfeit before 45s expires
+  assert.equal(applyRoomDisconnectForfeit(paused, NOW + 40000), null);
 
-  // Reconnect at +12s shifts timer forward cleanly so player doesn't lose elapsed pause seconds
-  const resumed = applyRoomResumeFromDisconnect(paused, guest.id, NOW + 17000);
+  // Reconnect at +20s shifts timer forward cleanly & preserves cumulative pause budget on room
+  const resumed = applyRoomResumeFromDisconnect(paused, guest.id, NOW + 25000);
   assert.ok(resumed);
   assert.equal(resumed.disconnectGrace, null);
-  assert.equal(resumed.roundStartedAt, baseRoundStartedAt + 12000);
+  assert.equal(resumed.roundStartedAt, baseRoundStartedAt + 20000);
+  assert.equal(resumed.pauseUsedMsByPlayer?.u_guest02, 20000);
 
-  // If disconnected player stays offline >30s, connected host wins cleanly by <= +1 step (Firestore rule compliant)
+  // Once cumulative pause budget (90s) is exhausted, further pauses are rejected to prevent stall abuse
+  const budgeted = {
+    ...resumed,
+    pauseUsedMsByPlayer: { u_guest02: DISCONNECT_GRACE_MAX_TOTAL_MS_PER_PLAYER },
+  };
+  assert.equal(applyRoomDisconnectGrace(budgeted, guest.id, 9000, NOW + 30000), null);
+
+  // If disconnected player stays offline >45s, connected host wins cleanly by <= +1 step (Firestore rule compliant)
   const forfeited = applyRoomDisconnectForfeit(paused, NOW + 5000 + DISCONNECT_GRACE_TIMEOUT_MS + 100);
   assert.ok(forfeited);
   assert.equal(forfeited.state, 'game_over');
@@ -476,4 +486,21 @@ test('room join guards prevent empty/invalid codes, started rooms, full rooms, a
   const started = playingRoom('country_club');
   const blockedJoin = applyRoomJoin(started, { id: 'u_late', name: 'GecKalan', avatar: '⚽', score: 0 }, 'uidLate', NOW + 6000);
   assert.equal(blockedJoin.ok, false);
+});
+
+test('applyRoomBeginRound rejects premature start before 3-2-1 countdown completes and applyRoomAbandon forfeits cleanly', () => {
+  const joined = applyRoomJoin(privateRoom('xox'), guest, 'uidGuest', NOW + 1000);
+  assert.ok(joined.ok);
+  const premature = applyRoomBeginRound(joined.room, getRoomPhase(joined.room), NOW + 2000);
+  assert.equal(premature, null);
+
+  const started = applyRoomBeginRound(joined.room, getRoomPhase(joined.room), NOW + 4000);
+  assert.ok(started);
+  assert.equal(started.state, 'playing');
+
+  const abandoned = applyRoomAbandon(started, guest.id, NOW + 8000);
+  assert.ok(abandoned);
+  assert.equal(abandoned.state, 'game_over');
+  assert.equal(abandoned.scores.u_host01, 1);
+  assert.equal(abandoned.disconnectGrace, null);
 });

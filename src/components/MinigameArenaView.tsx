@@ -71,6 +71,7 @@ interface MinigameArenaViewProps {
   roundSeed?: string;
   isKeyboardOpen?: boolean;
   isCompactViewport?: boolean;
+  isSideBySideLayout?: boolean;
   onSpendCoinsForJoker?: (costCoins: number) => { ok: boolean; reason?: string };
   onUseEnergyDrinkHint?: () => boolean;
   onUseEnergyDrinkPass?: () => void;
@@ -153,6 +154,7 @@ export const MinigameArenaView: React.FC<MinigameArenaViewProps> = React.memo(({
   roundSeed,
   isKeyboardOpen = false,
   isCompactViewport = false,
+  isSideBySideLayout = false,
   onSpendCoinsForJoker,
   onAnswerWinner,
   onBotWrongAttempt,
@@ -659,16 +661,29 @@ export const MinigameArenaView: React.FC<MinigameArenaViewProps> = React.memo(({
 
   // Helper to render XOX row/col condition header
   const renderXoxAxisCell = (cond: XoxCondition, isRowHeader: boolean) => {
+    const axisHeightClass = isSideBySideLayout
+      ? isRowHeader
+        ? 'h-full min-h-[42px]'
+        : 'h-full min-h-[40px]'
+      : isRowHeader
+      ? 'h-full min-h-[72px] sm:min-h-[82px]'
+      : 'h-full min-h-[68px] sm:min-h-[76px]';
     if (cond.type === 'club' && CLUBS[cond.id]) {
       const club = CLUBS[cond.id];
       return (
         <div
-          className={`flex flex-col items-center justify-center text-center p-1 sm:p-1.5 rounded-xl bg-slate-900/95 border border-slate-700/80 min-w-0 ${
-            isRowHeader ? 'h-full min-h-[72px] sm:min-h-[82px]' : 'h-full min-h-[68px] sm:min-h-[76px]'
-          }`}
+          className={`flex flex-col items-center justify-center text-center p-1 sm:p-1.5 rounded-xl bg-slate-900/95 border border-slate-700/80 min-w-0 ${axisHeightClass}`}
         >
-          <ClubBadge club={club} size="xs" className="!w-7 !h-7 sm:!w-9 sm:!h-9 shrink-0" />
-          <span className="mt-1 w-full text-center text-[10px] sm:text-[11px] font-extrabold text-white leading-tight line-clamp-2 break-words">
+          <ClubBadge
+            club={club}
+            size="xs"
+            className={isSideBySideLayout ? '!w-5 !h-5 shrink-0' : '!w-7 !h-7 sm:!w-9 sm:!h-9 shrink-0'}
+          />
+          <span
+            className={`mt-0.5 w-full text-center font-extrabold text-white leading-tight line-clamp-2 break-words ${
+              isSideBySideLayout ? 'text-[9px]' : 'text-[10px] sm:text-[11px]'
+            }`}
+          >
             {club.name}
           </span>
         </div>
@@ -678,12 +693,14 @@ export const MinigameArenaView: React.FC<MinigameArenaViewProps> = React.memo(({
     if (cond.type === 'teammate') {
       return (
         <div
-          className={`flex flex-col items-center justify-center text-center p-1 sm:p-1.5 rounded-xl bg-amber-950/50 border border-amber-500/40 min-w-0 ${
-            isRowHeader ? 'h-full min-h-[72px] sm:min-h-[82px]' : 'h-full min-h-[68px] sm:min-h-[76px]'
-          }`}
+          className={`flex flex-col items-center justify-center text-center p-1 sm:p-1.5 rounded-xl bg-amber-950/50 border border-amber-500/40 min-w-0 ${axisHeightClass}`}
         >
           <TeammatePortrait playerId={cond.id} label={cond.label} />
-          <span className="mt-1 w-full text-center text-[10px] sm:text-[11px] font-black text-amber-200 leading-tight line-clamp-2 break-words">
+          <span
+            className={`mt-0.5 w-full text-center font-black text-amber-200 leading-tight line-clamp-2 break-words ${
+              isSideBySideLayout ? 'text-[9px]' : 'text-[10px] sm:text-[11px]'
+            }`}
+          >
             {cond.label}
           </span>
         </div>
@@ -692,12 +709,14 @@ export const MinigameArenaView: React.FC<MinigameArenaViewProps> = React.memo(({
 
     return (
       <div
-        className={`flex flex-col items-center justify-center text-center p-1 sm:p-1.5 rounded-xl bg-emerald-950/40 border border-emerald-500/40 min-w-0 ${
-          isRowHeader ? 'h-full min-h-[72px] sm:min-h-[82px]' : 'h-full min-h-[68px] sm:min-h-[76px]'
-        }`}
+        className={`flex flex-col items-center justify-center text-center p-1 sm:p-1.5 rounded-xl bg-emerald-950/40 border border-emerald-500/40 min-w-0 ${axisHeightClass}`}
       >
-        <CountryFlag country={cond.id} flag={cond.flag} size="md" />
-        <span className="mt-1 w-full text-center text-[10px] sm:text-[11px] font-black text-emerald-200 leading-tight line-clamp-2 break-words">
+        <CountryFlag country={cond.id} flag={cond.flag} size={isSideBySideLayout ? 'sm' : 'md'} />
+        <span
+          className={`mt-0.5 w-full text-center font-black text-emerald-200 leading-tight line-clamp-2 break-words ${
+            isSideBySideLayout ? 'text-[9px]' : 'text-[10px] sm:text-[11px]'
+          }`}
+        >
           {cond.label}
         </span>
       </div>
@@ -723,18 +742,25 @@ export const MinigameArenaView: React.FC<MinigameArenaViewProps> = React.memo(({
 
   const inputDisabled = disabled || (isXox && !isMyXoxTurn) || isSilhouetteExhausted;
   const compactLayout = isKeyboardOpen || isCompactViewport;
+  const useSideBySide = isSideBySideLayout && !isSilhouette;
 
   return (
     <div
       data-testid={`minigame-arena-${round.minigameType}`}
-      className={`w-full flex flex-col items-center flex-1 min-h-0 overflow-hidden px-2.5 sm:px-4 ${
-        isKeyboardOpen ? 'pt-1 pb-1' : 'py-1.5 sm:py-3'
-      } ${isSilhouette ? 'justify-start gap-1' : 'justify-between'}`}
+      className={`w-full flex-1 min-h-0 overflow-hidden px-2.5 sm:px-4 ${
+        useSideBySide
+          ? 'grid grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)] items-center gap-3 py-1 max-w-6xl mx-auto'
+          : `flex flex-col items-center ${isKeyboardOpen ? 'pt-1 pb-1' : 'py-1.5 sm:py-3'} ${
+              isSilhouette ? 'justify-start gap-1' : 'justify-between'
+            }`
+      }`}
     >
-      {/* Top Challenge Stage (scrollable cleanly when keyboard shrinks viewport so input stays anchored flush above keyboard) */}
+      {/* Top Challenge Stage (or left column in short landscape tablet keyboard mode) */}
       <div
-        className={`w-full flex-1 min-h-0 overflow-y-auto overscroll-contain flex flex-col items-center ${
-          isSilhouette ? 'justify-start' : 'justify-center'
+        className={`w-full min-h-0 overflow-y-auto overscroll-contain flex flex-col items-center ${
+          useSideBySide
+            ? 'h-full justify-center pr-1'
+            : `flex-1 ${isSilhouette ? 'justify-start' : 'justify-center'}`
         }`}
       >
       {/* 1. FUTBOLCUYU TAHMİN ET (8-ATTEMPT BLURRED PORTRAIT & CLUES) */}
@@ -945,32 +971,45 @@ export const MinigameArenaView: React.FC<MinigameArenaViewProps> = React.memo(({
           <div
             data-testid="career-vertical-timeline"
             className={`w-full rounded-3xl bg-slate-900/96 border border-slate-700/80 shadow-2xl overflow-y-auto ${
-              isKeyboardOpen
-                ? 'p-2 sm:p-3 max-h-[28dvh]'
-                : 'p-3 sm:p-4 max-h-[42dvh] sm:max-h-[52dvh]'
+              useSideBySide
+                ? 'p-2 max-h-full'
+                : isKeyboardOpen
+                ? 'p-2 sm:p-3 max-h-[34dvh]'
+                : 'p-3 sm:p-4 max-h-[44dvh] sm:max-h-[54dvh]'
             }`}
           >
             <div className="flex flex-col items-stretch gap-1.5">
               {round.career.steps.map((step, idx) => {
                 const club = step.clubId ? CLUBS[step.clubId] : null;
+                const isLoanStep = /\(Kiralık\)/i.test(step.clubName);
+                const cleanClubName = step.clubName.replace(/\s*\(Kiralık\)/gi, '').trim();
                 return (
                   <React.Fragment key={`${step.clubName}-${idx}`}>
                     <div
                       data-testid={`career-step-row-${idx}`}
-                      className="flex items-center justify-between gap-3 px-3 py-2 rounded-2xl bg-slate-950/90 border border-slate-800 shadow-sm"
+                      className={`flex items-center justify-between gap-2.5 rounded-2xl bg-slate-950/90 border border-slate-800 shadow-sm ${
+                        useSideBySide ? 'px-2.5 py-1.5' : 'px-3 py-2'
+                      }`}
                     >
                       <div className="flex items-center gap-2.5 min-w-0">
                         <ClubBadge
                           club={club}
                           clubId={step.clubId}
-                          clubName={step.clubName}
+                          clubName={cleanClubName}
                           size="sm"
-                          className="!w-10 !h-10 sm:!w-11 sm:!h-11 shrink-0"
+                          className={useSideBySide ? '!w-8 !h-8 shrink-0' : '!w-10 !h-10 sm:!w-11 sm:!h-11 shrink-0'}
                         />
                         <div className="min-w-0 text-left">
-                          <span className="block font-extrabold text-xs sm:text-sm text-white leading-tight line-clamp-2 break-words">
-                            {step.clubName}
-                          </span>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="font-extrabold text-xs sm:text-sm text-white leading-tight line-clamp-2 break-words">
+                              {cleanClubName}
+                            </span>
+                            {isLoanStep && (
+                              <span className="px-1.5 py-0.5 rounded-md bg-amber-500/20 border border-amber-400/50 text-[9px] font-black text-amber-300 uppercase shrink-0">
+                                KİRALIK
+                              </span>
+                            )}
+                          </div>
                           <div className="mt-0.5 flex items-center gap-1.5">
                             <CountryFlag flag={step.countryFlag} size="xs" />
                             <span className="text-[10px] font-bold text-slate-400">
@@ -1122,9 +1161,15 @@ export const MinigameArenaView: React.FC<MinigameArenaViewProps> = React.memo(({
             </div>
           )}
 
-          <div className="w-full grid grid-cols-[72px_repeat(3,minmax(0,1fr))] min-[360px]:grid-cols-[84px_repeat(3,minmax(0,1fr))] sm:grid-cols-[120px_repeat(3,minmax(0,1fr))] gap-1 sm:gap-2">
+          <div
+            className={`w-full grid gap-1 sm:gap-1.5 ${
+              isSideBySideLayout
+                ? 'grid-cols-[84px_repeat(3,minmax(0,1fr))]'
+                : 'grid-cols-[72px_repeat(3,minmax(0,1fr))] min-[360px]:grid-cols-[84px_repeat(3,minmax(0,1fr))] sm:grid-cols-[120px_repeat(3,minmax(0,1fr))]'
+            }`}
+          >
             <div className="flex flex-col items-center justify-center rounded-xl bg-slate-950/90 border border-slate-800 p-1 text-center">
-              <span className="text-xs sm:text-sm font-black text-purple-300">XOX</span>
+              <span className={`font-black text-purple-300 ${isSideBySideLayout ? 'text-[11px]' : 'text-xs sm:text-sm'}`}>XOX</span>
               <span className="text-[9px] text-slate-500 font-bold">3'lü Yap!</span>
             </div>
 
@@ -1155,9 +1200,17 @@ export const MinigameArenaView: React.FC<MinigameArenaViewProps> = React.memo(({
                         if (mark || disabled || !isMyXoxTurn) return;
                         setSelectedCell({ row: rIdx, col: cIdx });
                         setErrorToast(null);
-                        setTimeout(() => inputRef.current?.focus(), 40);
+                        setTimeout(() => {
+                          try {
+                            inputRef.current?.focus({ preventScroll: true });
+                          } catch {
+                            inputRef.current?.focus();
+                          }
+                        }, 40);
                       }}
-                      className={`min-h-[64px] sm:min-h-[76px] p-1 sm:p-1.5 rounded-xl border flex flex-col items-center justify-center text-center transition relative focus:outline-none ${
+                      className={`${
+                        isSideBySideLayout ? 'min-h-[42px]' : 'min-h-[64px] sm:min-h-[76px]'
+                      } p-1 sm:p-1.5 rounded-xl border flex flex-col items-center justify-center text-center transition relative focus:outline-none ${
                         mark
                           ? isMine
                             ? `bg-emerald-950/75 ${
@@ -1216,11 +1269,13 @@ export const MinigameArenaView: React.FC<MinigameArenaViewProps> = React.memo(({
 
       </div>
 
-      {/* Answer Input Section — Input anchored flush at bottom right above soft keyboard */}
+      {/* Answer Input Section — Input anchored flush at bottom right above soft keyboard, or right col on tablet landscape */}
       <div
         data-testid="match-answer-dock"
         className={`w-full shrink-0 ${
-          isSilhouette
+          useSideBySide
+            ? 'self-end pb-1'
+            : isSilhouette
             ? 'max-w-lg md:max-w-xl mt-2 mb-1'
             : `max-w-md md:max-w-xl mt-auto ${isKeyboardOpen ? 'mb-0 pt-1' : 'mb-1.5 pt-1.5'}`
         }`}

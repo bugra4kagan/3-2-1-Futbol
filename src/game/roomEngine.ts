@@ -53,8 +53,8 @@ export const ROOM_JOIN_MAX_AGE_MS = 3 * 60 * 60 * 1000;
 export const ROOM_XOX_MAX_CONSECUTIVE_TIMEOUTS = 2;
 export const REMATCH_OFFER_TIMEOUT_MS = 20000;
 export const REMATCH_REQUEST_COOLDOWN_MS = 5000;
-export const DISCONNECT_GRACE_TIMEOUT_MS = 30000;
-export const DISCONNECT_GRACE_MAX_TOTAL_MS_PER_PLAYER = 60000;
+export const DISCONNECT_GRACE_TIMEOUT_MS = 45000;
+export const DISCONNECT_GRACE_MAX_TOTAL_MS_PER_PLAYER = 90000;
 
 export type RoomState = 'waiting' | 'countdown' | 'playing' | 'round_ended' | 'game_over';
 export type RoomEndReason = 'scored' | 'timeout' | 'attempts_exhausted' | 'draw';
@@ -134,6 +134,8 @@ export interface RoomRecord {
   silhouetteAttempts: Record<string, number>;
   rematchOffer?: RoomRematchOffer | null;
   disconnectGrace?: RoomDisconnectGrace | null;
+  /** Cumulative disconnect pause budget used per player across the whole match */
+  pauseUsedMsByPlayer?: Record<string, number>;
   createdAt: number;
   updatedAt: number;
   /** Firestore Timestamp (TTL field) — opaque to the pure engine */
@@ -269,6 +271,7 @@ export function normalizeRoomRecord(raw: Record<string, unknown>): RoomRecord {
     xoxConsecutiveTimeouts: room.xoxConsecutiveTimeouts ?? 0,
     wrongAttemptPulse: room.wrongAttemptPulse ?? null,
     silhouetteAttempts: room.silhouetteAttempts ?? {},
+    pauseUsedMsByPlayer: room.pauseUsedMsByPlayer ?? {},
   };
 }
 
@@ -317,6 +320,7 @@ export function createRoomRecord(params: {
     scores[guestId] = 0;
   }
   const isXox = params.minigameType === 'xox';
+  const difficultyProfile = params.source === 'private' ? 'private_room' : 'online';
 
   return {
     code: params.code,
@@ -326,7 +330,13 @@ export function createRoomRecord(params: {
     rosterVersion: cleanRosterVersion,
     guestRosterVersion: guestId ? cleanRosterVersion : null,
     questionSeed,
-    roundIds: generateSeededRoundIds(params.minigameType, ROOM_ROUND_POOL_SIZE, questionSeed),
+    roundIds: generateSeededRoundIds(
+      params.minigameType,
+      ROOM_ROUND_POOL_SIZE,
+      questionSeed,
+      [],
+      difficultyProfile
+    ),
     roundIndex: 0,
     hostId,
     guestId,
@@ -409,9 +419,12 @@ export function applyRoomJoin(
   };
 }
 
-/** countdown -> playing. Any client may call it once shared countdown completes. */
+/** countdown -> playing. Rejects premature triggers before countdownEndsAt so fast clocks never cut 3-2-1 short. */
 export function applyRoomBeginRound(room: RoomRecord, phase: RoomPhase, now: number): RoomRecord | null {
   if (room.state !== 'countdown' || !isSamePhase(room, phase, false)) return null;
+  if (typeof room.countdownEndsAt === 'number' && now + 250 < room.countdownEndsAt) {
+    return null;
+  }
   const alignedStart =
     room.countdownEndsAt && now >= room.countdownEndsAt
       ? Math.max(room.countdownEndsAt, now)
@@ -732,6 +745,7 @@ function startRematchRoomRecord(
   }
   const isXox = room.minigameType === 'xox';
   const excludeIds = new Set(room.roundIds || []);
+  const difficultyProfile = room.source === 'private' ? 'private_room' : 'online';
 
   return {
     ...room,
@@ -742,7 +756,7 @@ function startRematchRoomRecord(
       ROOM_ROUND_POOL_SIZE,
       seed,
       excludeIds,
-      'online'
+      difficultyProfile
     ),
     players: resetPlayers,
     scores: resetScores,
@@ -767,6 +781,7 @@ function startRematchRoomRecord(
     silhouetteAttempts: {},
     rematchOffer: null,
     disconnectGrace: null,
+    pauseUsedMsByPlayer: {},
     updatedAt: now,
   };
 }
@@ -934,7 +949,7 @@ export function applyRoomRematchResponse(
   return startRematchRoomRecord(room, players, now, seed);
 }
 
-/** Marks or updates a 30s disconnect pause window without leaving valid Firestore states. */
+/** Marks or updates a 45s disconnect pause window without leaving valid Firestore states. */
 export function applyRoomDisconnectGrace(
   room: RoomRecord,
   disconnectedRawId: string,
@@ -955,7 +970,10 @@ export function applyRoomDisconnectGrace(
   const target = room.players?.[disconnectedKey];
   if (!target) return null;
 
-  const prevUsedMap = room.disconnectGrace?.totalPauseUsedMsByPlayer ?? {};
+  const prevUsedMap = {
+    ...(room.pauseUsedMsByPlayer ?? {}),
+    ...(room.disconnectGrace?.totalPauseUsedMsByPlayer ?? {}),
+  };
   const prevUsed = prevUsedMap[disconnectedKey] ?? 0;
   if (prevUsed >= DISCONNECT_GRACE_MAX_TOTAL_MS_PER_PLAYER) {
     return null;
@@ -963,6 +981,7 @@ export function applyRoomDisconnectGrace(
 
   return {
     ...room,
+    pauseUsedMsByPlayer: prevUsedMap,
     disconnectGrace: {
       disconnectedKey,
       disconnectedName: target.name,
@@ -976,7 +995,7 @@ export function applyRoomDisconnectGrace(
   };
 }
 
-/** Resumes the paused clock cleanly when the disconnected player reconnects within 30s. */
+/** Resumes the paused clock cleanly when the disconnected player reconnects within 45s. */
 export function applyRoomResumeFromDisconnect(
   room: RoomRecord,
   returningRawId: string,
@@ -988,8 +1007,12 @@ export function applyRoomResumeFromDisconnect(
   if (grace.disconnectedKey !== returningKey) return null;
 
   const pausedDuration = Math.max(0, now - grace.startedAt);
-  const prevUsed = grace.totalPauseUsedMsByPlayer?.[returningKey] ?? 0;
+  const prevUsed =
+    room.pauseUsedMsByPlayer?.[returningKey] ??
+    grace.totalPauseUsedMsByPlayer?.[returningKey] ??
+    0;
   const nextUsedMap = {
+    ...(room.pauseUsedMsByPlayer ?? {}),
     ...(grace.totalPauseUsedMsByPlayer ?? {}),
     [returningKey]: prevUsed + pausedDuration,
   };
@@ -1004,16 +1027,53 @@ export function applyRoomResumeFromDisconnect(
     countdownEndsAt: shiftedCountdownEnd ?? null,
     roundStartedAt: shiftedRoundStart ?? null,
     disconnectGrace: null,
-    // Keep accumulated pause budget on next pause via room metadata if re-paused? Tracked in-flight or clean reset if desired.
+    pauseUsedMsByPlayer: nextUsedMap,
     xoxNotice:
-      prevUsed >= 0 && room.minigameType === 'xox'
-        ? `${grace.disconnectedName} yeniden bağlandı (${nextUsedMap[returningKey] ? 'maç devam ediyor' : ''}).`
+      room.minigameType === 'xox'
+        ? `${grace.disconnectedName} yeniden bağlandı, maç kaldığı yerden devam ediyor.`
         : room.xoxNotice,
     updatedAt: now,
   };
 }
 
-/** Forfeits the match cleanly after the 30s grace window expires, staying within Firestore score rules. */
+/** Forfeits the match cleanly when a player explicitly chooses to abandon an active match. */
+export function applyRoomAbandon(
+  room: RoomRecord,
+  abandoningRawId: string,
+  now: number
+): RoomRecord | null {
+  if (room.state === 'game_over' || room.state === 'waiting') return null;
+  const abandoningKey = getRoomPlayerKey(abandoningRawId);
+  const players = { ...(room.players || {}) };
+  const scores = { ...(room.scores || {}) };
+  if (!players[abandoningKey]) return null;
+  const opponentKey = Object.keys(players).find((k) => k !== abandoningKey);
+  if (!opponentKey) return null;
+
+  const oppScore = scores[opponentKey] ?? 0;
+  const myScore = scores[abandoningKey] ?? 0;
+  const nextOppScore =
+    oppScore <= myScore ? Math.min(10, oppScore + 1) : oppScore;
+  scores[opponentKey] = Math.min(oppScore + 1, Math.max(oppScore, nextOppScore));
+  players[opponentKey] = {
+    ...players[opponentKey],
+    score: scores[opponentKey],
+  };
+
+  return {
+    ...room,
+    players,
+    scores,
+    state: 'game_over',
+    roundEndReason: 'timeout',
+    roundWinnerId: players[opponentKey]?.id ?? opponentKey,
+    acceptedPlayerName: `${players[abandoningKey].name} maçtan ayrıldı`,
+    disconnectGrace: null,
+    updatedAt: now,
+  };
+}
+
+/** Forfeits the match cleanly after the 45s grace window expires, staying within Firestore score rules. */
 export function applyRoomDisconnectForfeit(
   room: RoomRecord,
   now: number

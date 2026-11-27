@@ -30,6 +30,7 @@ export type DifficultyProfile =
   | 'bot_easy'
   | 'bot_medium'
   | 'bot_hard'
+  | 'private_room'
   | 'online'
   | 'balanced';
 
@@ -43,6 +44,7 @@ export const DIFFICULTY_DISTRIBUTIONS: Record<DifficultyProfile, DifficultyDistr
   bot_easy: { easy: 1.0, medium: 0.0, hard: 0.0 },
   bot_medium: { easy: 0.70, medium: 0.30, hard: 0.0 },
   bot_hard: { easy: 0.40, medium: 0.45, hard: 0.15 },
+  private_room: { easy: 0.60, medium: 0.40, hard: 0.0 },
   online: { easy: 0.70, medium: 0.25, hard: 0.05 },
   balanced: { easy: 0.50, medium: 0.35, hard: 0.15 },
 };
@@ -249,9 +251,9 @@ export function classifyCareerDifficulty(challenge: CareerChallenge): QuestionDi
   const player = PLAYERS[challenge.playerId];
   let score = getPlayerFamiliarityScore(player);
 
-  const hasStepHighClub = challenge.steps.some(
+  const highClubCount = challenge.steps.filter(
     (s) => s.clubId && HIGH_PROFILE_CLUB_IDS.has(s.clubId)
-  );
+  ).length;
   const hasStepSuperLig = challenge.steps.some(
     (s) => s.clubId && SUPER_LIG_CLUB_IDS.has(s.clubId)
   );
@@ -259,11 +261,18 @@ export function classifyCareerDifficulty(challenge: CareerChallenge): QuestionDi
     /201[8-9]|202\d|Günümüz/i.test(s.years || '')
   );
 
-  if (hasStepHighClub) score += 2;
+  if (highClubCount >= 1) score += 2;
+  if (highClubCount >= 2) score += 1;
   if (hasStepSuperLig) score += 2;
   if (hasRecentStep) score += 1;
+  if (challenge.steps.length >= 3) score += 1;
 
-  const tier: QuestionDifficulty = score >= 7 ? 'medium' : 'hard';
+  // 2 adımlı az bilinen oyuncular orta havuza sızmasın; bilinirliği yüksek oyuncular medium olur.
+  const hasRecognizableAnchor = highClubCount >= 1 || hasStepSuperLig;
+  const tier: QuestionDifficulty =
+    score >= 8 && hasRecognizableAnchor && challenge.steps.length >= 3
+      ? 'medium'
+      : 'hard';
   careerDifficultyCache.set(challenge.id, tier);
   return tier;
 }
@@ -370,9 +379,10 @@ export function isPopularOnlineItem(round: MinigameRoundPayload): boolean {
     );
   }
   if (round.minigameType === 'career' && round.career) {
+    const p = PLAYERS[round.career.playerId];
     return (
-      getPlayerFamiliarityScore(PLAYERS[round.career.playerId]) >= 5 ||
-      round.career.steps.some((s) => s.clubId && HIGH_PROFILE_CLUB_IDS.has(s.clubId))
+      isHouseholdStarPlayer(round.career.playerId) ||
+      (getPlayerFamiliarityScore(p) >= 8 && round.career.steps.length >= 3)
     );
   }
   if (round.minigameType === 'country_club' && round.countryClub) {

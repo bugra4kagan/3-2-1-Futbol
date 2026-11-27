@@ -13,15 +13,18 @@ export interface ViewportKeyboardMetrics {
   baselineHeight: number;
   isKeyboardOpen: boolean;
   isCompactHeight: boolean;
+  isUltraCompactHeight: boolean;
+  isSideBySideMatchLayout: boolean;
 }
 
 const KEYBOARD_HEIGHT_DROP_THRESHOLD_PX = 120;
 const COMPACT_MATCH_HEIGHT_PX = 660;
+const ULTRA_COMPACT_MATCH_HEIGHT_PX = 500;
 const KEYBOARD_FOCUSED_HEIGHT_PX = 580;
 
 /**
  * Computes consistent match viewport height & virtual-keyboard open state from browser/WebView dimensions
- * without double-subtracting keyboard height.
+ * without double-subtracting keyboard height. Also flags short landscape tablet viewports for side-by-side split.
  */
 export function computeMatchKeyboardMetrics(
   input: ViewportKeyboardInput
@@ -58,6 +61,11 @@ export function computeMatchKeyboardMetrics(
     Boolean(input.isInputFocused && viewportHeight <= KEYBOARD_FOCUSED_HEIGHT_PX);
 
   const isCompactHeight = isKeyboardOpen || viewportHeight < COMPACT_MATCH_HEIGHT_PX;
+  const isUltraCompactHeight = viewportHeight < ULTRA_COMPACT_MATCH_HEIGHT_PX;
+  const isSideBySideMatchLayout =
+    viewportWidth >= 700 &&
+    viewportWidth > viewportHeight &&
+    (isKeyboardOpen || isUltraCompactHeight);
 
   return {
     viewportHeight,
@@ -65,5 +73,7 @@ export function computeMatchKeyboardMetrics(
     baselineHeight,
     isKeyboardOpen,
     isCompactHeight,
+    isUltraCompactHeight,
+    isSideBySideMatchLayout,
   };
 }
