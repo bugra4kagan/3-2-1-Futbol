@@ -19,7 +19,7 @@ import { initializeApp, cert, getApps } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { getDatabase } from 'firebase-admin/database';
 import {
-  generateUniqueReplacementUsername,
+  generateRandomUniqueStarterName,
   isLegacyFlaggedUsername,
   normalizeUsernameKey,
 } from '../src/game/accountEngine.ts';
@@ -109,7 +109,7 @@ async function main() {
     const currentName = String(data.profile?.name || data.username || '').trim();
     if (!isLegacyFlaggedUsername(currentName)) continue;
 
-    const newName = generateUniqueReplacementUsername(takenKeys);
+    const newName = generateRandomUniqueStarterName(takenKeys);
     const newKey = normalizeUsernameKey(newName);
     takenKeys.add(newKey);
 
@@ -132,7 +132,7 @@ async function main() {
     const chosen =
       mapped ||
       (() => {
-        const newName = generateUniqueReplacementUsername(takenKeys);
+        const newName = generateRandomUniqueStarterName(takenKeys);
         const newKey = normalizeUsernameKey(newName);
         takenKeys.add(newKey);
         const oldKey = String(data.usernameKey || normalizeUsernameKey(currentName) || '').trim();
@@ -153,7 +153,7 @@ async function main() {
     const currentName = String(entry.name || '').trim();
     if (!mapped && !isLegacyFlaggedUsername(currentName)) continue;
 
-    const newName = mapped ? mapped.newName : generateUniqueReplacementUsername(takenKeys);
+    const newName = mapped ? mapped.newName : generateRandomUniqueStarterName(takenKeys);
     const newKey = mapped ? mapped.newKey : normalizeUsernameKey(newName);
     if (!mapped) {
       takenKeys.add(newKey);
@@ -171,6 +171,9 @@ async function main() {
   console.log(
     JSON.stringify({
       mode: isDryRun ? 'dry-run' : 'confirm',
+      scannedAccounts: accountsSnap.size,
+      scannedUsers: usersSnap.size,
+      scannedLeaderboard: Object.keys(rtdbLb).length,
       totalFlaggedAccounts: accountUpdates.length,
       totalFlaggedUsers: userUpdates.length,
       totalFlaggedLeaderboard: Object.keys(rtdbUpdates).length / 2,
@@ -179,7 +182,8 @@ async function main() {
 
   if (isDryRun) {
     console.log('[DRY-RUN] Hicbir canli kayit degistirilmedi. Uygulamak icin --confirm kullanin.');
-    return;
+    try { rtdb.goOffline(); } catch {}
+    process.exit(0);
   }
 
   // 6. Apply Firestore updates preserving coins, weeklyPoints, totalPoints, purchases, and progress
@@ -255,6 +259,8 @@ async function main() {
   console.log(
     `[MIGRATION COMPLETE] Replaced ${renamedByAccountId.size} account(s) and ${userUpdates.length} user doc(s) with zero coin/LP loss.`
   );
+  try { rtdb.goOffline(); } catch {}
+  process.exit(0);
 }
 
 main().catch((err) => {
