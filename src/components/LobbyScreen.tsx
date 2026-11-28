@@ -20,7 +20,7 @@ import {
   PlayerProfile,
   UserProgression,
 } from '../game/types';
-import { MINIGAME_OPTIONS } from '../game/minigameEngine';
+import { MINIGAME_OPTIONS, getMinigameMeta } from '../game/minigameEngine';
 import { formatPoints, getLeagueTierInfo } from '../game/retentionEngine';
 import { sanitizePublicDisplayName } from '../game/usernameFilter';
 import { normalizeProfileIconId } from '../game/profileIcons';
@@ -51,6 +51,18 @@ interface LobbyScreenProps {
   isNetworkOnline?: boolean;
   onlineError?: string | null;
   onClearOnlineError?: () => void;
+  resumableMatch?: {
+    roomCode: string;
+    minigameType: MinigameType;
+    opponentName?: string;
+    myScore?: number;
+    opponentScore?: number;
+    secondsLeft?: number | null;
+    failedAutoReconnect?: boolean;
+    isReconnecting?: boolean;
+  } | null;
+  onResumeMatch?: () => void;
+  onAbandonResumableMatch?: () => void;
 }
 
 export const LobbyScreen: React.FC<LobbyScreenProps> = React.memo(({
@@ -64,6 +76,9 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = React.memo(({
   isNetworkOnline = true,
   onlineError = null,
   onClearOnlineError,
+  resumableMatch = null,
+  onResumeMatch,
+  onAbandonResumableMatch,
 }) => {
   const { t } = useLanguage();
   const [showRoomModal, setShowRoomModal] = useState(false);
@@ -71,6 +86,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = React.memo(({
   const [roomMinigame, setRoomMinigame] = useState<MinigameType>('two_clubs');
   const [inputCode, setInputCode] = useState('');
   const [showBotModal, setShowBotModal] = useState(false);
+  const [showAbandonMatchConfirm, setShowAbandonMatchConfirm] = useState(false);
   const [minigameModalContext, setMinigameModalContext] = useState<
     'online_match' | 'minigames' | null
   >(null);
@@ -97,12 +113,12 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = React.memo(({
         <circle cx="200" cy="400" r="4" fill="#F5F3EB" />
       </svg>
 
-      {/* Compact Stadium Green-Navy Header */}
+      {/* Compact Stadium Green-Navy Header (Portrait-Only Centered Container) */}
       <header
         data-testid="lobby-top-header"
         className="sticky top-0 z-40 isolate w-[calc(100%+2rem)] -mx-4 bg-[#0E3120]/95 border-b border-[#E5B94F]/30 pt-[max(0.75rem,calc(env(safe-area-inset-top)+0.45rem))] pb-2.5"
       >
-        <div className="w-full max-w-xl md:max-w-3xl lg:max-w-5xl mx-auto px-2 sm:px-4 flex items-center justify-between gap-1 sm:gap-2">
+        <div className="w-full max-w-[560px] mx-auto px-3 sm:px-4 flex items-center justify-between gap-1.5 sm:gap-2">
           <div className="flex items-center gap-1.5 sm:gap-2 min-w-0 overflow-hidden">
             <GameLogo size="sm" variant="compact" className="!w-8 !h-8 min-[360px]:!w-9 min-[360px]:!h-9 sm:!w-10 sm:!h-10" />
             <div className="min-w-0 overflow-hidden">
@@ -181,10 +197,10 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = React.memo(({
         </div>
       </header>
 
-      {/* Main Hero + 3 Distinct Stadium Mode Cards (Single-column mobile, balanced 2-col tablet layout) */}
-      <main className="relative z-10 w-full max-w-xl md:max-w-3xl lg:max-w-5xl flex flex-col items-center text-center my-auto pt-3 sm:pt-4 pb-2 space-y-4">
-        <div className="w-full flex flex-col md:grid md:grid-cols-[0.9fr_1.15fr] md:items-center md:gap-6 lg:gap-10 space-y-4 md:space-y-0">
-          <div className="flex flex-col items-center md:items-center md:text-center md:p-6 md:rounded-3xl md:bg-[#0E3120]/55 md:border md:border-[#E5B94F]/25">
+      {/* Strictly Vertical Portrait Main Menu — Logo Centered Above 3 Full-Width Stacked Match Buttons */}
+      <main className="relative z-10 w-full max-w-[520px] mx-auto flex-1 flex flex-col items-center justify-start pt-4 sm:pt-6 pb-4 space-y-4 text-center">
+        <div className="w-full flex flex-col items-center space-y-4">
+          <div className="flex flex-col items-center text-center">
             <div className="relative mb-2 sm:mb-2.5 flex items-center justify-center">
               <GameLogo size="lg" variant="full" />
             </div>
@@ -197,12 +213,84 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = React.memo(({
             <h1 className="flex justify-center select-none leading-none">
               <BrandTitle size="lg" />
             </h1>
-            <p className="mt-1.5 text-xs sm:text-sm text-[#D7E6DC] max-w-md font-medium">
+            <p className="mt-1.5 text-xs sm:text-sm text-[#D7E6DC] max-w-md font-medium leading-snug">
               {t('lobbyTagline')} 🏆
             </p>
           </div>
 
           <div className="w-full flex flex-col space-y-3">
+            {/* Active Match Reconnect Card (vertical portrait card shown if active match needs manual resume) */}
+            {resumableMatch && (
+              <div
+                data-testid="resumable-match-card"
+                className="w-full p-4 rounded-2xl bg-gradient-to-br from-[#0F273E] to-[#13385A] border-2 border-[#E5B94F]/80 shadow-xl text-left space-y-3"
+              >
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#E5B94F]/20 border border-[#E5B94F]/50 text-[10px] font-black text-[#E5B94F] uppercase tracking-wider">
+                      ⚡ ODA: {resumableMatch.roomCode}
+                    </span>
+                    {typeof resumableMatch.secondsLeft === 'number' && (
+                      <span
+                        data-testid="resumable-match-timer"
+                        className="px-2 py-0.5 rounded-full bg-[#C93B32]/25 border border-[#C93B32]/65 text-[10px] font-black text-[#FCA5A5] tabular-nums"
+                      >
+                        ⏱ Kalan süre: {resumableMatch.secondsLeft} sn
+                      </span>
+                    )}
+                  </div>
+                  <h2 className="font-display font-extrabold text-xl text-[#FFFFFF] uppercase leading-tight">
+                    DEVAM EDEN MAÇIN VAR!
+                  </h2>
+                  <div className="grid grid-cols-3 gap-1.5 pt-1 text-center">
+                    <div className="px-2 py-1.5 rounded-xl bg-[#0B1E30]/90 border border-white/10">
+                      <span className="block text-[9px] font-bold uppercase text-[#94A3B8]">Rakip</span>
+                      <span className="block text-xs font-black text-[#FFFFFF] truncate">
+                        {resumableMatch.opponentName || 'Rakip Oyuncu'}
+                      </span>
+                    </div>
+                    <div className="px-2 py-1.5 rounded-xl bg-[#0B1E30]/90 border border-white/10">
+                      <span className="block text-[9px] font-bold uppercase text-[#94A3B8]">Oyun Modu</span>
+                      <span className="block text-xs font-black text-[#4ADE80] truncate">
+                        {getMinigameMeta(resumableMatch.minigameType).shortTitle}
+                      </span>
+                    </div>
+                    <div className="px-2 py-1.5 rounded-xl bg-[#0B1E30]/90 border border-white/10">
+                      <span className="block text-[9px] font-bold uppercase text-[#94A3B8]">Skor</span>
+                      <span className="block text-xs font-black font-mono text-[#E5B94F] tabular-nums">
+                        {resumableMatch.myScore ?? 0} - {resumableMatch.opponentScore ?? 0}
+                      </span>
+                    </div>
+                  </div>
+                  {resumableMatch.failedAutoReconnect && (
+                    <p className="text-[11px] text-[#D7E6DC] leading-snug pt-0.5">
+                      Otomatik yeniden bağlanma tamamlanamadı. Kaldığın skor ve süreyle dönmek için aşağıdaki butona dokun.
+                    </p>
+                  )}
+                </div>
+                <div className="flex flex-col gap-2">
+                  <button
+                    type="button"
+                    data-testid="resume-match-btn"
+                    disabled={resumableMatch.isReconnecting}
+                    onClick={onResumeMatch}
+                    className="w-full min-h-[44px] px-4 py-2.5 rounded-xl bg-[#168A52] hover:bg-[#1fa363] disabled:opacity-60 text-[#FFFFFF] font-black text-sm uppercase tracking-wide transition active:scale-95 cursor-pointer shadow-lg"
+                  >
+                    {resumableMatch.isReconnecting ? 'Bağlanılıyor...' : 'MAÇA GERİ DÖN'}
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="abandon-match-btn"
+                    disabled={resumableMatch.isReconnecting}
+                    onClick={() => setShowAbandonMatchConfirm(true)}
+                    className="w-full min-h-[40px] px-3.5 py-2 rounded-xl bg-[#0B1E30] hover:bg-[#C93B32]/25 border border-white/20 hover:border-[#C93B32] text-[#FCA5A5] font-bold text-xs transition active:scale-95 cursor-pointer"
+                  >
+                    Maçtan Ayrıl
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Network Offline Notice */}
             {!isNetworkOnline && (
               <div
@@ -238,14 +326,14 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = React.memo(({
               </div>
             )}
 
-            {/* 3 Distinct Core Match Cards */}
-            <div className="w-full grid grid-cols-1 sm:grid-cols-2 gap-3 text-left">
+            {/* 3 Distinct Core Match Cards — Strictly Stacked Vertically (NEVER side-by-side) */}
+            <div className="w-full flex flex-col gap-3 text-left">
           {/* 1. 1v1 Çevrimiçi Maç — Vibrant Stadium Grass Green */}
           <button
             type="button"
             data-testid="mode-online-btn"
             onClick={() => setMinigameModalContext('online_match')}
-            className="sm:col-span-2 flex items-center justify-between gap-3.5 p-4 rounded-2xl bg-gradient-to-r from-[#1A6B40] to-[#145331] hover:from-[#1F7C4B] hover:to-[#175F39] border-2 border-[#4ADE80]/75 hover:border-[#E5B94F] transition transform active:scale-[0.99] text-left shadow-lg group cursor-pointer"
+            className="w-full flex items-center justify-between gap-3.5 p-4 rounded-2xl bg-gradient-to-r from-[#1A6B40] to-[#145331] hover:from-[#1F7C4B] hover:to-[#175F39] border-2 border-[#4ADE80]/75 hover:border-[#E5B94F] transition transform active:scale-[0.99] text-left shadow-lg group cursor-pointer"
           >
             <div className="flex items-center gap-3.5 min-w-0 flex-1">
               <div className="w-12 h-12 rounded-xl bg-[#0F273E]/85 border border-[#E5B94F]/60 flex items-center justify-center text-[#FFFFFF] group-hover:scale-105 transition shrink-0">
@@ -260,7 +348,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = React.memo(({
                     CANLI · 4 OYUN
                   </span>
                 </div>
-                <span className="block text-xs text-[#F5F3EB]/90 mt-1 truncate">
+                <span className="block text-xs text-[#F5F3EB]/90 mt-1 leading-snug">
                   {t('lobbyOnlineDesc')}
                 </span>
               </div>
@@ -283,7 +371,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = React.memo(({
                 <span className="block font-display font-extrabold text-[#FFFFFF] text-lg leading-tight uppercase">
                   Arkadaşla Oyna
                 </span>
-                <span className="block text-xs text-[#C4D6CA] truncate">
+                <span className="block text-xs text-[#C4D6CA] leading-snug mt-0.5">
                   Özel oda kur veya koda katıl
                 </span>
               </div>
@@ -306,7 +394,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = React.memo(({
                 <span className="block font-display font-extrabold text-[#FFFFFF] text-lg leading-tight uppercase">
                   Tek Oyunculu
                 </span>
-                <span className="block text-xs text-[#C4D6CA] truncate">
+                <span className="block text-xs text-[#C4D6CA] leading-snug mt-0.5">
                   Çırak · Şampiyon · Efsane
                 </span>
               </div>
@@ -460,6 +548,45 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = React.memo(({
           onSelectMode('bot', { botDifficulty: diff, minigameType: mg });
         }}
       />
+
+      {/* Explicit Confirmation Modal Before Abandoning Active Rejoinable Match */}
+      {showAbandonMatchConfirm && typeof document !== 'undefined' && createPortal(
+        <div
+          data-testid="abandon-match-confirm-modal"
+          className="fixed inset-0 z-[90] flex items-center justify-center p-4 bg-[#092316]/90 animate-in fade-in duration-150"
+        >
+          <div className="w-full max-w-sm bg-[#102940] border-2 border-[#C93B32]/75 rounded-3xl p-5 text-center shadow-2xl space-y-3">
+            <h3 className="font-display font-extrabold text-xl text-[#FFFFFF] uppercase">
+              Maçtan Ayrılmak İstiyor Musun?
+            </h3>
+            <p className="text-xs text-[#D7E6DC] leading-relaxed">
+              Maçtan kalıcı olarak ayrılırsan bu maça geri dönemezsin ve aktif karşılaşma hükmen sonlandırılır.
+            </p>
+            <div className="flex gap-2.5 pt-1">
+              <button
+                type="button"
+                data-testid="abandon-match-cancel-btn"
+                onClick={() => setShowAbandonMatchConfirm(false)}
+                className="flex-1 min-h-[42px] px-3 py-2 rounded-xl bg-[#168A52] hover:bg-[#1fa363] text-[#FFFFFF] font-black text-xs cursor-pointer"
+              >
+                Vazgeç
+              </button>
+              <button
+                type="button"
+                data-testid="abandon-match-confirm-btn"
+                onClick={() => {
+                  setShowAbandonMatchConfirm(false);
+                  onAbandonResumableMatch?.();
+                }}
+                className="flex-1 min-h-[42px] px-3 py-2 rounded-xl bg-[#C93B32] hover:bg-[#b02e26] text-[#FFFFFF] font-black text-xs cursor-pointer"
+              >
+                Evet, Maçtan Ayrıl
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 });

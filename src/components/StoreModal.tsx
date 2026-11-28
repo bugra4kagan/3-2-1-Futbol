@@ -131,7 +131,7 @@ export const StoreModal: React.FC<StoreModalProps> = ({
       data-testid="store-modal"
       className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 pt-[max(0.75rem,env(safe-area-inset-top))] bg-[#092316]/88 overflow-y-auto animate-screen-fade"
     >
-      <div className="relative w-full max-w-2xl lg:max-w-4xl bg-[#124029] border-2 border-[#E5B94F]/45 rounded-3xl p-3.5 sm:p-6 shadow-2xl text-left my-auto max-h-[92dvh] flex flex-col overflow-hidden">
+      <div className="relative w-full max-w-[540px] bg-[#124029] border-2 border-[#E5B94F]/45 rounded-3xl p-3.5 sm:p-5 shadow-2xl text-left my-auto max-h-[92dvh] flex flex-col overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between gap-2 pb-3 border-b border-[#F5F3EB]/15 shrink-0">
           <div className="flex items-center gap-2.5 min-w-0">
@@ -139,10 +139,10 @@ export const StoreModal: React.FC<StoreModalProps> = ({
               <ShoppingBag className="w-5 h-5" />
             </div>
             <div className="min-w-0">
-              <h2 className="font-display text-lg sm:text-xl font-extrabold text-[#FFFFFF] uppercase leading-tight truncate">
+              <h2 className="font-display text-lg sm:text-xl font-extrabold text-[#FFFFFF] uppercase leading-tight">
                 Mağaza
               </h2>
-              <p className="text-[11px] text-[#C4D6CA] font-medium truncate">
+              <p className="text-[11px] text-[#C4D6CA] font-medium leading-snug">
                 Coinlerinle kulüp arması, çerçeve, rozet ve ünvan aç
               </p>
             </div>
@@ -237,8 +237,8 @@ export const StoreModal: React.FC<StoreModalProps> = ({
           </div>
         )}
 
-        {/* Items Grid */}
-        <div className="flex-1 min-h-0 overflow-y-auto pr-1 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+        {/* Items Grid (Vertical Mobile 1-2 col) */}
+        <div className="flex-1 min-h-0 overflow-y-auto pr-1 grid grid-cols-1 sm:grid-cols-2 gap-2.5">
           {visibleItems.map((item) => {
             const owned = isPermanentOwned(item);
             const equipped = owned && isItemEquipped(item);

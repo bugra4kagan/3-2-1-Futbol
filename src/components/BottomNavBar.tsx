@@ -65,9 +65,9 @@ export const BottomNavBar: React.FC<BottomNavBarProps> = React.memo(({
     <nav
       data-testid="bottom-nav"
       aria-label="Ana Gezinme"
-      className="fixed bottom-0 left-0 right-0 z-40 bg-[#0E2F1F] border-t border-[#E5B94F]/30 shadow-[0_-4px_18px_rgba(0,0,0,0.38)] pb-[max(0.25rem,env(safe-area-inset-bottom))]"
+      className="fixed bottom-0 left-0 right-0 z-40 bg-[#0E2F1F] border-t border-[#E5B94F]/30 shadow-[0_-4px_18px_rgba(0,0,0,0.38)] pb-[max(0.35rem,env(safe-area-inset-bottom))]"
     >
-      <div className="max-w-xl md:max-w-2xl mx-auto px-1.5 sm:px-2 h-16 grid grid-cols-5 items-center relative">
+      <div className="w-full max-w-[560px] mx-auto px-1.5 sm:px-3 h-16 grid grid-cols-5 items-center relative">
         {/* 1. İstatistik */}
         <button
           type="button"

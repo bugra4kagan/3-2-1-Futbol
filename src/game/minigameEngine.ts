@@ -126,6 +126,40 @@ export function isSouthAmericaLocalOnlyPlayer(player?: Player | null): boolean {
   return allSouthAmericaLocal;
 }
 
+function getCareerSignatureKey(steps: readonly { clubId?: string; clubName: string; years: string }[]): string {
+  return steps
+    .map(
+      (st) =>
+        `${(st.clubId || st.clubName.replace(/\s*\(Kiralık\)/gi, '').trim().toLowerCase())}:${st.years.trim()}`
+    )
+    .join('>');
+}
+
+let cachedCareerSignatureCount = -1;
+let cachedCareerSignaturePlayers = new Map<string, string[]>();
+
+function getCareerEquivalentPlayerIds(
+  career: NonNullable<MinigameRoundPayload['career']>
+): string[] {
+  if (cachedCareerSignatureCount !== CAREER_CHALLENGES.length) {
+    const nextMap = new Map<string, string[]>();
+    for (const c of CAREER_CHALLENGES) {
+      const sig = getCareerSignatureKey(c.steps);
+      const list = nextMap.get(sig);
+      if (list) {
+        if (!list.includes(c.playerId)) list.push(c.playerId);
+      } else {
+        nextMap.set(sig, [c.playerId]);
+      }
+    }
+    cachedCareerSignaturePlayers = nextMap;
+    cachedCareerSignatureCount = CAREER_CHALLENGES.length;
+  }
+  const matched = cachedCareerSignaturePlayers.get(getCareerSignatureKey(career.steps));
+  if (!matched || matched.length === 0) return [career.playerId];
+  return matched.includes(career.playerId) ? matched : [career.playerId, ...matched];
+}
+
 export function generateMinigameRounds(
   minigameType: MinigameType,
   count: number = 12,
@@ -137,7 +171,7 @@ export function generateMinigameRounds(
 ): MinigameRoundPayload[] {
   const profile: DifficultyProfile = options?.profile ?? 'balanced';
   const rng = options?.rng ?? Math.random;
-  const preferPopular = profile === 'online';
+  const preferPopular = profile === 'online' || profile === 'private_room';
 
   if (minigameType === 'two_clubs') {
     const items = selectDifficultyWeightedItems(
@@ -182,9 +216,20 @@ export function generateMinigameRounds(
   }
 
   if (minigameType === 'career') {
-    const eligible = CAREER_CHALLENGES.filter(
-      (c) => !isSouthAmericaLocalOnlyPlayer(PLAYERS[c.playerId])
-    );
+    const eligible = CAREER_CHALLENGES.filter((c) => {
+      if (isSouthAmericaLocalOnlyPlayer(PLAYERS[c.playerId])) return false;
+      if (c.steps.length < 2) return false;
+      if (!c.steps.every((st) => Boolean(st.clubName?.trim()) && /\d{4}/.test(st.years || ''))) {
+        return false;
+      }
+      // En az 2 farklı kulüp içermeyen (örn. aynı kulüp tekrarı) belirsiz kariyerleri soru yapma
+      const uniqueClubs = new Set(
+        c.steps.map((st) =>
+          (st.clubId || st.clubName.replace(/\s*\(Kiralık\)/gi, '').trim().toLowerCase())
+        )
+      );
+      return uniqueClubs.size >= 2;
+    });
     const items = selectDifficultyWeightedItems(
       eligible,
       count,
@@ -194,6 +239,7 @@ export function generateMinigameRounds(
       profile,
       rng,
       {
+        getCanonicalKey: (c) => `car:${getCareerSignatureKey(c.steps)}`,
         getClubKeys: (c) => c.steps.map((st) => st.clubId || st.clubName),
         prioritizePredicate: preferPopular
           ? (c) => isPopularOnlineItem({ minigameType: 'career', career: c })
@@ -293,7 +339,7 @@ export function getRoundValidPlayerIds(
     case 'silhouette':
       return round.silhouette ? [round.silhouette.playerId] : [];
     case 'career':
-      return round.career ? [round.career.playerId] : [];
+      return round.career ? getCareerEquivalentPlayerIds(round.career) : [];
     case 'country_club':
       return round.countryClub?.validPlayerIds || [];
     case 'xox': {
@@ -322,9 +368,9 @@ export function getRoundRevealInfo(round: MinigameRoundPayload): {
     };
   }
   if (round.minigameType === 'career' && round.career) {
-    const p = PLAYERS[round.career.playerId];
+    const validIds = getCareerEquivalentPlayerIds(round.career);
     return {
-      validPlayers: p ? [p] : [],
+      validPlayers: validIds.map((id) => PLAYERS[id]).filter(Boolean),
       funFact: round.career.funFact,
     };
   }

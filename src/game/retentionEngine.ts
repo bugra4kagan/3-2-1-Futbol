@@ -771,7 +771,10 @@ export interface MatchOutcomeInput {
   now?: Date;
 }
 
-export const MATCH_LOSS_LP_PENALTY = 30;
+export const MATCH_WIN_LEAGUE_POINTS = 100;
+export const MATCH_LOSS_LEAGUE_POINTS = -50;
+export const MATCH_DRAW_LEAGUE_POINTS = 0;
+export const MATCH_LOSS_LP_PENALTY = 50;
 
 export function recordMatchOutcome(
   prog: UserProgression,
@@ -791,19 +794,17 @@ export function recordMatchOutcome(
   const newWinStreak = isWin ? synced.winStreak + 1 : isLoss ? 0 : synced.winStreak;
   const bestWinStreak = Math.max(synced.bestWinStreak, newWinStreak);
 
-  // Bot matches award Coins & match practice without unfairly inflating PvP League rankings
-  const streakBonusPts = isWin && newWinStreak >= 2 ? Math.min(80, newWinStreak * 20) : 0;
+  // League standings use fixed rules across all modes: Win +100 LP, Loss -50 LP, Draw 0 LP (min 0 LP).
+  // Neither League Shields nor 2x multipliers alter league points.
   const currentShields = Math.max(0, Math.round(synced.leagueShields ?? 0));
-  const shieldProtected = !isBotMatch && isLoss && currentShields > 0;
-  const nextLeagueShields = shieldProtected ? currentShields - 1 : currentShields;
+  const shieldProtected = false;
+  const nextLeagueShields = currentShields;
 
-  const basePoints = isBotMatch
-    ? 0
+  const basePoints = isWin
+    ? MATCH_WIN_LEAGUE_POINTS
     : isLoss
-    ? shieldProtected
-      ? 0
-      : -MATCH_LOSS_LP_PENALTY
-    : 45 + input.stats.totalCorrect * 18 + (isWin ? 130 : 0) + streakBonusPts;
+    ? MATCH_LOSS_LEAGUE_POINTS
+    : MATCH_DRAW_LEAGUE_POINTS;
 
   const baseCoins = isBotMatch
     ? isWin
@@ -820,7 +821,8 @@ export function recordMatchOutcome(
   const hasPerm2x = Boolean(synced.permanentMultiplier2x);
   const remaining2xMatches = Math.max(0, synced.multiplier2xMatches ?? 0);
   const multiplierApplied = hasPerm2x || remaining2xMatches > 0;
-  const earnedPoints = basePoints > 0 && multiplierApplied ? basePoints * 2 : basePoints;
+  // 2x multiplier applies ONLY to Coin rewards, never to League Points.
+  const earnedPoints = basePoints;
   const earnedCoins = multiplierApplied ? baseCoins * 2 : baseCoins;
   const nextMultiplier2xMatches =
     !hasPerm2x && remaining2xMatches > 0 ? remaining2xMatches - 1 : remaining2xMatches;
@@ -959,6 +961,13 @@ export function equipStoreItem(
   if (!item) {
     return { ok: false, reason: 'Ürün bulunamadı.', progression: prog };
   }
+  if (item.type === 'league_shield') {
+    return {
+      ok: false,
+      reason: 'Lig Kalkanı mağazada satışa kapalıdır. Mevcut envanterin korunur.',
+      progression: prog,
+    };
+  }
   if (!prog.unlockedGiftIds.includes(itemId) && item.type !== 'avatar') {
     return { ok: false, reason: 'Önce bu ürünü açmalısın.', progression: prog };
   }
@@ -986,11 +995,17 @@ export function purchaseStoreItem(
   if (!item) {
     return { ok: false, reason: 'Ürün bulunamadı.', progression: prog };
   }
+  if (item.type === 'league_shield') {
+    return {
+      ok: false,
+      reason: 'Lig Kalkanı mağazada satışa kapalıdır. Mevcut envanterin korunur.',
+      progression: prog,
+    };
+  }
 
   const isConsumable =
     item.type === 'coin_pack' ||
     item.type === 'energy_pack' ||
-    item.type === 'league_shield' ||
     item.type === 'extra_time_card' ||
     (item.type === 'multiplier_2x' && item.value !== 'forever');
 
@@ -1051,12 +1066,6 @@ export function purchaseStoreItem(
     nextProg = {
       ...nextProg,
       energyDrinks: (nextProg.energyDrinks ?? 0) + addedDrinks,
-    };
-  } else if (item.type === 'league_shield') {
-    const addedShields = item.quantity ?? 1;
-    nextProg = {
-      ...nextProg,
-      leagueShields: (nextProg.leagueShields ?? 0) + addedShields,
     };
   } else if (item.type === 'extra_time_card') {
     const addedCards = item.quantity ?? 1;

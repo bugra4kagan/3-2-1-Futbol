@@ -246,6 +246,34 @@ test('25k autocomplete search & ServerMatchLedger answer validation run fast and
   const elapsedMs = performance.now() - t0;
   assert.ok(elapsedMs < 1500, `1000 autocomplete searches across 25k should take < 1500ms, got ${elapsedMs.toFixed(1)}ms`);
 
+  // Popularity ranking verification across the full 24,959-player hydrated roster
+  const ronaldo25k = searchPlayersForAutocomplete('ronaldo', [], 6);
+  assert.equal(ronaldo25k[0]?.id, 'cristiano_ronaldo', `Expected Cristiano Ronaldo #1 in 25k roster, got ${ronaldo25k.map((p) => p.name).join(', ')}`);
+  assert.equal(ronaldo25k[1]?.id, 'ronaldo_nazario', `Expected Ronaldo Nazário #2 in 25k roster, got ${ronaldo25k.map((p) => p.name).join(', ')}`);
+
+  const ronald25k = searchPlayersForAutocomplete('ronald', [], 6);
+  assert.equal(ronald25k[0]?.id, 'cristiano_ronaldo');
+  assert.ok(
+    ronald25k.slice(0, 3).some((p) => p.id === 'ronaldo_nazario'),
+    `Expected Ronaldo Nazário in top 3 for "ronald", got ${ronald25k.map((p) => p.name).join(', ')}`
+  );
+
+  const me25k = searchPlayersForAutocomplete('me', [], 6);
+  assert.equal(me25k[0]?.id, 'lionel_messi', `Expected Lionel Messi #1 for "me" in 25k roster, got ${me25k.map((p) => p.name).join(', ')}`);
+
+  const arda25k = searchPlayersForAutocomplete('arda', [], 6);
+  assert.ok(
+    arda25k.slice(0, 2).some((p) => p.id === 'arda_guler') &&
+      arda25k.slice(0, 2).some((p) => p.id === 'arda_turan'),
+    `Expected Arda Güler & Arda Turan in top 2 for "arda" in 25k roster, got ${arda25k.map((p) => p.name).join(', ')}`
+  );
+
+  const sa25k = searchPlayersForAutocomplete('sa', [], 6);
+  assert.ok(
+    sa25k.slice(0, 3).some((p) => p.id === 'mohamed_salah'),
+    `Expected Mohamed Salah in top 3 for "sa" in 25k roster, got ${sa25k.map((p) => p.name).join(', ')}`
+  );
+
   const gsFb = MATCH_PAIRINGS.find((p) => p.id === 'gs_fb')!;
   const roundRes = validateMinigameAnswer({ minigameType: 'two_clubs', pairing: gsFb }, 'Michy Batshuayi');
   assert.equal(roundRes.isValid, true);

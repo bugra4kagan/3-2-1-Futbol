@@ -42,6 +42,7 @@ test('bot and online difficulty profiles follow requested exact percentages', ()
     { profile: getDifficultyProfileForBot('easy'), expected: DIFFICULTY_DISTRIBUTIONS.bot_easy },
     { profile: getDifficultyProfileForBot('medium'), expected: DIFFICULTY_DISTRIBUTIONS.bot_medium },
     { profile: getDifficultyProfileForBot('hard'), expected: DIFFICULTY_DISTRIBUTIONS.bot_hard },
+    { profile: 'private_room' as const, expected: DIFFICULTY_DISTRIBUTIONS.private_room },
     { profile: 'online' as const, expected: DIFFICULTY_DISTRIBUTIONS.online },
   ];
 
@@ -87,4 +88,61 @@ test('online generateSeededRoundIds guarantees identical order across clients an
     assert.equal(rematch.some((id) => priorSet.has(id)), false);
   }
   assert.equal(typeof getRoundItemId, 'function');
+});
+
+test('private_room strictly selects 60% easy / 40% medium / 0% hard across all 4 modes with famous Career pool', () => {
+  const modes: MinigameType[] = ['two_clubs', 'xox', 'career', 'country_club'];
+  for (const mode of modes) {
+    const ids = generateSeededRoundIds(mode, 12, 77777, [], 'private_room');
+    assert.equal(ids.length, 12);
+    const rounds = generateMinigameRounds(mode, 20, [], {
+      profile: 'private_room',
+      rng: createSeededRng(77777),
+    });
+    const counts = { easy: 0, medium: 0, hard: 0 };
+    for (const r of rounds) {
+      counts[classifyQuestionDifficulty(r)] += 1;
+      if (r.minigameType === 'career' && r.career) {
+        assert.ok(r.career.steps.length >= 2);
+        assert.equal(
+          r.career.steps.some((s) => /\(Altyapı\)|U19|U21|B Team/i.test(s.clubName)),
+          false
+        );
+      }
+    }
+    assert.equal(counts.hard, 0, `${mode} private_room must never emit hard questions`);
+    assert.equal(counts.easy, 12, `${mode} private_room 20-sample easy quota must be 60% (12)`);
+    assert.equal(counts.medium, 8, `${mode} private_room 20-sample medium quota must be 40% (8)`);
+  }
+});
+
+test('multi-seed audit (200 seeds x 10 rounds = 2,000 questions/mode) verifies exact 60/40/0 private_room distribution and curated famous Career pool', () => {
+  const modes: MinigameType[] = ['two_clubs', 'xox', 'career', 'country_club'];
+  for (const mode of modes) {
+    const counts = { easy: 0, medium: 0, hard: 0 };
+    const seenIds = new Set<string>();
+    for (let seed = 1001; seed <= 1200; seed += 1) {
+      const rounds = generateMinigameRounds(mode, 10, [], {
+        profile: 'private_room',
+        rng: createSeededRng(seed * 7919),
+      });
+      assert.equal(rounds.length, 10);
+      for (const r of rounds) {
+        counts[classifyQuestionDifficulty(r)] += 1;
+        seenIds.add(getRoundItemId(r));
+        if (r.minigameType === 'career' && r.career) {
+          const uniqueClubs = new Set(
+            r.career.steps.map((st) => st.clubId || st.clubName.toLowerCase().trim())
+          );
+          assert.ok(uniqueClubs.size >= 2, 'Career challenge must have >= 2 unique clubs');
+        }
+      }
+    }
+    const total = counts.easy + counts.medium + counts.hard;
+    assert.equal(total, 2000);
+    assert.equal(counts.hard, 0, `${mode} had hard leak over 2000 questions`);
+    assert.equal(counts.easy, 1200, `${mode} expected 60% easy (1200/2000), got ${counts.easy}`);
+    assert.equal(counts.medium, 800, `${mode} expected 40% medium (800/2000), got ${counts.medium}`);
+    assert.ok(seenIds.size >= 80, `${mode} should draw from diverse pool, got ${seenIds.size} unique`);
+  }
 });

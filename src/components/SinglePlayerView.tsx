@@ -280,12 +280,12 @@ export const SinglePlayerView: React.FC<SinglePlayerViewProps> = React.memo(({
   return (
     <div
       data-testid="single-player-view"
-      className={`w-full flex flex-col items-center justify-between flex-1 min-h-0 overflow-hidden px-2.5 sm:px-4 ${
+      className={`w-full max-w-[560px] mx-auto flex flex-col items-center justify-between flex-1 min-h-0 overflow-hidden px-2.5 sm:px-3 ${
         isKeyboardOpen ? 'pt-1 pb-1' : 'py-1.5 sm:py-3'
       }`}
     >
-      {/* Club Match Display — shrinks smoothly when keyboard opens so clubs + scores remain visible */}
-      <div className="w-full max-w-xl md:max-w-2xl flex-1 min-h-0 overflow-y-auto overscroll-contain flex items-center justify-center py-0.5">
+      {/* Club Match Display — strictly vertical portrait stacking above answer dock */}
+      <div className="w-full flex-1 min-h-0 overflow-y-auto overscroll-contain flex items-center justify-center py-0.5">
         <div
           key={pairing.id}
           className={`w-full flex items-stretch justify-center animate-card-pop ${
@@ -361,7 +361,7 @@ export const SinglePlayerView: React.FC<SinglePlayerViewProps> = React.memo(({
       {/* Answer Input Section — Input anchored flush at bottom right above soft keyboard */}
       <div
         data-testid="match-answer-dock"
-        className={`w-full max-w-md md:max-w-xl mt-auto shrink-0 ${isKeyboardOpen ? 'mb-0 pt-1' : 'mb-1 pt-1'}`}
+        className={`w-full mt-auto shrink-0 ${isKeyboardOpen ? 'mb-0 pt-1' : 'mb-1 pt-1'}`}
       >
         {showOpponentMissed && (
           <div className="mb-1.5 px-3 py-1 rounded-xl bg-amber-950/80 border border-amber-500/40 text-amber-300 text-xs font-bold flex items-center justify-center gap-1.5 animate-in fade-in">

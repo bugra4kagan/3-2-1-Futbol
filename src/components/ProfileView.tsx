@@ -217,7 +217,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   return (
     <div
       data-testid="profile-view"
-      className="w-full max-w-xl md:max-w-3xl lg:max-w-4xl mx-auto px-3 sm:px-4 pt-3 pb-24 flex flex-col gap-3.5 text-left text-[#F5F3EB]"
+      className="w-full max-w-[560px] mx-auto px-3 sm:px-4 pt-3 pb-24 flex flex-col gap-3.5 text-left text-[#F5F3EB]"
     >
       {/* Rename warning when legacy name violates current filter */}
       {needsUsernameRename && (

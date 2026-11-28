@@ -49,6 +49,12 @@ import {
   resolveVerifiedFirebaseIdToken,
 } from './services/backendClient';
 import {
+  exchangeGoogleIdTokenWithFirebase,
+  isNativeAndroidGoogleAuthPlatform,
+  signInWithNativeAndroidGoogle,
+  signOutNativeAndroidGoogle,
+} from './services/nativeGoogleAuthService';
+import {
   USERNAME_TAKEN_ERROR,
   USERNAME_UNVERIFIED_ERROR,
   isLegacyFlaggedUsername,
@@ -399,6 +405,17 @@ export async function processAuthRedirectResult(): Promise<{
 }
 
 export async function signInWithGooglePopup(): Promise<User> {
+  if (isNativeAndroidGoogleAuthPlatform()) {
+    const nativeAuth = await signInWithNativeAndroidGoogle();
+    return exchangeGoogleIdTokenWithFirebase(nativeAuth.idToken, {
+      authStateReady: () => auth.authStateReady(),
+      getCurrentUser: () => auth.currentUser,
+      buildGoogleCredential: (idToken) => GoogleAuthProvider.credential(idToken),
+      linkWithCredential: (user, cred) => linkWithCredential(user, cred),
+      signInWithCredential: (cred) => signInWithCredential(auth, cred),
+    });
+  }
+
   const current = auth.currentUser;
   const isNative = Capacitor.isNativePlatform();
   if (current && current.isAnonymous) {
@@ -457,6 +474,12 @@ export function mapFirebaseAuthErrorToTurkish(err: unknown): string {
   const msg = err instanceof Error ? err.message : String(err);
   const combined = `${code} ${msg}`.toLowerCase();
 
+  if (combined.includes('native-google-no-credential')) {
+    return 'Bu Android cihazda aktif Google hesabı bulunamadı veya Google Play imzalama (SHA-1) yapılandırması henüz tanımlanmamış.';
+  }
+  if (combined.includes('native-google-plugin-unavailable')) {
+    return 'Android Google giriş eklentisi bu derlemede hazır değil. Güncel APK/AAB veya E-posta girişi kullanabilirsin.';
+  }
   if (combined.includes('disallowed_useragent')) {
     return 'Uygulama içi tarayıcıda Google giriş penceresi desteklenmiyor. E-posta/şifre ile giriş yapabilir veya web sürümünden hesabını bağlayabilirsin.';
   }
@@ -651,6 +674,7 @@ export async function deleteCloudAccountData(params: {
 
 export async function signOutFirebase(): Promise<void> {
   await signOut(auth);
+  await signOutNativeAndroidGoogle();
 }
 
 export async function checkUsernameAvailabilityInFirestore(

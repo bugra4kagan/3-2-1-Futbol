@@ -60,6 +60,13 @@ test('validateUsername enforces moderation categories and exact Turkish error me
     'Kral31sj',
     '<script>alert(1)</script>',
     '123456',
+    'f*u*c*k*10',
+    'o_r_s_p_u',
+    'p.u.s.t',
+    'k4lt4k',
+    'g3rz3k',
+    'b0ll0cks',
+    'n4z1_tr',
   ];
 
   for (const bad of inappropriateSamples) {

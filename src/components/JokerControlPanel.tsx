@@ -38,15 +38,43 @@ export const JokerControlPanel: React.FC<JokerControlPanelProps> = ({
   const errorTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    setNatPosHint(null);
-    setInitialsHint(null);
     setErrorMsg(null);
     setModalOpen(false);
     if (errorTimerRef.current) {
       clearTimeout(errorTimerRef.current);
       errorTimerRef.current = null;
     }
+    if (typeof window !== 'undefined' && roundSeed) {
+      try {
+        const raw = window.sessionStorage?.getItem(`321_jokers_v1:${roundSeed}`);
+        if (raw) {
+          const parsed = JSON.parse(raw) as {
+            natPosHint?: NationalityPositionHint | null;
+            initialsHint?: InitialsHint | null;
+          };
+          setNatPosHint(parsed.natPosHint ?? null);
+          setInitialsHint(parsed.initialsHint ?? null);
+          return;
+        }
+      } catch {
+        // ignore storage errors
+      }
+    }
+    setNatPosHint(null);
+    setInitialsHint(null);
   }, [roundSeed]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !roundSeed || (!natPosHint && !initialsHint)) return;
+    try {
+      window.sessionStorage?.setItem(
+        `321_jokers_v1:${roundSeed}`,
+        JSON.stringify({ natPosHint, initialsHint })
+      );
+    } catch {
+      // ignore storage errors
+    }
+  }, [roundSeed, natPosHint, initialsHint]);
 
   useEffect(() => {
     return () => {

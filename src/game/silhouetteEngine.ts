@@ -1,4 +1,6 @@
+import rawPlayersData from '../data/players.json';
 import { PLAYERS } from './database';
+import { EXTRA_PLAYERS_50 } from './extraPlayers50';
 import { getPlayerAsset, PlayerAssetMeta } from './playerAssets';
 import { Player } from './types';
 import { normalizeText, validateAnswerForPlayerIds } from './validator';
@@ -249,6 +251,175 @@ interface IndexedPlayerSearchEntry {
   nameWords: string[];
   normCommon: string;
   normAliases: string[];
+  popularityScore: number;
+}
+
+// Capture the 3,049 curated base players at module load before the 25k expansion hydrates PLAYERS.
+const BASE_CURATED_PLAYER_IDS = new Set<string>(Object.keys(PLAYERS));
+
+const TURKISH_BIG_FOUR_CLUB_IDS = new Set<string>([
+  'galatasaray',
+  'fenerbahce',
+  'besiktas',
+  'trabzonspor',
+]);
+
+const GLOBAL_ELITE_CLUB_IDS = new Set<string>([
+  'real_madrid',
+  'barcelona',
+  'manchester_united',
+  'manchester_city',
+  'liverpool',
+  'arsenal',
+  'chelsea',
+  'bayern_munich',
+  'psg',
+  'juventus',
+  'ac_milan',
+  'inter_milan',
+  'atletico_madrid',
+  'borussia_dortmund',
+  'tottenham',
+  'ajax',
+  'benfica',
+  'porto',
+  'napoli',
+  'as_roma',
+  'sevilla',
+]);
+
+// Curated household-star priority map from players.json + EXTRA_PLAYERS_50.
+const HOUSEHOLD_STAR_RANK_BY_ID = new Map<string, number>();
+(rawPlayersData as Array<{ id?: string }>).forEach((item, idx, arr) => {
+  if (item?.id && !HOUSEHOLD_STAR_RANK_BY_ID.has(item.id)) {
+    HOUSEHOLD_STAR_RANK_BY_ID.set(item.id, 1200 + (arr.length - idx));
+  }
+});
+EXTRA_PLAYERS_50.forEach((item, idx, arr) => {
+  if (item?.id && !HOUSEHOLD_STAR_RANK_BY_ID.has(item.id)) {
+    HOUSEHOLD_STAR_RANK_BY_ID.set(item.id, 1050 + (arr.length - idx));
+  }
+});
+
+const ICONIC_SUPERSTAR_BOOST: Record<string, number> = {
+  cristiano_ronaldo: 600,
+  lionel_messi: 590,
+  ronaldo_nazario: 520,
+  ronaldinho_gaucho: 500,
+  ronaldinho: 500,
+  neymar_jr: 470,
+  neymar: 470,
+  kylian_mbappe: 465,
+  erling_haaland: 460,
+  mohamed_salah: 455,
+  zlatan_ibrahimovic: 450,
+  arda_guler: 450,
+  mauro_icardi: 445,
+  victor_osimhen: 445,
+  lamine_yamal: 445,
+  zinedine_zidane: 445,
+  diego_maradona: 445,
+  pele: 445,
+  arda_turan: 440,
+  hakan_calhanoglu: 440,
+  vinicius_junior: 440,
+  jude_bellingham: 440,
+  mesut_ozil: 435,
+  wesley_sneijder: 435,
+  alex_de_souza: 435,
+  robert_lewandowski: 435,
+  luka_modric: 435,
+  fernando_muslera: 430,
+  kevin_de_bruyne: 430,
+  karim_benzema: 430,
+  kaka: 430,
+  thierry_henry: 430,
+  didier_drogba: 430,
+  roberto_carlos: 430,
+  david_beckham: 430,
+  luis_suarez: 430,
+  harry_kane: 425,
+  kenan_yildiz: 425,
+  jamal_musiala: 425,
+  angel_di_maria: 425,
+  gianluigi_buffon: 425,
+  paolo_maldini: 425,
+  wayne_rooney: 425,
+  andres_iniesta: 425,
+  xavi_hernandez: 425,
+  ferdi_kadioglu: 420,
+  dries_mertens: 420,
+  edin_dzeko: 420,
+  ngolo_kante: 420,
+  thomas_muller: 420,
+  manuel_neuer: 420,
+  sergio_ramos: 420,
+  gareth_bale: 420,
+  antoine_griezmann: 420,
+  eden_hazard: 420,
+  virgil_van_dijk: 420,
+  rodri: 420,
+  bukayo_saka: 420,
+  pedri: 420,
+  bruno_fernandes: 420,
+  lautaro_martinez: 420,
+  paulo_dybala: 420,
+  sadio_mane: 420,
+  leroy_sane: 418,
+  kerem_akturkoglu: 415,
+  baris_alper_yilmaz: 415,
+  dusan_tadic: 415,
+  burak_yilmaz: 415,
+  sabri_sarioglu: 410,
+  semih_senturk: 410,
+};
+
+export function computePlayerPopularityScore(player: Player): number {
+  let score = 0;
+
+  const starRank = HOUSEHOLD_STAR_RANK_BY_ID.get(player.id);
+  if (starRank !== undefined) {
+    score += starRank;
+  } else if (BASE_CURATED_PLAYER_IDS.has(player.id)) {
+    score += 450;
+  }
+
+  const iconicBoost = ICONIC_SUPERSTAR_BOOST[player.id];
+  if (iconicBoost) {
+    score += iconicBoost;
+  }
+
+  let turkishClubBonus = 0;
+  let globalClubBonus = 0;
+  const seenClubIds = new Set<string>();
+  if (player.clubId) seenClubIds.add(player.clubId);
+  if (player.careerHistory) {
+    for (let i = 0; i < player.careerHistory.length; i += 1) {
+      const cid = player.careerHistory[i]?.clubId;
+      if (cid) seenClubIds.add(cid);
+    }
+  }
+  seenClubIds.forEach((cid) => {
+    if (TURKISH_BIG_FOUR_CLUB_IDS.has(cid)) {
+      turkishClubBonus += 25;
+    } else if (GLOBAL_ELITE_CLUB_IDS.has(cid)) {
+      globalClubBonus += 18;
+    }
+  });
+  score += Math.min(75, turkishClubBonus);
+  score += Math.min(90, globalClubBonus);
+
+  if (player.commonName) {
+    score += 25;
+  }
+  if (player.aliases && player.aliases.length > 0) {
+    score += Math.min(40, player.aliases.length * 12);
+  }
+  if (seenClubIds.size > 0) {
+    score += Math.min(40, seenClubIds.size * 6);
+  }
+
+  return score;
 }
 
 let PRECOMPUTED_PLAYER_SEARCH: IndexedPlayerSearchEntry[] = [];
@@ -267,6 +438,7 @@ export function rebuildPlayerSearchIndex(sourcePlayers?: readonly Player[]): num
       nameWords: normName.split(' ').filter(Boolean),
       normCommon: player.commonName ? normalizeText(player.commonName) : '',
       normAliases: (player.aliases || []).map(normalizeText),
+      popularityScore: computePlayerPopularityScore(player),
     };
   });
 
@@ -369,42 +541,70 @@ export function searchSilhouettePlayers(
   const indexedIndices = normQuery.length >= 2 ? getCandidateIndicesForQuery(normQuery) : null;
   if (indexedIndices && indexedIndices.length === 0) return [];
 
-  const scored: { player: Player; score: number }[] = [];
+  const scored: { player: Player; matchTier: number; subRank: number }[] = [];
   const totalCount = indexedIndices ? indexedIndices.length : PRECOMPUTED_PLAYER_SEARCH.length;
 
   for (let k = 0; k < totalCount; k += 1) {
     const entry = PRECOMPUTED_PLAYER_SEARCH[indexedIndices ? indexedIndices[k] : k];
-    const { player, normName, nameWords, normCommon, normAliases } = entry;
+    const { player, normName, nameWords, normCommon, normAliases, popularityScore } = entry;
     if (excludeSet && excludeSet.has(player.id)) continue;
 
-    let score = 0;
+    let matchTier = 0;
+    let subRank = 0;
 
-    if (normName === normQuery || normCommon === normQuery) {
-      score = 100;
-    } else if (normName.startsWith(normQuery)) {
-      score = 90;
-    } else if (nameWords.some((w) => w.startsWith(normQuery))) {
-      score = 80;
-    } else if (normCommon && normCommon.startsWith(normQuery)) {
-      score = 75;
-    } else if (normAliases.some((a) => a === normQuery)) {
-      score = 72;
-    } else if (normAliases.some((a) => a.startsWith(normQuery))) {
-      score = 65;
-    } else if (normName.includes(normQuery)) {
-      score = 55;
-    } else if (normAliases.some((a) => a.includes(normQuery))) {
-      score = 45;
+    const isExactName = normName === normQuery;
+    const isExactCommon = Boolean(normCommon) && normCommon === normQuery;
+    const isExactAlias = normAliases.some((a) => a === normQuery);
+    const isExactWord = normQuery.length >= 3 && nameWords.includes(normQuery);
+
+    if (isExactName && normQuery.includes(' ')) {
+      // Tier 3: Full multi-word exact match (e.g. "cristiano ronaldo", "ronaldo guiaro")
+      matchTier = 3;
+      subRank = popularityScore + 500;
+    } else if (isExactName || isExactCommon || isExactAlias || isExactWord) {
+      // Tier 2 (Exact single-token / alias / word match):
+      // Combines exact-match bonus with popularityScore so global stars ("Cristiano Ronaldo", "Ronaldo Nazário")
+      // always outrank obscure mononyms ("Ronaldo") while exact superstars ("Rodri", "Kaká", "Pelé") stay #1.
+      matchTier = 2;
+      subRank =
+        popularityScore +
+        (isExactName ? 450 : isExactCommon ? 320 : isExactAlias ? 310 : 300);
+    } else {
+      const isFullPrefix = normName.startsWith(normQuery);
+      const isWordPrefix = nameWords.some((w) => w.startsWith(normQuery));
+      const isCommonPrefix = Boolean(normCommon && normCommon.startsWith(normQuery));
+      const isAliasPrefix = normAliases.some((a) => a.startsWith(normQuery));
+
+      if (isFullPrefix || isWordPrefix || isCommonPrefix || isAliasPrefix) {
+        // Tier 2 (Prefix match): Shares Tier 2 with single-word exact matches so mid-typing queries
+        // like "ronald" still keep Cristiano Ronaldo, Ronaldo Nazário & Ronaldinho ahead of obscure "Ronald ..." players.
+        matchTier = 2;
+        subRank =
+          popularityScore +
+          (isFullPrefix ? 120 : isWordPrefix ? 100 : isCommonPrefix ? 90 : 80);
+      } else {
+        const isNameSub = normName.includes(normQuery);
+        const isCommonSub = Boolean(normCommon && normCommon.includes(normQuery));
+        const isAliasSub = normAliases.some((a) => a.includes(normQuery));
+
+        if (isNameSub || isCommonSub || isAliasSub) {
+          // Tier 1: Other / substring matches ranked by popularity first.
+          matchTier = 1;
+          subRank = popularityScore + (isNameSub ? 20 : isCommonSub ? 15 : 5);
+        }
+      }
     }
 
-    if (score > 0) {
-      scored.push({ player, score });
+    if (matchTier > 0) {
+      scored.push({ player, matchTier, subRank });
     }
   }
 
   scored.sort((a, b) =>
-    b.score !== a.score
-      ? b.score - a.score
+    b.matchTier !== a.matchTier
+      ? b.matchTier - a.matchTier
+      : b.subRank !== a.subRank
+      ? b.subRank - a.subRank
       : a.player.name < b.player.name
       ? -1
       : a.player.name > b.player.name

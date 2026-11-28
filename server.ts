@@ -771,7 +771,7 @@ app.post('/api/matches/answer', async (req, res) => {
 
 app.post('/api/matches/complete', async (req, res) => {
   if (!enforceRateLimit(accountWriteLimiter, req, res)) return;
-  const { accountId, matchSessionId, roomCode } = req.body || {};
+  const { accountId, matchSessionId, roomCode, botScores } = req.body || {};
   const cleanId = String(accountId || '').trim().slice(0, 64);
   const existing = await accountStore.resolveByAccountIdAsync(cleanId);
   if (!existing) {
@@ -831,6 +831,18 @@ app.post('/api/matches/complete', async (req, res) => {
     roomClaimKey = `${cleanRoomCode}:${roomCheck.matchSeq}:${cleanId}`;
   }
 
+  const normalizedBotScores =
+    !roomCode &&
+    botScores &&
+    typeof botScores === 'object' &&
+    typeof (botScores as { playerScore?: unknown }).playerScore === 'number' &&
+    typeof (botScores as { opponentScore?: unknown }).opponentScore === 'number'
+      ? {
+          playerScore: (botScores as { playerScore: number }).playerScore,
+          opponentScore: (botScores as { opponentScore: number }).opponentScore,
+        }
+      : undefined;
+
   const hasMult = Boolean(
     existing.progression.permanentMultiplier2x || (existing.progression.multiplier2xMatches ?? 0) > 0
   );
@@ -838,6 +850,7 @@ app.post('/api/matches/complete', async (req, res) => {
     sessionId: String(matchSessionId || ''),
     accountId: cleanId,
     hasMultiplier2x: hasMult,
+    botScores: normalizedBotScores,
     serverVerifiedOpponentScore,
     requireServerOpponentVerification,
     roomClaimKey,
@@ -865,6 +878,7 @@ app.post('/api/matches/complete', async (req, res) => {
       coinsAwarded: outcome.coinsAwarded,
       pointsAwarded: outcome.pointsAwarded,
       won: outcome.won,
+      isDraw: outcome.drew,
     });
     if (!applied.ok || !applied.account) {
       return res.status(500).json({ ok: false, error: 'Ödül işlenemedi.' });
@@ -883,6 +897,8 @@ app.post('/api/matches/complete', async (req, res) => {
 
   res.json({
     ok: true,
+    won: outcome.won,
+    isDraw: outcome.drew,
     verifiedScore: outcome.verifiedScore,
     coinsAwarded: outcome.coinsAwarded,
     pointsAwarded: outcome.pointsAwarded,

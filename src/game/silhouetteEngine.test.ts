@@ -527,6 +527,32 @@ test('searchSilhouettePlayers handles Turkish diacritics, aliases, exclusions, a
   assert.equal(getPlayerAsset('unknown_player_id').photoUrl, 'svg-avatar:default');
 });
 
+test('autocomplete prioritizes famous footballers over alphabetical obscure matches', () => {
+  const ronaldoHits = searchPlayersForAutocomplete('ronaldo', [], 6);
+  assert.ok(ronaldoHits.length >= 2);
+  assert.equal(ronaldoHits[0].id, 'cristiano_ronaldo');
+  assert.equal(ronaldoHits[1].id, 'ronaldo_nazario');
+
+  const messiHits = searchPlayersForAutocomplete('messi', [], 6);
+  assert.equal(messiHits[0]?.id, 'lionel_messi');
+
+  const meHits = searchPlayersForAutocomplete('me', [], 6);
+  assert.equal(meHits[0]?.id, 'lionel_messi');
+
+  const ardaHits = searchPlayersForAutocomplete('arda', [], 6);
+  assert.ok(
+    ardaHits.slice(0, 2).some((p) => p.id === 'arda_guler') &&
+      ardaHits.slice(0, 2).some((p) => p.id === 'arda_turan'),
+    `Expected Arda Güler & Arda Turan in top 2 for "arda", got ${ardaHits.map((p) => p.name).join(', ')}`
+  );
+
+  const saHits = searchPlayersForAutocomplete('sa', [], 6);
+  assert.ok(
+    saHits.slice(0, 3).some((p) => p.id === 'mohamed_salah'),
+    `Expected Mohamed Salah in top 3 for "sa", got ${saHits.map((p) => p.name).join(', ')}`
+  );
+});
+
 import { CAREER_CHALLENGES } from './minigamesData';
 import { resolveClubBadgeMeta } from './clubBadgeCatalog';
 

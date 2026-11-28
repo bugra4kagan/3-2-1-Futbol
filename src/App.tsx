@@ -282,6 +282,7 @@ import {
   syncPlayerToRtdbLeaderboard,
 } from './services/realtimeMultiplayerService';
 import {
+  abandonRoomMatch,
   advanceRoomRound,
   beginRoomRound,
   cleanupActiveMatchmakingQueue,
@@ -289,9 +290,10 @@ import {
   deleteRoom,
   describeRoomError,
   expireRoomRound,
+  fetchActiveRoomForResume,
   forfeitRoomAfterDisconnectGrace,
   joinRoom,
-  loadActiveRoomSession,
+  loadActiveRoomSessionMeta,
   pauseRoomForDisconnect,
   requestRoomRematch,
   respondRoomRematch,
@@ -301,6 +303,7 @@ import {
   startRoomPresence,
   submitRoomAnswer,
   subscribeRoom,
+  updateActiveRoomSessionMeta,
 } from './services/firestoreRoomService';
 import {
   DISCONNECT_GRACE_TIMEOUT_MS,
@@ -553,6 +556,34 @@ function loadInitialProgression(playerId: string): UserProgression {
   }
 }
 
+const REWARDED_ROOM_MATCHES_KEY = '321_rewarded_room_matches_v1';
+
+function hasClaimedRoomMatchLocally(roomCode: string | null, matchSeq: number): boolean {
+  if (!roomCode || typeof window === 'undefined') return false;
+  try {
+    const raw = window.localStorage?.getItem(REWARDED_ROOM_MATCHES_KEY);
+    if (!raw) return false;
+    const list = JSON.parse(raw) as string[];
+    return Array.isArray(list) && list.includes(`${roomCode}:${matchSeq}`);
+  } catch {
+    return false;
+  }
+}
+
+function markRoomMatchClaimedLocally(roomCode: string | null, matchSeq: number): void {
+  if (!roomCode || typeof window === 'undefined') return;
+  try {
+    const raw = window.localStorage?.getItem(REWARDED_ROOM_MATCHES_KEY);
+    const list = raw ? (JSON.parse(raw) as string[]) : [];
+    const key = `${roomCode}:${matchSeq}`;
+    if (!Array.isArray(list) || list.includes(key)) return;
+    const next = [...list.slice(-39), key];
+    window.localStorage?.setItem(REWARDED_ROOM_MATCHES_KEY, JSON.stringify(next));
+  } catch {
+    // ignore storage errors
+  }
+}
+
 function getOrCreateSessionPlayerId(): string {
   if (typeof window === 'undefined') return 'p1';
   try {
@@ -687,10 +718,12 @@ export default function App() {
     height: number | null;
     isKeyboardOpen: boolean;
     isCompactHeight: boolean;
+    isUltraCompactHeight: boolean;
   }>({
     height: null,
     isKeyboardOpen: false,
     isCompactHeight: false,
+    isUltraCompactHeight: false,
   });
   const matchViewportBaselineRef = useRef<{ portrait: number; landscape: number }>({
     portrait: 0,
@@ -699,7 +732,12 @@ export default function App() {
 
   useEffect(() => {
     if (screen !== 'playing' || typeof window === 'undefined') {
-      setMatchViewportState({ height: null, isKeyboardOpen: false, isCompactHeight: false });
+      setMatchViewportState({
+        height: null,
+        isKeyboardOpen: false,
+        isCompactHeight: false,
+        isUltraCompactHeight: false,
+      });
       return;
     }
 
@@ -731,12 +769,14 @@ export default function App() {
       setMatchViewportState((prev) =>
         prev.height === metrics.viewportHeight &&
         prev.isKeyboardOpen === metrics.isKeyboardOpen &&
-        prev.isCompactHeight === metrics.isCompactHeight
+        prev.isCompactHeight === metrics.isCompactHeight &&
+        prev.isUltraCompactHeight === metrics.isUltraCompactHeight
           ? prev
           : {
               height: metrics.viewportHeight,
               isKeyboardOpen: metrics.isKeyboardOpen,
               isCompactHeight: metrics.isCompactHeight,
+              isUltraCompactHeight: metrics.isUltraCompactHeight,
             }
       );
 
@@ -873,6 +913,20 @@ export default function App() {
     secondsLeft: number;
     opponentName: string;
   } | null>(null);
+  const [resumableMatch, setResumableMatch] = useState<{
+    roomCode: string;
+    minigameType: MinigameType;
+    opponentName?: string;
+    myScore?: number;
+    opponentScore?: number;
+    disconnectGraceExpiresAt?: number | null;
+    secondsLeft?: number | null;
+    failedAutoReconnect?: boolean;
+    isReconnecting?: boolean;
+  } | null>(null);
+  const resumableMatchRef = useRef(resumableMatch);
+  resumableMatchRef.current = resumableMatch;
+  const transientResumeCheckInFlightRef = useRef<boolean>(false);
   const currentRoundUserAnswersRef = useRef<string[]>([]);
   const disconnectGraceRef = useRef<{
     disconnectedKey: string;
@@ -954,6 +1008,12 @@ export default function App() {
           const sid = typeof data?.matchSessionId === 'string' ? data.matchSessionId : null;
           if (sid) {
             serverMatchSessionIdRef.current = sid;
+            if (roomMeta?.roomCode) {
+              updateActiveRoomSessionMeta({
+                matchSessionId: sid,
+                matchSeq: roomMeta.matchSeq,
+              });
+            }
           }
           return sid;
         } catch {
@@ -996,35 +1056,42 @@ export default function App() {
     []
   );
 
-  const completeServerVerifiedMatchSession = useCallback(async (matchRoomCode?: string | null) => {
-    const aid = sessionPlayerIdRef.current;
-    if (!aid) return;
-    try {
-      const sid =
-        serverMatchSessionIdRef.current ||
-        (serverMatchStartPromiseRef.current ? await serverMatchStartPromiseRef.current : null);
-      if (!sid) return;
-      if (serverMatchAnswerPromisesRef.current.length > 0) {
-        await Promise.allSettled(serverMatchAnswerPromisesRef.current);
+  const completeServerVerifiedMatchSession = useCallback(
+    async (
+      matchRoomCode?: string | null,
+      botScores?: { playerScore: number; opponentScore: number }
+    ) => {
+      const aid = sessionPlayerIdRef.current;
+      if (!aid) return;
+      try {
+        const sid =
+          serverMatchSessionIdRef.current ||
+          (serverMatchStartPromiseRef.current ? await serverMatchStartPromiseRef.current : null);
+        if (!sid) return;
+        if (serverMatchAnswerPromisesRef.current.length > 0) {
+          await Promise.allSettled(serverMatchAnswerPromisesRef.current);
+        }
+        const res = await fetchSignedAccountApi(
+          aid,
+          '/api/matches/complete',
+          {
+            accountId: aid,
+            matchSessionId: sid,
+            roomCode: matchRoomCode || undefined,
+            botScores: !matchRoomCode ? botScores : undefined,
+          },
+          { timeoutMs: 25000, retries: 2, retryDelayMs: 2000 }
+        );
+        if (res.ok) {
+          serverMatchSessionIdRef.current = null;
+          serverMatchStartPromiseRef.current = null;
+        }
+      } catch {
+        // Non-blocking cold-start / offline fallback
       }
-      const res = await fetchSignedAccountApi(
-        aid,
-        '/api/matches/complete',
-        {
-          accountId: aid,
-          matchSessionId: sid,
-          roomCode: matchRoomCode || undefined,
-        },
-        { timeoutMs: 25000, retries: 2, retryDelayMs: 2000 }
-      );
-      if (res.ok) {
-        serverMatchSessionIdRef.current = null;
-        serverMatchStartPromiseRef.current = null;
-      }
-    } catch {
-      // Non-blocking cold-start / offline fallback
-    }
-  }, []);
+    },
+    []
+  );
 
   // Timers
   const roundTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -1348,7 +1415,7 @@ export default function App() {
         startBotMatch('medium', 'two_clubs');
       } else if (urlParams.get('demo_victory') === '1') {
         suppressDemoAutoRecordRef.current = true;
-        setLastMatchRewards({ earnedPoints: 229, earnedCoins: 100 });
+        setLastMatchRewards({ earnedPoints: 100, earnedCoins: 100 });
         setPlayer1({
           id: sessionPlayerIdRef.current,
           name: 'Futbol Gurmesi',
@@ -2169,6 +2236,16 @@ export default function App() {
     if (recordedMatchInstanceRef.current === matchInstanceIdRef.current) return;
     recordedMatchInstanceRef.current = matchInstanceIdRef.current;
 
+    const currentRoomCode =
+      mode === 'online_match' || mode === 'online_room' ? activeRoomCodeRef.current : null;
+    const currentMatchSeq = roomMatchSeqStartedRef.current || 1;
+    if (hasClaimedRoomMatchLocally(currentRoomCode, currentMatchSeq)) {
+      return;
+    }
+    if (currentRoomCode) {
+      markRoomMatchClaimedLocally(currentRoomCode, currentMatchSeq);
+    }
+
     const prevWeeklyPoints = progression.weeklyPoints;
     const prevTotalPoints = progression.totalPoints;
     const p1Score = player1.score;
@@ -2289,8 +2366,11 @@ trackGameEvent('match_complete', {
       suppressAutoHighScore: hsMilestone.isHighScore,
     });
     void completeServerVerifiedMatchSession(
-      mode === 'online_match' || mode === 'online_room' ? activeRoomCodeRef.current : undefined
-    );
+      mode === 'online_match' || mode === 'online_room' ? activeRoomCodeRef.current : undefined,
+      mode === 'bot' ? { playerScore: p1Score, opponentScore: p2Score } : undefined
+    ).then(() => {
+      void fetchServerLeaderboard();
+    });
 
     if (hsMilestone.isHighScore) {
       const eventId = `hs_${player1.id}_${Math.round(hsMilestone.scoreValue)}_${matchInstanceIdRef.current}`;
@@ -2350,9 +2430,12 @@ trackGameEvent('match_complete', {
    * document is deleted so the opponent's listener is notified immediately.
    * Also invalidates any in-flight create/join request.
    */
-  const teardownOnlineRoom = (options: { deleteRoomDoc?: boolean } = {}) => {
+  const teardownOnlineRoom = (
+    options: { deleteRoomDoc?: boolean; abandonActiveMatch?: boolean } = {}
+  ) => {
     onlineRequestSeqRef.current += 1;
     saveActiveRoomSession(null);
+    setResumableMatch(null);
     disconnectGraceRef.current = null;
     setDisconnectGraceBanner(null);
     setRematchExpiresAt(null);
@@ -2387,7 +2470,11 @@ trackGameEvent('match_complete', {
     if (activeRoomCodeRef.current) {
       const codeToClean = activeRoomCodeRef.current;
       activeRoomCodeRef.current = null;
-      if (options.deleteRoomDoc !== false) void deleteRoom(codeToClean);
+      if (options.abandonActiveMatch) {
+        void abandonRoomMatch(codeToClean, sessionPlayerIdRef.current);
+      } else if (options.deleteRoomDoc !== false) {
+        void deleteRoom(codeToClean);
+      }
     }
     roomPhaseKeyRef.current = '';
     roomSyncSignatureRef.current = '';
@@ -2471,6 +2558,7 @@ trackGameEvent('match_complete', {
   };
 
   const handleConfirmExit = () => {
+    const wasPlaying = screenRef.current === 'playing';
     setShowExitConfirm(false);
     if (roundTimerRef.current) clearInterval(roundTimerRef.current);
     if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
@@ -2478,7 +2566,10 @@ trackGameEvent('match_complete', {
       clearTimeout(nextRoundTimeoutRef.current);
       nextRoundTimeoutRef.current = null;
     }
-    teardownOnlineRoom();
+    teardownOnlineRoom({
+      deleteRoomDoc: !wasPlaying,
+      abandonActiveMatch: wasPlaying,
+    });
     setIsRoundPlaying(false);
     setShowResultSheet(false);
     setOnlineRound(null);
@@ -2827,16 +2918,24 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
     setCountdown(3);
     haptics.countdown();
 
-    let currentCount = 3;
+    const countdownEndAt = Date.now() + 3000;
+    let lastShownCount = 3;
     countdownTimerRef.current = setInterval(() => {
-      currentCount -= 1;
-      setCountdown(currentCount);
-
-      if (currentCount <= 0) {
-        if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
+      const remainingMs = countdownEndAt - Date.now();
+      const nextCount = remainingMs <= 0 ? 0 : Math.min(3, Math.max(1, Math.ceil(remainingMs / 1000)));
+      if (nextCount !== lastShownCount) {
+        lastShownCount = nextCount;
+        setCountdown(nextCount);
+        if (nextCount > 0) haptics.countdown();
+      }
+      if (remainingMs <= 0) {
+        if (countdownTimerRef.current) {
+          clearInterval(countdownTimerRef.current);
+          countdownTimerRef.current = null;
+        }
         startActiveRound();
       }
-    }, 1000);
+    }, 100);
   };
 
   // Active round timer (120s for silhouette, 15s for others)
@@ -3156,7 +3255,7 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
           Boolean(curProg.permanentMultiplier2x) ||
           (curProg.multiplier2xMatches ?? 0) > 0;
         const roundCoins = has2x ? 50 : 25;
-        const roundPoints = mode === 'bot' ? 0 : has2x ? 60 : 30;
+        const roundPoints = 0;
         setLastRoundReward({ coins: roundCoins, points: roundPoints });
         setRoundDoubledByAd(false);
         const withBonus = grantExtraRewards(curProg, roundCoins, roundPoints);
@@ -3373,7 +3472,7 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
       teardownOnlineRoom({ deleteRoomDoc });
     };
 
-    // Heartbeat + 30s disconnect pause + forfeit guard (Firestore has no onDisconnect)
+    // Heartbeat + 45s disconnect pause + forfeit guard (Firestore has no onDisconnect)
     stopRoomPresenceRef.current = startRoomPresence({
       code,
       playerKey: myKey,
@@ -3401,23 +3500,27 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
           setRematchExpiresAt(null);
           teardownOnlineRoom();
         } else if (screenRef.current === 'playing' || screenRef.current === 'room_waiting') {
-          leaveRoomToLobby('Rakibin bağlantısı 30 sn içinde geri gelmedi. Maç sonlandırıldı.', true);
+          void forfeitRoomAfterDisconnectGrace(code).catch(() => {});
         }
       },
     });
 
-    const unsub = subscribeRoom(code, (room: RoomRecord | null) => {
-      if (activeRoomCodeRef.current !== code) return;
+    const unsub = subscribeRoom(
+      code,
+      (room: RoomRecord | null) => {
+        if (activeRoomCodeRef.current !== code) return;
 
-      if (!room) {
-        if (screenRef.current === 'game_over') {
-          setRematchState('opponent_left');
-          teardownOnlineRoom({ deleteRoomDoc: false });
-        } else if (screenRef.current === 'room_waiting' || screenRef.current === 'playing') {
-          leaveRoomToLobby('Oda kapatıldı veya rakibin bağlantısı kesildi.', false);
+        if (!room) {
+          if (screenRef.current === 'game_over') {
+            setRematchState('opponent_left');
+            teardownOnlineRoom({ deleteRoomDoc: false });
+          } else if (screenRef.current === 'room_waiting' || screenRef.current === 'playing') {
+            leaveRoomToLobby('Oda kapatıldı veya maç sona erdi.', false);
+          }
+          return;
         }
-        return;
-      }
+
+        setResumableMatch(null);
 
       // Heartbeat-only snapshots (presence) carry no game state: skip them
       const { presence: _presence, updatedAt: _updatedAt, ...syncFields } = room;
@@ -3545,6 +3648,20 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
       // in the background (e.g. host sharing the code on WhatsApp) while the guest joined.
       const isInMatchState =
         room.state === 'countdown' || room.state === 'playing' || room.state === 'round_ended';
+      if (isInMatchState) {
+        saveActiveRoomSession({
+          code: room.code,
+          minigameType: room.minigameType,
+          source: room.source,
+          playerKey: myKey,
+          playerId: myId,
+          opponentName: oppEntry?.name,
+          myScore: room.scores?.[myKey] ?? myEntry?.score ?? 0,
+          opponentScore: oppKey ? (room.scores?.[oppKey] ?? oppEntry?.score ?? 0) : 0,
+          disconnectGraceExpiresAt: room.disconnectGrace?.expiresAt ?? null,
+          matchSeq: room.matchSeq,
+        });
+      }
       if (phaseChanged && isInMatchState) {
         if (roomMatchSeqStartedRef.current !== room.matchSeq) {
           // A rematch (matchSeq > 1) is a new match: charge energy like a bot rematch does
@@ -3557,12 +3674,21 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
           setRematchExpiresAt(null);
           setRematchSecondsLeft(null);
           trackGameEvent('match_start', { mode: 'online', minigame: room.minigameType });
-          startServerVerifiedMatchSession(
-            room.minigameType,
-            room.source === 'private' ? 'online_room' : 'online_random',
-            Array.isArray(room.roundIds) ? room.roundIds : [],
-            { roomCode: room.code, matchSeq: room.matchSeq }
-          );
+          const savedMeta = loadActiveRoomSessionMeta();
+          if (
+            savedMeta?.code === room.code &&
+            savedMeta?.matchSeq === room.matchSeq &&
+            savedMeta?.matchSessionId
+          ) {
+            serverMatchSessionIdRef.current = savedMeta.matchSessionId;
+          } else {
+            startServerVerifiedMatchSession(
+              room.minigameType,
+              room.source === 'private' ? 'online_room' : 'online_random',
+              Array.isArray(room.roundIds) ? room.roundIds : [],
+              { roomCode: room.code, matchSeq: room.matchSeq }
+            );
+          }
         }
         setCurrentRoundIndex(room.currentRoundIndex || 0);
         setScreen('playing');
@@ -3585,7 +3711,9 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
           setTimeRemaining(getRoundDurationSeconds(room.minigameType));
           setRematchState('idle');
 
-          // Synchronized 3-2-1 countdown anchored to shared countdownEndsAt via server clock
+          // Synchronized 3-2-1 countdown anchored to shared countdownEndsAt via server clock.
+          // Scales across initialSpan when transit latency trims <1.2s so neither player skips "3"
+          // while both devices still start the round at the exact same countdownEndsAt timestamp.
           const serverNow = getAuthoritativeServerNowMs();
           const rawRemaining =
             typeof room.countdownEndsAt === 'number'
@@ -3594,17 +3722,21 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
           const useSharedClock = rawRemaining >= -500 && rawRemaining <= 4500;
           const localCountdownStartMs = Date.now();
           const initialDelayMs = useSharedClock ? Math.max(0, rawRemaining) : 3000;
+          const visualSpanMs = Math.max(1200, Math.min(3000, initialDelayMs));
 
           const computeCount = () => {
             const remMs = useSharedClock
               ? (room.countdownEndsAt as number) - getAuthoritativeServerNowMs()
               : 3000 - (Date.now() - localCountdownStartMs);
             if (remMs <= 0) return 0;
-            return Math.min(3, Math.max(1, Math.ceil(remMs / 1000)));
+            if (initialDelayMs <= 150) return 0;
+            const ratio = remMs / visualSpanMs;
+            return Math.min(3, Math.max(1, Math.ceil(ratio * 3)));
           };
 
-          setCountdown(Math.max(1, computeCount()));
-          haptics.countdown();
+          const firstStep = computeCount();
+          setCountdown(firstStep);
+          if (firstStep > 0) haptics.countdown();
           roomTickTimerRef.current = setInterval(() => {
             const nextVal = computeCount();
             setCountdown(nextVal);
@@ -3612,7 +3744,7 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
               clearInterval(roomTickTimerRef.current);
               roomTickTimerRef.current = null;
             }
-          }, 150);
+          }, 100);
           scheduleRoomAction(initialDelayMs, () => beginRoomRound(code, phase));
         }
         return;
@@ -3732,6 +3864,7 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
       }
 
       if (room.state === 'game_over') {
+        saveActiveRoomSession(null);
         const offer = room.rematchOffer ?? null;
         if (phaseChanged) {
           roomPhaseKeyRef.current = phaseKey;
@@ -3774,7 +3907,34 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
           }
         }
       }
-    });
+    },
+    (listenerErr) => {
+      if (activeRoomCodeRef.current !== code) return;
+      console.warn('[rooms] transient room listener interruption', listenerErr);
+      setDisconnectGraceBanner((prev) =>
+        prev ?? {
+          mode: 'self',
+          secondsLeft: Math.ceil(DISCONNECT_GRACE_TIMEOUT_MS / 1000),
+          opponentName: player2Ref.current.name,
+        }
+      );
+      if (transientResumeCheckInFlightRef.current) return;
+      transientResumeCheckInFlightRef.current = true;
+      void fetchActiveRoomForResume(code, myId)
+        .then((res) => {
+          if (activeRoomCodeRef.current !== code) return;
+          if (res.status === 'not_found' || res.status === 'not_member') {
+            leaveRoomToLobby('Oda artık aktif değil veya erişim süresi doldu.', false);
+          } else if (res.status === 'finished') {
+            saveActiveRoomSession(null);
+            setDisconnectGraceBanner(null);
+          }
+        })
+        .finally(() => {
+          transientResumeCheckInFlightRef.current = false;
+        });
+    }
+    );
 
     unsubRoomRef.current = unsub;
   }, [persistProgression, resetMatchComboAndClock, syncServerLeaderboard]);
@@ -3985,13 +4145,17 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
   );
 
   const handleExitToLobby = () => {
+    const wasPlaying = screenRef.current === 'playing';
     if (roundTimerRef.current) clearInterval(roundTimerRef.current);
     if (countdownTimerRef.current) clearInterval(countdownTimerRef.current);
     if (nextRoundTimeoutRef.current) {
       clearTimeout(nextRoundTimeoutRef.current);
       nextRoundTimeoutRef.current = null;
     }
-    teardownOnlineRoom();
+    teardownOnlineRoom({
+      deleteRoomDoc: !wasPlaying,
+      abandonActiveMatch: wasPlaying,
+    });
     isTournamentMatchRef.current = false;
     fastComboStreakRef.current = 0;
     setFastComboStreak(0);
@@ -4008,19 +4172,116 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
     }
   };
 
-  // Auto-rejoin active online match on transient reload / browser reconnect
+  const attemptVerifyAndResumeRoom = useCallback(
+    async (
+      meta: {
+        code: string;
+        minigameType?: MinigameType;
+        source?: 'private' | 'matchmaking';
+        opponentName?: string;
+        myScore?: number;
+        opponentScore?: number;
+        disconnectGraceExpiresAt?: number | null;
+      },
+      isManual: boolean
+    ) => {
+      if (activeRoomCodeRef.current) return;
+      if (isManual) {
+        setResumableMatch((prev) => (prev ? { ...prev, isReconnecting: true } : prev));
+      }
+      await ensureExpandedRosterLoaded();
+      const check = await fetchActiveRoomForResume(meta.code, sessionPlayerIdRef.current);
+      if (check.status === 'active') {
+        setResumableMatch(null);
+        setMode(check.room.source === 'private' ? 'online_room' : 'online_match');
+        attachOnlineRoomListener(check.room.code);
+        void resumeRoomFromDisconnect(check.room.code, sessionPlayerIdRef.current).catch(() => {});
+        return;
+      }
+      if (check.status === 'network_error') {
+        const expAt = meta.disconnectGraceExpiresAt ?? null;
+        const secLeft =
+          typeof expAt === 'number'
+            ? Math.max(0, Math.ceil((expAt - getAuthoritativeServerNowMs()) / 1000))
+            : Math.ceil(DISCONNECT_GRACE_TIMEOUT_MS / 1000);
+        setResumableMatch({
+          roomCode: meta.code,
+          minigameType: meta.minigameType || 'two_clubs',
+          opponentName: meta.opponentName,
+          myScore: meta.myScore ?? 0,
+          opponentScore: meta.opponentScore ?? 0,
+          disconnectGraceExpiresAt: expAt,
+          secondsLeft: secLeft,
+          failedAutoReconnect: true,
+          isReconnecting: false,
+        });
+        if (isManual) {
+          setOnlineError(check.error);
+        }
+        return;
+      }
+      // Finished, deleted, or user no longer a verified member
+      saveActiveRoomSession(null);
+      setResumableMatch(null);
+    },
+    [attachOnlineRoomListener]
+  );
+
+  const handleResumeActiveMatch = useCallback(() => {
+    const meta = loadActiveRoomSessionMeta();
+    const targetCode = resumableMatch?.roomCode || meta?.code;
+    if (!targetCode) {
+      saveActiveRoomSession(null);
+      setResumableMatch(null);
+      return;
+    }
+    void attemptVerifyAndResumeRoom(
+      {
+        code: targetCode,
+        minigameType: resumableMatch?.minigameType || meta?.minigameType,
+        source: meta?.source,
+        opponentName: resumableMatch?.opponentName || meta?.opponentName,
+        myScore: resumableMatch?.myScore ?? meta?.myScore,
+        opponentScore: resumableMatch?.opponentScore ?? meta?.opponentScore,
+        disconnectGraceExpiresAt:
+          resumableMatch?.disconnectGraceExpiresAt ?? meta?.disconnectGraceExpiresAt,
+      },
+      true
+    );
+  }, [resumableMatch, attemptVerifyAndResumeRoom]);
+
+  const handleAbandonResumableMatch = useCallback(() => {
+    const meta = loadActiveRoomSessionMeta();
+    const targetCode = resumableMatch?.roomCode || meta?.code;
+    saveActiveRoomSession(null);
+    setResumableMatch(null);
+    if (targetCode) {
+      void abandonRoomMatch(targetCode, sessionPlayerIdRef.current);
+    }
+  }, [resumableMatch]);
+
+  // Live countdown ticker on the Lobby "DEVAM EDEN MAÇIN VAR!" card
+  useEffect(() => {
+    if (!resumableMatch?.disconnectGraceExpiresAt) return;
+    const expAt = resumableMatch.disconnectGraceExpiresAt;
+    const timer = setInterval(() => {
+      const left = Math.max(0, Math.ceil((expAt - getAuthoritativeServerNowMs()) / 1000));
+      setResumableMatch((prev) => (prev ? { ...prev, secondsLeft: left } : null));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [resumableMatch?.disconnectGraceExpiresAt]);
+
+  // Auto-rejoin verified active online match on cold restart / reload
   useEffect(() => {
     if (screen !== 'lobby' || restoredRoomCheckedRef.current) return;
     restoredRoomCheckedRef.current = true;
-    const savedRoomCode = loadActiveRoomSession();
-    if (savedRoomCode && !activeRoomCodeRef.current && !pendingInviteRoom) {
-      setMode('online_room');
-      attachOnlineRoomListener(savedRoomCode);
-      void resumeRoomFromDisconnect(savedRoomCode, sessionPlayerIdRef.current).catch(() => {});
+    const savedMeta = loadActiveRoomSessionMeta();
+    if (savedMeta && !activeRoomCodeRef.current && !pendingInviteRoom) {
+      void attemptVerifyAndResumeRoom(savedMeta, false);
     }
-  }, [screen, pendingInviteRoom, attachOnlineRoomListener]);
+  }, [screen, pendingInviteRoom, attemptVerifyAndResumeRoom]);
 
-  // Monitor browser offline/online state during active online match for immediate 30s grace notice
+  // Monitor browser offline/online & app foregrounding during active match for immediate 45s grace + auto-resume
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const handleOffline = () => {
@@ -4040,16 +4301,33 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
     };
     const handleOnline = () => {
       const code = activeRoomCodeRef.current;
-      if (!code) return;
-      void resumeRoomFromDisconnect(code, sessionPlayerIdRef.current).catch(() => {});
+      if (code) {
+        void resumeRoomFromDisconnect(code, sessionPlayerIdRef.current).catch(() => {});
+        return;
+      }
+      const pending = resumableMatchRef.current;
+      const savedMeta = loadActiveRoomSessionMeta();
+      if (screenRef.current === 'lobby' && (pending || savedMeta)) {
+        const meta = savedMeta || (pending ? { code: pending.roomCode, minigameType: pending.minigameType, opponentName: pending.opponentName } : null);
+        if (meta) void attemptVerifyAndResumeRoom(meta, false);
+      }
+    };
+    const handleVisibilityResume = () => {
+      if (document.visibilityState !== 'visible') return;
+      const code = activeRoomCodeRef.current;
+      if (code) {
+        void resumeRoomFromDisconnect(code, sessionPlayerIdRef.current).catch(() => {});
+      }
     };
     window.addEventListener('offline', handleOffline);
     window.addEventListener('online', handleOnline);
+    document.addEventListener('visibilitychange', handleVisibilityResume);
     return () => {
       window.removeEventListener('offline', handleOffline);
       window.removeEventListener('online', handleOnline);
+      document.removeEventListener('visibilitychange', handleVisibilityResume);
     };
-  }, []);
+  }, [attemptVerifyAndResumeRoom]);
 
   // 20-second Rematch offer expiration countdown
   useEffect(() => {
@@ -5464,6 +5742,12 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
       selectedMode: GameMode,
       options?: { botDifficulty?: BotDifficulty; roomCode?: string; minigameType?: MinigameType }
     ) => {
+      if (resumableMatchRef.current) {
+        setOnlineError(
+          'Devam eden bir maçın var! Yeni maç başlatmadan önce MAÇA GERİ DÖN veya Maçtan Ayrıl seçmelisin.'
+        );
+        return;
+      }
       setOnlineError(null);
       if (selectedMode === 'online_match' || selectedMode === 'online_room') {
         handleSelectOnlineModeRef.current(selectedMode, options);
@@ -5520,12 +5804,15 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
                 isNetworkOnline={isNetworkOnline}
                 onlineError={onlineError}
                 onClearOnlineError={handleClearOnlineError}
+                resumableMatch={resumableMatch}
+                onResumeMatch={handleResumeActiveMatch}
+                onAbandonResumableMatch={handleAbandonResumableMatch}
               />
             ) : (
               <div className="relative min-h-[100dvh] w-full flex flex-col pitch-turf-backdrop text-[#F5F3EB] overflow-x-clip">
-                {/* Shared Hub Top Header for Secondary Tabs */}
+                {/* Shared Hub Top Header for Secondary Tabs (Portrait-Only Centered Container) */}
                 <header className="sticky top-0 z-40 isolate w-full bg-[#0E3120]/95 border-b border-[#E5B94F]/30 pt-[max(0.75rem,calc(env(safe-area-inset-top)+0.45rem))] pb-2">
-                  <div className="w-full max-w-xl md:max-w-3xl lg:max-w-4xl mx-auto px-3 sm:px-4 flex items-center justify-between gap-2">
+                  <div className="w-full max-w-[560px] mx-auto px-3 sm:px-4 flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2.5 min-w-0">
                       <GameLogo size="xs" variant="compact" />
                       <span
@@ -5740,6 +6027,7 @@ trackGameEvent('match_start', { mode: 'bot', minigame: selectedMinigame, difficu
               player1Crest={progression.equippedCrest}
               player1Badge={progression.equippedBadge}
               compact={matchViewportState.isKeyboardOpen || matchViewportState.isCompactHeight}
+              ultraCompact={matchViewportState.isUltraCompactHeight}
               onOpenSettings={handleOpenSettingsModal}
               onExit={handlePromptExitMatch}
             />
