@@ -1,5 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
 import { computeMatchKeyboardMetrics } from './viewportKeyboard';
 
 test('computeMatchKeyboardMetrics detects keyboard open via visualViewport height drop without double subtraction', () => {
@@ -76,4 +78,15 @@ test('computeMatchKeyboardMetrics handles narrow 320px phones and wide 768px-128
   assert.equal(tabletKeyboardOpen.viewportHeight, 440);
   assert.equal(tabletKeyboardOpen.isKeyboardOpen, true);
   assert.equal(tabletKeyboardOpen.isUltraCompactHeight, true);
+});
+
+test('MainActivity avoids duplicate contentView IME padding on top of Capacitor SystemBars DecorView insets', () => {
+  const mainActivity = fs.readFileSync(
+    path.resolve(process.cwd(), 'android/app/src/main/java/com/futbol321/challenge/MainActivity.java'),
+    'utf8'
+  );
+  assert.equal(mainActivity.includes('setOnApplyWindowInsetsListener'), false);
+  assert.equal(mainActivity.includes('WindowInsetsCompat.Type.ime()'), false);
+  assert.equal(mainActivity.includes('setDecorFitsSystemWindows'), false);
+  assert.ok(mainActivity.includes('contentView.setPadding(0, 0, 0, 0)'));
 });

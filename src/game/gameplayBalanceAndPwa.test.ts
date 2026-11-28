@@ -226,7 +226,7 @@ test('legacy & live bot friend requests are stripped from storage, sync, and red
 
 test('Settings version metadata and iOS Safari PWA Service Worker update controller protect active matches and user data', () => {
   const meta = getAppVersionMetadata();
-  assert.equal(meta.appVersion, '1.1.1');
+  assert.equal(meta.appVersion, '1.1.2');
   assert.equal(meta.rosterVersion, ROSTER_DATA_VERSION);
   assert.ok(meta.buildCommit.length > 0);
 
